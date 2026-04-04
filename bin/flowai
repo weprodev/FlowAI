@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# FlowAI — multi-agent terminal orchestrator (install once, use in any repo).
+# shellcheck shell=bash
+
+set -euo pipefail
+
+FLOWAI_HOME="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export FLOWAI_HOME
+export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
+
+source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=../src/core/version.sh
+source "$FLOWAI_HOME/src/core/version.sh"
+
+run_usage() {
+  cat <<EOF
+${BOLD}flowai run — run a pipeline phase${RESET}
+
+Usage:
+  flowai run <phase> [args passed to the phase script]
+
+Phases:
+  ${CYAN}master${RESET}, ${CYAN}spec${RESET}, ${CYAN}plan${RESET}, ${CYAN}tasks${RESET}, ${CYAN}implement${RESET}, ${CYAN}review${RESET}
+
+Help:  flowai run -h | flowai run --help
+EOF
+}
+
+usage() {
+  cat <<EOF
+${BOLD}FlowAI — Multi-agent terminal orchestrator${RESET}
+
+Usage:
+  flowai <command> [args...]
+
+Commands:
+  ${CYAN}init${RESET} [${CYAN}--with-specify${RESET}]  Initialize .flowai/ (optional Spec Kit via uv)
+  ${CYAN}start${RESET} [${CYAN}--headless${RESET}]  Start tmux session (${CYAN}--headless${RESET} = create only, no attach; CI-safe)
+  ${CYAN}kill${RESET} | ${CYAN}stop${RESET}   Kill (or stop) the session for this repository
+  ${CYAN}status${RESET}     List tmux windows for this repository session
+  ${CYAN}run${RESET} <phase>   Run one phase (master, spec, plan, tasks, implement, review)
+  ${CYAN}version${RESET}     Print FlowAI version (for bug reports)
+
+Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${RESET}
+
+Examples:
+  flowai init
+  flowai start
+  flowai run plan
+EOF
+}
+
+cmd="${1:-}"
+shift || true
+
+if [[ -z "$cmd" ]]; then
+  usage
+  exit 1
+fi
+
+case "$cmd" in
+  init)
+    bash "$FLOWAI_HOME/src/commands/init.sh" "$@"
+    ;;
+  start)
+    bash "$FLOWAI_HOME/src/commands/start.sh" "$@"
+    ;;
+  kill|stop)
+    bash "$FLOWAI_HOME/src/commands/kill.sh" "$@"
+    ;;
+  status)
+    bash "$FLOWAI_HOME/src/commands/status.sh" "$@"
+    ;;
+  run)
+    phase="${1:-}"
+    case "$phase" in
+      -h|--help|help)
+        run_usage
+        exit 0
+        ;;
+    esac
+    if [[ -z "$phase" ]]; then
+      log_error "Usage: flowai run <phase>   (e.g. master, plan, tasks, implement, review, spec)"
+      exit 1
+    fi
+    shift || true
+    case "$phase" in
+      implement) phase_script="implement" ;;
+      *) phase_script="$phase" ;;
+    esac
+    if [[ ! -f "$FLOWAI_HOME/src/phases/${phase_script}.sh" ]]; then
+      log_error "Unknown phase: $phase (no src/phases/${phase_script}.sh)"
+      exit 1
+    fi
+    bash "$FLOWAI_HOME/src/phases/${phase_script}.sh" "$@"
+    ;;
+  -V|--version)
+    flowai_version_print
+    exit 0
+    ;;
+  version)
+    flowai_version_print
+    exit 0
+    ;;
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  *)
+    log_error "Unknown command: $cmd"
+    usage
+    exit 1
+    ;;
+esac
