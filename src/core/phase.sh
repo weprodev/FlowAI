@@ -64,22 +64,59 @@ flowai_phase_verify_artifact() {
 
   log_success "$phase_name artifact present: $target_file"
 
-  local decision=""
-  if command -v gum >/dev/null 2>&1; then
-    decision="$(gum choose 'Approve' 'Needs changes')"
-  else
-    read -r -p "Approve? [y/N]: " decision < /dev/tty || true
-    [[ "$decision" =~ ^[yY] ]] && decision="Approve" || decision="Needs changes"
-  fi
+  while true; do
+    local decision=""
+    if command -v gum >/dev/null 2>&1; then
+      decision="$(gum choose 'Approve' 'Needs changes' 'Review artifact')"
+    else
+      read -r -p "Approve / Needs changes / Review ? [a/n/r]: " decision < /dev/tty || true
+      case "$decision" in
+        a*|A*) decision="Approve" ;;
+        r*|R*) decision="Review artifact" ;;
+        *)     decision="Needs changes" ;;
+      esac
+    fi
 
-  if [[ "$decision" == "Approve" ]]; then
-    touch "$SIGNALS_DIR/${current_signal}.ready"
-    return 0
-  fi
+    if [[ "$decision" == "Review artifact" ]]; then
+      local review_mode=""
+      if command -v gum >/dev/null 2>&1; then
+        review_mode="$(gum choose 'Read here (Terminal)' 'Open in Editor')"
+      else
+        read -r -p "Read in [t]erminal or [e]ditor?: " review_mode < /dev/tty || true
+        case "$review_mode" in
+          e*|E*) review_mode="Open in Editor" ;;
+          *)     review_mode="Read here (Terminal)" ;;
+        esac
+      fi
 
-  touch "$SIGNALS_DIR/${current_signal}.reject" 2>/dev/null || true
-  log_warn "Phase rejected — coordinate with Master, then resume."
-  return 2
+      if [[ "$review_mode" == "Open in Editor" ]]; then
+        local my_editor="${EDITOR:-cursor}"
+        if ! command -v "$my_editor" >/dev/null 2>&1; then
+          log_warn "Editor '$my_editor' not found in PATH. Falling back to 'vi'."
+          my_editor="vi"
+        fi
+        log_info "Opening in $my_editor..."
+        "$my_editor" "$target_file" </dev/tty >/dev/tty 2>&1 || true
+      else
+        if command -v gum >/dev/null 2>&1; then
+          gum pager < "$target_file"
+        else
+          less -R "$target_file" </dev/tty >/dev/tty 2>&1 || cat "$target_file"
+        fi
+      fi
+      printf "\n"
+      continue
+    fi
+
+    if [[ "$decision" == "Approve" ]]; then
+      touch "$SIGNALS_DIR/${current_signal}.ready"
+      return 0
+    fi
+
+    touch "$SIGNALS_DIR/${current_signal}.reject" 2>/dev/null || true
+    log_warn "Phase rejected — coordinate with Master, then resume."
+    return 2
+  done
 }
 
 flowai_phase_resolve_role_prompt() {

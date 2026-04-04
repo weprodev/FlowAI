@@ -37,4 +37,4 @@ flowai
 
 ## Automated checks
 
-Implemented by `flowai_test_s_cli_001` in `tests/cases/cli_entrypoint.sh`.
+Implemented by `flowai_test_s_cli_001` in `tests/suites/cli_entrypoint.sh`.

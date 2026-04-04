@@ -3,5 +3,7 @@
 # shellcheck shell=bash
 # Intentionally minimal so macOS and other OS layers stay independent.
 
+# TODO: to be implemented
+
 agents_os_linux_clipboard_copy() { :; }
 agents_os_linux_open_path() { :; }

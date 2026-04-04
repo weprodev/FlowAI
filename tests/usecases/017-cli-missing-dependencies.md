@@ -34,4 +34,4 @@ If **`jq`**, **`tmux`**, or **`gum`** (for interactive `start`) cannot be resolv
 
 ## Automated checks
 
-`flowai_test_s_cli_017` in `tests/cases/lifecycle_happy.sh`.
+`flowai_test_s_cli_017` in `tests/suites/lifecycle_happy.sh`.

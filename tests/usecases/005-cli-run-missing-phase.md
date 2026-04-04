@@ -31,4 +31,4 @@ flowai run
 
 ## Automated checks
 
-`flowai_test_s_cli_005` in `tests/cases/cli_entrypoint.sh`.
+`flowai_test_s_cli_005` in `tests/suites/cli_entrypoint.sh`.

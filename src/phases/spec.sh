@@ -6,7 +6,7 @@ set -euo pipefail
 
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
-source "$FLOWAI_HOME/src/phases/lib.sh"
+source "$FLOWAI_HOME/src/core/phase.sh"
 
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "master")"
 

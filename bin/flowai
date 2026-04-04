@@ -8,8 +8,9 @@ FLOWAI_HOME="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export FLOWAI_HOME
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 
+# shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
-# shellcheck source=../src/core/version.sh
+# shellcheck source=src/core/version.sh
 source "$FLOWAI_HOME/src/core/version.sh"
 
 run_usage() {
@@ -34,11 +35,11 @@ Usage:
   flowai <command> [args...]
 
 Commands:
-  ${CYAN}init${RESET} [${CYAN}--with-specify${RESET}]  Initialize .flowai/ (optional Spec Kit via uv)
-  ${CYAN}start${RESET} [${CYAN}--headless${RESET}]  Start tmux session (${CYAN}--headless${RESET} = create only, no attach; CI-safe)
-  ${CYAN}kill${RESET} | ${CYAN}stop${RESET}   Kill (or stop) the session for this repository
-  ${CYAN}status${RESET}     List tmux windows for this repository session
-  ${CYAN}run${RESET} <phase>   Run one phase (master, spec, plan, tasks, implement, review)
+  ${CYAN}init${RESET}        Initialize .flowai/ and bootstrap Spec Kit via uv
+  ${CYAN}start${RESET}       Start tmux session (pass ${CYAN}--headless${RESET} to run detached; CI-safe)
+  ${CYAN}kill${RESET}|${CYAN}stop${RESET}   Kill (or stop) the session for this repository
+  ${CYAN}status${RESET}      List tmux windows for this repository session
+  ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET}) or omit to select from menu
   ${CYAN}version${RESET}     Print FlowAI version (for bug reports)
 
 Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${RESET}
@@ -80,8 +81,18 @@ case "$cmd" in
         ;;
     esac
     if [[ -z "$phase" ]]; then
-      log_error "Usage: flowai run <phase>   (e.g. master, plan, tasks, implement, review, spec)"
-      exit 1
+      if [ -t 0 ] && [ "${FLOWAI_TESTING:-0}" != "1" ]; then
+        log_info "No phase specified. Please choose one:"
+        if command -v gum >/dev/null 2>&1; then
+          phase="$(gum choose "master" "spec" "plan" "tasks" "implement" "review")"
+        else
+          read -r -p "Select phase (master, spec, plan, tasks, implement, review): " phase < /dev/tty || true
+        fi
+      fi
+      if [[ -z "$phase" ]]; then
+        log_error "Usage: flowai run <phase>   (e.g. master, plan, tasks, implement, review, spec)"
+        exit 1
+      fi
     fi
     shift || true
     case "$phase" in

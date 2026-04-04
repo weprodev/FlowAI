@@ -36,4 +36,4 @@ flowai start --headless
 
 ## Automated checks
 
-`flowai_test_s_cli_018` in `tests/cases/lifecycle_happy.sh`.
+`flowai_test_s_cli_018` in `tests/suites/lifecycle_happy.sh`.

@@ -24,4 +24,4 @@ Same contract as **UC-CLI-012** when no session exists: exit **0**, clear idle m
 
 ## Automated checks
 
-`flowai_test_s_cli_021` in `tests/cases/lifecycle_happy.sh`.
+`flowai_test_s_cli_021` in `tests/suites/lifecycle_happy.sh`.

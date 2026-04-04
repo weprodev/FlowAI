@@ -33,4 +33,4 @@ flowai init
 
 ## Automated checks
 
-`flowai_test_s_cli_016` in `tests/cases/lifecycle_happy.sh`.
+`flowai_test_s_cli_016` in `tests/suites/lifecycle_happy.sh`.

@@ -1,0 +1,27 @@
+# Runtime & Orchestrator artifacts
+.flowai/
+specs/
+.specify/
+
+# Temporaries & Logs
+*.log
+*.tmp
+*.bak
+*~
+
+# IDEs & Editors
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+
+# OS Data
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Test data / Caches
+.venv/
+__pycache__/

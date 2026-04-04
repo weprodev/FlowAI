@@ -37,4 +37,4 @@ flowai run plan
 
 ## Automated checks
 
-`flowai_test_s_cli_022` in `tests/cases/lifecycle_happy.sh`.
+`flowai_test_s_cli_022` in `tests/suites/lifecycle_happy.sh`.

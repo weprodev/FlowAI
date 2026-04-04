@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures tests/usecases/*.md automated_test: lines map to real functions in tests/cases/*.sh
+# Ensures tests/usecases/*.md automated_test: lines map to real functions in tests/suites/*.sh
 # Quiet on success; stderr on failure. Set FLOWAI_TEST_VERBOSE=1 for a one-line summary.
 # shellcheck shell=bash
 
@@ -24,7 +24,7 @@ flowai_verify_usecase_bindings() {
     fi
 
     local hit=0
-    for c in "$tests_root/cases/"*.sh; do
+    for c in "$tests_root/suites/"*.sh; do
       [[ -f "$c" ]] || continue
       if grep -q "^${fn}()" "$c" 2>/dev/null; then
         hit=1
@@ -33,7 +33,7 @@ flowai_verify_usecase_bindings() {
     done
     count=$((count + 1))
     if [[ "$hit" -eq 0 ]]; then
-      printf 'FAIL: %s declares automated_test=%s but no %s() in tests/cases/\n' "${f##*/}" "$fn" "$fn" >&2
+      printf 'FAIL: %s declares automated_test=%s but no %s() in tests/suites/\n' "${f##*/}" "$fn" "$fn" >&2
       err=$((err + 1))
     fi
   done

@@ -29,4 +29,4 @@ flowai run definitely-not-a-phase-xyz
 
 ## Automated checks
 
-`flowai_test_s_cli_006` in `tests/cases/cli_entrypoint.sh`.
+`flowai_test_s_cli_006` in `tests/suites/cli_entrypoint.sh`.

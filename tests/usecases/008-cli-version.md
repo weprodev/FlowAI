@@ -35,4 +35,4 @@ flowai --version
 
 ## Automated checks
 
-`flowai_test_s_cli_008` in `tests/cases/cli_entrypoint.sh`.
+`flowai_test_s_cli_008` in `tests/suites/cli_entrypoint.sh`.

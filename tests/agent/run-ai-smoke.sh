@@ -23,8 +23,7 @@ LOG_FILE="$(mktemp)"
 INTERACTIVE=false
 [[ "${1:-}" == "--interactive" ]] && INTERACTIVE=true
 
-cleanup() { rm -f "$LOG_FILE"; }
-trap cleanup EXIT
+trap 'rm -f "$LOG_FILE"' EXIT
 
 if [[ "${FLOWAI_SKIP_AI:-}" == "1" ]]; then
   echo "FLOWAI_SKIP_AI=1 — running deterministic tests only."
@@ -46,7 +45,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo " Step 2 — AI review (optional — needs gemini or claude in PATH)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-USECASE_INDEX="$(ls -1 "$REPO_ROOT/tests/usecases/"[0-9][0-9][0-9]-*.md 2>/dev/null | while read -r p; do echo "- $(basename "$p")"; done || true)"
+USECASE_INDEX=""
+for p in "$REPO_ROOT/tests/usecases/"[0-9][0-9][0-9]-*.md; do
+  [[ -f "$p" ]] || continue
+  USECASE_INDEX+="- $(basename "$p")${IFS:0:1}"
+done
 
 FULL_PROMPT="$(cat <<EOF
 $(cat "$PROMPT_HEAD")

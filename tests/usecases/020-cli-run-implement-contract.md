@@ -30,4 +30,4 @@ FLOWAI_TEST_SKIP_AI=1 flowai run implement
 
 ## Automated checks
 
-`flowai_test_s_cli_020` in `tests/cases/lifecycle_happy.sh`.
+`flowai_test_s_cli_020` in `tests/suites/lifecycle_happy.sh`.

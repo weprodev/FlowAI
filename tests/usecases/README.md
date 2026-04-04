@@ -38,21 +38,9 @@ automated_test: flowai_test_s_cli_001
 ```
 
 - **`id`** — Stable product/test ID (prefix by area: `UC-CLI`, `UC-INIT`, …).  
-- **`automated_test`** — Shell function in `tests/cases/*.sh` invoked from `tests/run.sh`.
+- **`automated_test`** — Shell function in `tests/suites/*.sh` invoked from `tests/run.sh`.
 
-**Verify bindings + run harness:**
-
-```bash
-make verify
-```
-
-**Optional — LLM review in the terminal** (needs `gemini` or `claude` on `PATH`):
-
-```bash
-make verify-ai
-```
-
-See `tests/agent/README.md` for the deterministic vs AI split.
+**Execution:** See the repository root [`README.md`](../../README.md) for how to run these automated test suites and the optional LLM review via the `make audit` pipeline.
 
 ## Related
 

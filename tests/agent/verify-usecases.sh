@@ -3,7 +3,7 @@
 # shellcheck shell=bash
 set -euo pipefail
 TESTS_ROOT="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/verify-bindings.sh
+# shellcheck source=tests/lib/verify-bindings.sh
 source "$TESTS_ROOT/lib/verify-bindings.sh"
 export FLOWAI_TEST_VERBOSE=1
 flowai_verify_usecase_bindings "$TESTS_ROOT"

@@ -8,13 +8,6 @@ set -euo pipefail
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
-WITH_SPECIFY=false
-for arg in "$@"; do
-  case "$arg" in
-    --with-specify) WITH_SPECIFY=true ;;
-  esac
-done
-
 if ! command -v jq >/dev/null 2>&1; then
   log_error "jq is required. Install jq (e.g. brew install jq) and re-run flowai init."
   exit 1
@@ -70,13 +63,13 @@ fi
 
 mkdir -p "$PWD/specs"
 
-if ! flowai_specify_is_present "$PWD"; then
-  log_warn "Spec Kit (.specify/) not found — feature automation scripts from Spec Kit will be unavailable."
-  printf '%s\n' "  • Install manually: https://github.github.io/spec-kit/installation.html"
-  log_info "Or run: flowai init --with-specify (needs uv; may download packages)"
-  if [[ "$WITH_SPECIFY" == true ]]; then
-    log_info "Attempting Spec Kit bootstrap (--with-specify)..."
-    flowai_specify_ensure "$PWD" || true
+if [ "${FLOWAI_TESTING:-0}" != "1" ]; then
+  if ! flowai_specify_is_present "$PWD"; then
+    log_info "Attempting Spec Kit bootstrap (requires 'uv')..."
+    if ! flowai_specify_ensure "$PWD"; then
+      log_warn "Spec Kit automated install failed (is 'uv' installed?)."
+      printf '%s\n' "  • Install manually: https://github.github.io/spec-kit/installation.html"
+    fi
   fi
 fi
 

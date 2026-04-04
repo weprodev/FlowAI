@@ -2,5 +2,7 @@
 # Windows-specific helpers (Git Bash / MSYS — placeholder).
 # shellcheck shell=bash
 
+# TODO: to be implemented
+
 agents_os_windows_clipboard_copy() { :; }
 agents_os_windows_open_path() { :; }

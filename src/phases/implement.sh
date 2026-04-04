@@ -6,7 +6,7 @@ set -euo pipefail
 
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
-source "$FLOWAI_HOME/src/phases/lib.sh"
+source "$FLOWAI_HOME/src/core/phase.sh"
 
 flowai_phase_wait_for "tasks" "Implement Phase"
 
