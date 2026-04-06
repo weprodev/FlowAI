@@ -23,11 +23,18 @@ FlowAI is a standalone **CLI** that coordinates **multiple AI agent tools** insi
 
 ## Installation
 
-From a clone of this repository:
+**Universal Install (Recommended):**
+
+Execute via curl to securely download and install without cloning manually:
 
 ```bash
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/WeProDev/FlowAI/main/install.sh | bash
+```
+
+Alternatively, if you cloned the repository, execute:
+
+```bash
+make install
 ```
 
 - **Install location:** `/usr/local/flowai`, with `flowai` linked into `/usr/local/bin`.
@@ -43,39 +50,26 @@ flowai start
 
 Sessions are named from a **hash of the repository path**, so two clones with the same folder name do not collide.
 
-## Commands
+## 📚 Documentation Architecture
 
-| Command                               | Purpose                                                                  |
-| ------------------------------------- | ------------------------------------------------------------------------ |
-| `flowai init`                         | Creates `.flowai/` and bootstraps Spec Kit (`.specify/`) via `uvx`       |
-| `flowai start`                        | Boots `tmux` session (pass `--headless` to skip prompt and run detached) |
-| `flowai kill` / `flowai stop`         | End session (interactively prompts for confirmation if UI available)     |
-| `flowai status`                       | List tmux windows if a session exists                                    |
-| `flowai run`                          | Menu to select a phase to run (or pass directly, e.g. `flowai run spec`) |
-| `flowai help`                         | Global commands and usage overview                                       |
-| `flowai version` / `flowai --version` | Version from `VERSION` (use in bug reports)                              |
+FlowAI is built for scale. To fully harness its capabilities, refer to our single-source-of-truth documentation hubs:
 
-## Spec Kit (Specify)
+| Guide | Description |
+|-------|-------------|
+| 🧭 **[System Architecture](docs/ARCHITECTURE.md)** | The roadmap for our orchestration loop, DAG scaling, and forthcoming **MCP / VCS Integrations**. |
+| 🎛️ **[Commands Reference](docs/COMMANDS.md)** | Granular manuals for the CLI footprint and Spec Kit configuration. |
+| 🤖 **[Supported AI Tools](docs/TOOLS.md)** | Matrices detailing our vendor API integrations (Gemini, Claude, Cursor). |
+| 🧪 **[Testing Framework](tests/usecases/README.md)** | The exact Behavior-Driven Development parameters and YAML validation suite mapping. |
 
-FlowAI requires Spec Kit to handle upstream feature branch and issue automation. `flowai init` will automatically attempt to bootstrap it via `uv`:
+---
 
-```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init . --script sh
-```
+## Testing and Use Cases
 
-If it fails, install [Spec Kit](https://github.github.io/spec-kit/installation.html) manually.
-
-## Testing and use cases
-
-Behaviour is specified as **numbered, append-only use cases** under [`tests/usecases/`](tests/usecases/README.md) (`001-….md` — do not rewrite historical files to change intent; add new files instead).
-
-Each file includes YAML frontmatter linked to automated tests. From the repository root:
+FlowAI behaviour is verified natively. From the repository root:
 
 ```bash
-make audit           # runs linters, test harness, and optional LLM review
+make audit           # runs linters, deterministic harness, and optional LLM context review
 ```
-
-**Optional LLM review:** `make audit` natively executes deterministic bash test assertions first. If they pass, it invokes **`gemini`** or **`claude`** to review intent vs log. Without an AI CLI, it provides the prompt text to paste elsewhere. Set `FLOWAI_SKIP_AI=1` for bash-only. Details: [`tests/agent/README.md`](tests/agent/README.md).
 
 ## License
 

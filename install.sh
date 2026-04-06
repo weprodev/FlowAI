@@ -7,6 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLOWAI_SRC="$(CDPATH="" cd "$SCRIPT_DIR" && pwd)"
+IS_NETWORK_INSTALL=0
 
 BOLD="\033[1m"
 GREEN="\033[32m"
@@ -26,8 +27,14 @@ else
 fi
 
 if [[ ! -d "$FLOWAI_SRC/bin" ]] || [[ ! -f "$FLOWAI_SRC/bin/flowai" ]]; then
-  echo -e "${YELLOW}Run this script from the FlowAI repository root (expected bin/flowai).${RESET}" >&2
-  exit 1
+  echo -e "${CYAN}Fetching FlowAI from GitHub...${RESET}"
+  FLOWAI_SRC="$(mktemp -d)"
+  if ! command -v git >/dev/null 2>&1; then
+    echo -e "${YELLOW}Git is required for remote installation.${RESET}" >&2
+    exit 1
+  fi
+  git clone --depth 1 https://github.com/WeProDev/FlowAI.git "$FLOWAI_SRC" >/dev/null 2>&1
+  IS_NETWORK_INSTALL=1
 fi
 
 echo "Source: $FLOWAI_SRC"
@@ -50,6 +57,10 @@ fi
 $SUDO chmod -R a+rX "$INSTALL_DIR"
 $SUDO chmod +x "$INSTALL_DIR/bin/flowai"
 $SUDO ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/flowai"
+
+if [[ "$IS_NETWORK_INSTALL" -eq 1 ]]; then
+  rm -rf "$FLOWAI_SRC"
+fi
 
 echo -e "\n${BOLD}${GREEN}✅ FlowAI installed.${RESET}"
 echo -e "Try: ${BOLD}flowai init${RESET} inside a git project, then ${BOLD}flowai start${RESET}."
