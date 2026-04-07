@@ -33,29 +33,37 @@ else
     cp "$PWD/.specify/memory/setup.json" "$FLOWAI_DIR/config.json"
     jq '.' "$FLOWAI_DIR/config.json" >/dev/null
   else
-    cat > "$FLOWAI_DIR/config.json" << 'EOF'
-{
-  "platform": "generic",
-  "default_model": "gpt-4o",
-  "master": {
-    "tool": "gemini",
-    "model": "gpt-4o"
-  },
-  "layout": "dashboard",
-  "auto_approve": false,
-  "pipeline": {
-    "plan": "team-lead",
-    "tasks": "backend-engineer",
-    "impl": "backend-engineer",
-    "review": "reviewer"
-  },
-  "roles": {
-    "team-lead": { "tool": "gemini", "model": "gpt-4o" },
-    "backend-engineer": { "tool": "gemini", "model": "gpt-4o" },
-    "reviewer": { "tool": "gemini", "model": "gpt-4o" }
-  }
-}
-EOF
+    jq -n \
+      --argjson ra "$(cat "$FLOWAI_HOME/src/core/defaults/skills-role-assignments.json")" \
+      '{
+        platform: "generic",
+        default_model: "gpt-4o",
+        master: { tool: "gemini", model: "gpt-4o" },
+        layout: "dashboard",
+        auto_approve: false,
+        pipeline: {
+          plan: "team-lead",
+          tasks: "backend-engineer",
+          impl: "backend-engineer",
+          review: "reviewer"
+        },
+        roles: {
+          "team-lead": { tool: "gemini", model: "gpt-4o" },
+          "backend-engineer": { tool: "gemini", model: "gpt-4o" },
+          "reviewer": { tool: "gemini", model: "gpt-4o" }
+        },
+        skills: { role_assignments: $ra },
+        mcp: {
+          servers: {
+            context7: {
+              command: "npx",
+              args: ["-y", "@upstash/context7-mcp@latest"],
+              description: "Real-time library documentation for AI agents",
+              default: true
+            }
+          }
+        }
+      }' > "$FLOWAI_DIR/config.json"
   fi
 
   log_success "Wrote $FLOWAI_DIR/config.json"

@@ -41,11 +41,13 @@ Usage:
   flowai <command> [args...]
 
 Commands:
-  ${CYAN}init${RESET}        Initialize .flowai/ and bootstrap Spec Kit via uv
-  ${CYAN}start${RESET}       Start tmux session (pass ${CYAN}--headless${RESET} to run detached; CI-safe)
+  ${CYAN}init${RESET}        Initialize .flowai/ and bootstrap Spec Kit
+  ${CYAN}start${RESET}       Start tmux session (self-heals dependencies)
   ${CYAN}kill${RESET}|${CYAN}stop${RESET}   Kill (or stop) the session for this repository
-  ${CYAN}status${RESET}      List tmux windows for this repository session
-  ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET}) or omit to select from menu
+  ${CYAN}status${RESET}      Show session, config, Spec Kit, skills and MCP health
+  ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET})
+  ${CYAN}skill${RESET}       Manage agent skills  (${CYAN}flowai skill add / apply / remove${RESET})
+  ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
   ${CYAN}version${RESET}     Print FlowAI version (for bug reports)
 
 Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${RESET}
@@ -53,6 +55,9 @@ Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${R
 Examples:
   flowai init
   flowai start
+  flowai skill add obra/superpowers/systematic-debugging
+  flowai skill add context7 obra/superpowers/systematic-debugging
+  flowai mcp add github
   flowai run plan
 EOF
 }
@@ -77,6 +82,12 @@ case "$cmd" in
     ;;
   status)
     bash "$FLOWAI_HOME/src/commands/status.sh" "$@"
+    ;;
+  skill)
+    bash "$FLOWAI_HOME/src/commands/skill.sh" "$@"
+    ;;
+  mcp)
+    bash "$FLOWAI_HOME/src/commands/mcp.sh" "$@"
     ;;
   run)
     phase="${1:-}"

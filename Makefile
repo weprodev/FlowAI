@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install lint test verify-usecases verify-ai check
+.PHONY: help install lint test verify-usecases verify-ai check build-skills
 
 # Colors
 YELLOW := \033[33m
@@ -12,7 +12,8 @@ RESET  := \033[0m
 help:
 	@printf "$(BOLD)FlowAI Makefile commands:$(RESET)\n\n"
 	@printf "  $(CYAN)make install$(RESET)        Install FlowAI globally (/usr/local/bin)\n"
-	@printf "  $(CYAN)make audit$(RESET)          Run linters, automated test harness, and AI review\n\n"
+	@printf "  $(CYAN)make audit$(RESET)          Run linters, automated test harness, and AI review\n"
+	@printf "  $(CYAN)make build-skills$(RESET)   Fetch/refresh bundled skills from skills.sh sources\n\n"
 
 install:
 	@bash ./install.sh
@@ -41,3 +42,16 @@ lint:
 	fi
 
 audit: lint verify-ai
+
+# Fetch/refresh bundled skills from their upstream sources.
+# Run this when upstream skills are updated; commit the result.
+build-skills:
+	@printf "$(CYAN)Fetching bundled skills from obra/superpowers...$(RESET)\n"
+	@for skill in systematic-debugging test-driven-development requesting-code-review \
+	             executing-plans verification-before-completion writing-plans \
+	             subagent-driven-development finishing-a-development-branch; do \
+	  mkdir -p "src/skills/$$skill"; \
+	  curl -fsSL "https://raw.githubusercontent.com/obra/superpowers/main/skills/$$skill/SKILL.md" \
+	    -o "src/skills/$$skill/SKILL.md" && printf "  ✓ $$skill\n" || printf "  ✗ $$skill (failed)\n"; \
+	done
+	@printf "$(CYAN)Done.$(RESET)\n"

@@ -1,0 +1,6 @@
+{
+  "ai": "claude",
+  "script": "sh",
+  "seeded_by": "flowai",
+  "note": "This is a FlowAI-managed seed. Run 'specify init . --ai claude --script sh' to upgrade to a full Spec Kit install."
+}

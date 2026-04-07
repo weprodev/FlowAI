@@ -151,6 +151,7 @@ flowai_test_s_cli_011() {
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
+  # status works even without a config — just needs tmux absent or session absent
   flowai_test_invoke_in_dir "$tmp" status
   flowai_test_assert_rc 0 "UC-CLI-011" || return
   flowai_test_assert_combined_contains "not running" "UC-CLI-011" || return
@@ -294,7 +295,8 @@ flowai_test_s_cli_015() {
 
   flowai_test_invoke_in_dir "$tmp" status
   flowai_test_assert_rc 0 "UC-CLI-015" || return
-  flowai_test_assert_combined_contains "FlowAI session:" "UC-CLI-015" || return
+  flowai_test_assert_combined_contains "FlowAI" "UC-CLI-015" || return
+  flowai_test_assert_combined_contains "running" "UC-CLI-015" || return
   flowai_test_assert_combined_not_contains "not running" "UC-CLI-015" || return
 
   flowai_test_invoke_in_dir "$tmp" kill
@@ -338,4 +340,85 @@ flowai_test_s_cli_019() {
   flowai_test_assert_combined_contains "Headless" "UC-CLI-019" || return
 
   flowai_test_pass "UC-CLI-019" "second start --headless exits 0 when session already running"
+}
+
+# UC-CLI-023 / tests/usecases/023-cli-skills-phase-to-role.md
+flowai_test_s_cli_023() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-023" "skills phase maps to pipeline role"
+    return 0
+  fi
+  local tmp eff match
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-023" || return
+
+  # shellcheck disable=SC2016
+  eff="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
+    source "$FLOWAI_HOME/src/core/skills.sh"
+    flowai_skills_effective_role_for_phase plan
+  ')"
+  if [[ "$eff" != "team-lead" ]]; then
+    printf 'FAIL UC-CLI-023: plan phase should map to team-lead, got %q\n' "$eff" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  # shellcheck disable=SC2016
+  eff="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
+    source "$FLOWAI_HOME/src/core/skills.sh"
+    flowai_skills_effective_role_for_phase impl
+  ')"
+  if [[ "$eff" != "backend-engineer" ]]; then
+    printf 'FAIL UC-CLI-023: impl phase should map to backend-engineer, got %q\n' "$eff" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  # shellcheck disable=SC2016
+  match="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
+    source "$FLOWAI_HOME/src/core/skills.sh"
+    flowai_skills_list_for_role team-lead
+  ' | grep -c '^writing-plans$' || true)"
+  if [[ "$match" -lt 1 ]]; then
+    printf 'FAIL UC-CLI-023: team-lead skills should include writing-plans\n' >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  flowai_test_pass "UC-CLI-023" "pipeline phase resolves to role; skills list matches config defaults"
+}
+
+# UC-CLI-024 / tests/usecases/024-cli-mcp-minimal-json.md
+flowai_test_s_cli_024() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-024" "mcp list seeds minimal mcp.json"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-024" || return
+
+  flowai_test_invoke_in_dir "$tmp" mcp list
+  flowai_test_assert_rc 0 "UC-CLI-024" || return
+  flowai_test_assert_path_exists "$tmp/.flowai/mcp.json" "UC-CLI-024" || return
+
+  if ! jq -e '.mcpServers.context7.command == "npx" and (.mcpServers.context7.args | length) > 0' "$tmp/.flowai/mcp.json" >/dev/null 2>&1; then
+    printf 'FAIL UC-CLI-024: mcp.json missing minimal context7 server\n' >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  if jq -e 'has("mcpServers") and .mcpServers.context7 | has("description")' "$tmp/.flowai/mcp.json" >/dev/null 2>&1; then
+    printf 'FAIL UC-CLI-024: mcp.json should omit description for Claude runtime file\n' >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  flowai_test_pass "UC-CLI-024" "flowai mcp list creates minimal mcp.json from config"
 }

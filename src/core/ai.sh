@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Core AI tool runner — keeps CLI quirks in one place.
+# FlowAI — AI tool runner — keeps CLI quirks in one place.
 # shellcheck shell=bash
 
+# shellcheck source=src/core/config.sh
 source "$FLOWAI_HOME/src/core/config.sh"
+# shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=src/core/skills.sh
+source "$FLOWAI_HOME/src/core/skills.sh"
+# shellcheck source=src/bootstrap/specify.sh
+source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
 flowai_ai_run() {
   local phase="$1"
@@ -32,16 +38,13 @@ flowai_ai_run() {
   local auto_approve
   auto_approve="$(flowai_cfg_auto_approve)"
 
+  # Build enriched system prompt: role + skills + constitution
   local sys_prompt=""
-  if [[ -f "$prompt_file" ]]; then
-    sys_prompt="$(cat "$prompt_file")"
-  else
-    log_warn "Prompt file not found: $prompt_file"
-  fi
+  sys_prompt="$(flowai_skills_build_prompt "$phase" "$prompt_file")"
 
   log_header "Role: $phase | Tool: $tool | Model: $model"
 
-  local cmd=""
+  local cmd=()
   case "$tool" in
     gemini)
       cmd=(gemini -m "$model")
@@ -51,6 +54,10 @@ flowai_ai_run() {
       ;;
     claude)
       cmd=(claude --model "$model")
+      # Attach MCP config if available
+      if [[ -f "$FLOWAI_DIR/mcp.json" ]]; then
+        cmd+=(--mcp-config "$FLOWAI_DIR/mcp.json")
+      fi
       if [[ "$auto_approve" == "true" && "$run_interactive" == "false" ]]; then
         cmd+=(--dangerously-skip-permissions)
       fi

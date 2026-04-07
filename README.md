@@ -20,6 +20,7 @@ FlowAI is a standalone **CLI** that coordinates **multiple AI agent tools** insi
 | **Runtime**        | `bash`, `jq`, `gum`, `tmux`                                                                                                                      |
 | **Agent backends** | At least one [supported `tool` id](#supported-tools-and-editors) — install the vendor CLI separately; FlowAI only orchestrates                   |
 | **Required**       | **`uv`** — used by `flowai init` to automatically bootstrap [GitHub Spec Kit](https://github.github.io/spec-kit/installation.html) (`.specify/`) |
+| **Bundled skills** | Shipped under `src/skills/` (from [skills.sh](https://skills.sh)–style sources). To refresh after cloning: run `make build-skills` at the repo root, then commit if you vendor updates. |
 
 ## Installation
 

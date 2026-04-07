@@ -7,6 +7,8 @@ set -euo pipefail
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/config.sh"
 source "$FLOWAI_HOME/src/core/session.sh"
+source "$FLOWAI_HOME/src/core/mcp-json.sh"
+source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
@@ -62,6 +64,83 @@ fi
 
 export FLOWAI_DIR
 export FLOWAI_HOME
+
+# ── Self-healing dependency check ────────────────────────────────────────────
+if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+  log_header "FlowAI Setup Check"
+
+  _dep_ok()   { printf '  %-14s %s\n' "$1" "${GREEN}✓${RESET} ok"; }
+  _dep_warn() { printf '  %-14s %s\n' "$1" "${YELLOW}⚠${RESET}  $2"; }
+  _dep_fail() { printf '  %-14s %s\n' "$1" "${RED}✗${RESET}  $2"; }
+
+  for dep in tmux jq gum; do
+    if command -v "$dep" >/dev/null 2>&1; then
+      _dep_ok "$dep"
+    else
+      _dep_fail "$dep" "not found — install: brew install $dep"
+    fi
+  done
+
+  # Node.js — needed for skills.sh and MCP via npx
+  if command -v node >/dev/null 2>&1; then
+    _dep_ok "node"
+  else
+    if [ -t 0 ] && command -v brew >/dev/null 2>&1; then
+      _dep_warn "node" "required for skills and MCP"
+      printf '\n'
+      if command -v gum >/dev/null 2>&1; then
+        if gum confirm "  Install Node.js via Homebrew now?"; then
+          if brew install node; then
+            _dep_ok "node"
+          else
+            _dep_fail "node" "install failed — visit https://nodejs.org"
+          fi
+        fi
+      else
+        read -r -p "  Install Node.js via Homebrew? [Y/n]: " _ans < /dev/tty || true
+        if [[ ! "$_ans" =~ ^[nN] ]]; then
+          if brew install node; then
+            _dep_ok "node"
+          else
+            _dep_fail "node" "install failed"
+          fi
+        fi
+      fi
+    else
+      _dep_warn "node" "not found — install via https://nodejs.org for skills/MCP support"
+    fi
+  fi
+
+  # Spec Kit — auto-repair silently
+  specify_health="$(flowai_specify_health "$PWD")"
+  case "$specify_health" in
+    ok)
+      _dep_ok "Spec Kit"
+      ;;
+    seeded)
+      _dep_warn "Spec Kit" "using bundled seed — run: uvx ... specify init . to upgrade"
+      ;;
+    *)
+      _dep_warn "Spec Kit" "repairing..."
+      flowai_specify_repair "$PWD"
+      # Re-check to show accurate state (ok or seeded)
+      specify_health="$(flowai_specify_health "$PWD")"
+      if [[ "$specify_health" == "ok" ]]; then
+        _dep_ok "Spec Kit"
+      else
+        _dep_warn "Spec Kit" "using bundled seed (offline)"
+      fi
+      ;;
+  esac
+
+  # Initialise mcp.json from config if not yet present
+  MCP_JSON="$FLOWAI_DIR/mcp.json"
+  if [[ ! -f "$MCP_JSON" ]]; then
+    flowai_mcp_emit_runtime_json > "$MCP_JSON" 2>/dev/null || true
+  fi
+
+  printf '\n'
+fi
 
 SESSION="$(flowai_session_name "$PWD")"
 export SESSION

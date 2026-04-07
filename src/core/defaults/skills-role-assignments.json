@@ -1,0 +1,28 @@
+{
+  "backend-engineer": [
+    "systematic-debugging",
+    "test-driven-development",
+    "executing-plans",
+    "finishing-a-development-branch"
+  ],
+  "frontend-engineer": [
+    "executing-plans",
+    "verification-before-completion"
+  ],
+  "qa-engineer": [
+    "test-driven-development",
+    "verification-before-completion"
+  ],
+  "reviewer": [
+    "requesting-code-review",
+    "verification-before-completion",
+    "systematic-debugging"
+  ],
+  "team-lead": [
+    "writing-plans"
+  ],
+  "master": [
+    "writing-plans",
+    "subagent-driven-development"
+  ]
+}
