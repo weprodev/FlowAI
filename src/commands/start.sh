@@ -64,6 +64,19 @@ fi
 
 export FLOWAI_DIR
 export FLOWAI_HOME
+export FLOWAI_CONFIG="$FLOWAI_DIR/config.json"
+
+# ── Config model validation (strict vs models-catalog.json) ───────────────────
+if [[ "${FLOWAI_SKIP_CONFIG_VALIDATE:-0}" != "1" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+  # shellcheck source=src/core/config-validate.sh
+  source "$FLOWAI_HOME/src/core/config-validate.sh"
+  if ! flowai_config_validate_models; then
+    log_error "Model validation failed — fix .flowai/config.json or extend models-catalog.json."
+    printf '%s\n' "  Run: flowai config validate   ·   flowai models list <tool>"
+    printf '%s\n' "  Skip (not recommended): FLOWAI_SKIP_CONFIG_VALIDATE=1 or FLOWAI_ALLOW_UNKNOWN_MODEL=1"
+    exit 1
+  fi
+fi
 
 # ── Self-healing dependency check ────────────────────────────────────────────
 if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then

@@ -75,9 +75,11 @@ flowai_specify_ensure() {
 
   if command -v uv >/dev/null 2>&1; then
     log_info "Installing Spec Kit (non-interactive)..."
-    # --ai suppresses the editor/model picker entirely
-    if (cd "$root" && uvx --from git+https://github.com/github/spec-kit.git \
-        specify init . --ai "$agent" --script sh 2>/dev/null); then
+    # --ai suppresses the editor/model picker; finite y's answer "merge into non-empty dir?" without SIGPIPE
+    # from `yes|head` breaking pipefail while uvx still exits 0.
+    # shellcheck disable=SC2016
+    if (cd "$root" && set -o pipefail && { printf 'y\n%.0s' {1..120}; } | uvx --from git+https://github.com/github/spec-kit.git \
+        specify init . --ai "$agent" --script sh); then
       if flowai_specify_is_present "$root"; then
         log_success "Spec Kit initialized."
         return 0

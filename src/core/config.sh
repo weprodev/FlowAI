@@ -5,6 +5,9 @@
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export FLOWAI_CONFIG="${FLOWAI_DIR}/config.json"
 
+# shellcheck disable=SC1091
+[[ -n "${FLOWAI_HOME:-}" ]] && source "$FLOWAI_HOME/src/core/models-catalog.sh"
+
 flowai_cfg_read() {
   local jq_path="$1"
   local default_val="$2"
@@ -61,5 +64,36 @@ flowai_cfg_role_model() {
 }
 
 flowai_cfg_default_model() {
-  flowai_cfg_read '.default_model' 'gpt-4o'
+  local d="gemini-2.5-pro"
+  if declare -F flowai_models_catalog_default_for_tool >/dev/null 2>&1; then
+    d="$(flowai_models_catalog_default_for_tool gemini)"
+    [[ -z "$d" ]] && d="gemini-2.5-pro"
+  fi
+  flowai_cfg_read '.default_model' "$d"
+}
+
+# Default model id when tool is claude (must match models-catalog.json).
+flowai_cfg_claude_default_model() {
+  local d="sonnet"
+  if declare -F flowai_models_catalog_default_for_tool >/dev/null 2>&1; then
+    d="$(flowai_models_catalog_default_for_tool claude)"
+    [[ -z "$d" ]] && d="sonnet"
+  fi
+  flowai_cfg_read '.claude_default_model' "$d"
+}
+
+# Pick a safe default for the selected vendor CLI.
+flowai_cfg_default_model_for_tool() {
+  local tool="${1:-gemini}"
+  case "$tool" in
+    claude)
+      flowai_cfg_claude_default_model
+      ;;
+    gemini)
+      flowai_cfg_default_model
+      ;;
+    *)
+      flowai_cfg_default_model
+      ;;
+  esac
 }

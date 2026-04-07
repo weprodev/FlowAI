@@ -85,3 +85,34 @@ flowai_test_s_cli_006() {
   flowai_test_assert_combined_contains "Unknown phase" "UC-CLI-006" || return
   flowai_test_pass "UC-CLI-006" "flowai run <unknown> exits 1"
 }
+
+# UC-CLI-027 / tests/usecases/027-cli-config-validate-ok.md
+flowai_test_s_cli_027() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-027" "flowai config validate happy path"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-027" || return
+
+  flowai_test_invoke_in_dir "$tmp" config validate
+  flowai_test_assert_rc 0 "UC-CLI-027" || return
+  flowai_test_assert_combined_contains "matches models-catalog" "UC-CLI-027" || return
+
+  flowai_test_pass "UC-CLI-027" "flowai config validate exits 0 on fresh init config"
+}
+
+# UC-CLI-025 / tests/usecases/025-cli-models-list.md
+flowai_test_s_cli_025() {
+  flowai_test_invoke models list
+  flowai_test_assert_rc 0 "UC-CLI-025" || return
+  flowai_test_assert_combined_contains "Valid models: gemini" "UC-CLI-025" || return
+  flowai_test_assert_combined_contains "gemini-2.5-pro" "UC-CLI-025" || return
+  flowai_test_assert_combined_contains "Valid models: claude" "UC-CLI-025" || return
+  flowai_test_assert_combined_contains "sonnet" "UC-CLI-025" || return
+  flowai_test_pass "UC-CLI-025" "flowai models list prints catalog for gemini and claude"
+}

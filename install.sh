@@ -47,7 +47,7 @@ if command -v rsync >/dev/null 2>&1; then
 else
   $SUDO rm -rf "$INSTALL_DIR"
   $SUDO mkdir -p "$INSTALL_DIR"
-  for item in bin src VERSION LICENSE README.md install.sh; do
+  for item in bin src models-catalog.json VERSION LICENSE README.md install.sh; do
     if [[ -e "$FLOWAI_SRC/$item" ]]; then
       $SUDO cp -R "$FLOWAI_SRC/$item" "$INSTALL_DIR/"
     fi

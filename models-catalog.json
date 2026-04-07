@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "note": "Repo-root catalog: add new tool keys and model ids here when vendors ship updates. FLOWAI_ALLOW_UNKNOWN_MODEL=1 skips strict checks in flowai config validate / flowai start and in phase runs for gemini/claude. FLOWAI_SKIP_CONFIG_VALIDATE=1 skips only the start/validate gate. FLOWAI_HOME must contain this file.",
+  "tools": {
+    "claude": {
+      "default_id": "sonnet",
+      "doc": "https://code.claude.com/docs/en/cli-reference",
+      "models": [
+        { "id": "default", "kind": "alias", "description": "Recommended default for your account" },
+        { "id": "best", "kind": "alias", "description": "Most capable available" },
+        { "id": "sonnet", "kind": "alias", "description": "Latest Sonnet" },
+        { "id": "opus", "kind": "alias", "description": "Latest Opus" },
+        { "id": "haiku", "kind": "alias", "description": "Fast Haiku" },
+        { "id": "sonnet[1m]", "kind": "alias", "description": "Sonnet, 1M context" },
+        { "id": "opus[1m]", "kind": "alias", "description": "Opus, 1M context" },
+        { "id": "opusplan", "kind": "alias", "description": "Opus for planning, Sonnet for execution" },
+        { "id": "claude-sonnet-4-6", "kind": "full_name", "description": "Sonnet 4.6" },
+        { "id": "claude-opus-4-6", "kind": "full_name", "description": "Opus 4.6" },
+        { "id": "claude-opus-4-5-20251101", "kind": "full_name", "description": "Opus 4.5 dated" },
+        { "id": "claude-haiku-4-5-20251001", "kind": "full_name", "description": "Haiku 4.5 dated" },
+        { "id": "claude-sonnet-4-5-20250929", "kind": "full_name", "description": "Sonnet 4.5 dated" }
+      ]
+    },
+    "gemini": {
+      "default_id": "gemini-2.5-pro",
+      "doc": "https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/model.md",
+      "models": [
+        { "id": "gemini-2.5-pro", "kind": "stable", "description": "Complex reasoning" },
+        { "id": "gemini-2.5-flash", "kind": "stable", "description": "Faster, lighter" },
+        { "id": "gemini-2.5-flash-lite", "kind": "stable", "description": "Lowest latency / cost" },
+        { "id": "gemini-3-pro-preview", "kind": "preview", "description": "Preview; account-dependent" },
+        { "id": "gemini-3-flash-preview", "kind": "preview", "description": "Preview flash" }
+      ]
+    },
+    "cursor": {
+      "default_id": "default",
+      "doc": "https://cursor.com/docs/cli/overview",
+      "models_doc": "https://cursor.com/docs/models",
+      "note": "FlowAI tool=cursor only prints prompts for paste into Cursor; it does not pass model flags to a subprocess. Cursor itself routes chat/agent to many provider models (Anthropic, OpenAI, Google, xAI, etc.); names in the app change with your plan and Cursor version. Use Cursor Settings → Models (or https://cursor.com/docs/models) for the authoritative list. CLI: https://cursor.com/docs/cli/using · Composer 2: https://cursor.com/docs/models/cursor-composer-2",
+      "models": [
+        { "id": "default", "kind": "cursor", "description": "Follow whatever model is selected in Cursor Settings / Agent (recommended)" },
+        { "id": "composer-2", "kind": "composer", "description": "Composer 2 family — see Cursor models doc" },
+        { "id": "cursor-small", "kind": "cursor", "description": "Cursor fast/free-tier style model when offered" },
+        { "id": "claude-sonnet", "kind": "anthropic", "description": "Anthropic Sonnet line in Cursor (exact label varies, e.g. Sonnet 4.x)" },
+        { "id": "claude-opus", "kind": "anthropic", "description": "Anthropic Opus line in Cursor" },
+        { "id": "claude-haiku", "kind": "anthropic", "description": "Anthropic Haiku / fast Claude in Cursor" },
+        { "id": "gpt-4o", "kind": "openai", "description": "OpenAI GPT-4o when enabled for your account" },
+        { "id": "gpt-4.1", "kind": "openai", "description": "OpenAI GPT-4.1 family when shown in picker" },
+        { "id": "o3", "kind": "openai", "description": "OpenAI reasoning models (o3 / o3-mini, etc.) when available" },
+        { "id": "o1", "kind": "openai", "description": "OpenAI o1 family when available" },
+        { "id": "gemini-2.5-pro", "kind": "google", "description": "Google Gemini Pro-class in Cursor when connected" },
+        { "id": "gemini-2.5-flash", "kind": "google", "description": "Google Gemini Flash in Cursor when connected" },
+        { "id": "grok-2", "kind": "xai", "description": "xAI Grok when offered in Cursor" },
+        { "id": "deepseek-v3", "kind": "third_party", "description": "DeepSeek and other hosted models Cursor may expose (Fireworks, etc.)" }
+      ]
+    }
+  }
+}

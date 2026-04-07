@@ -10,6 +10,7 @@ specs/
 *~
 
 # IDEs & Editors
+.claude/
 .vscode/
 .cursor/
 .idea/
@@ -20,6 +21,7 @@ specs/
 .DS_Store
 .AppleDouble
 .LSOverride
+.history/
 Icon
 
 # Test data / Caches

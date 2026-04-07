@@ -103,7 +103,7 @@ flowai_test_assert_rc() {
   local id="${2:-}"
   if [[ "${FLOWAI_TEST_RC:-}" != "$want" ]]; then
     printf 'FAIL %s: expected exit %s, got %s\n' "$id" "$want" "${FLOWAI_TEST_RC:-}" >&2
-    printf '--- stdout ---\n%s\n--- stderr ---\n%s\n' "$FLOWAI_TEST_STDOUT" "$FLOWAI_TEST_STDERR" >&2
+    printf -- '--- stdout ---\n%s\n--- stderr ---\n%s\n' "$FLOWAI_TEST_STDOUT" "$FLOWAI_TEST_STDERR" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
     return 1
   fi

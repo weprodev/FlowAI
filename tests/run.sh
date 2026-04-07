@@ -52,6 +52,11 @@ flowai_test_s_cli_021
 flowai_test_s_cli_022
 flowai_test_s_cli_023
 flowai_test_s_cli_024
+flowai_test_s_cli_025
+flowai_test_s_cli_026
+flowai_test_s_cli_027
+flowai_test_s_cli_028
+flowai_test_s_cli_029
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

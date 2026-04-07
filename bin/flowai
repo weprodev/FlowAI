@@ -48,6 +48,8 @@ Commands:
   ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET})
   ${CYAN}skill${RESET}       Manage agent skills  (${CYAN}flowai skill add / apply / remove${RESET})
   ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
+  ${CYAN}models${RESET}      List valid model ids per tool (from bundled catalog)
+  ${CYAN}config${RESET}      Validate project config (${CYAN}flowai config validate${RESET})
   ${CYAN}version${RESET}     Print FlowAI version (for bug reports)
 
 Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${RESET}
@@ -58,6 +60,8 @@ Examples:
   flowai skill add obra/superpowers/systematic-debugging
   flowai skill add context7 obra/superpowers/systematic-debugging
   flowai mcp add github
+  flowai models list
+  flowai config validate
   flowai run plan
 EOF
 }
@@ -88,6 +92,12 @@ case "$cmd" in
     ;;
   mcp)
     bash "$FLOWAI_HOME/src/commands/mcp.sh" "$@"
+    ;;
+  models)
+    bash "$FLOWAI_HOME/src/commands/models.sh" "$@"
+    ;;
+  config)
+    bash "$FLOWAI_HOME/src/commands/config.sh" "$@"
     ;;
   run)
     phase="${1:-}"

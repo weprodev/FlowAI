@@ -422,3 +422,72 @@ flowai_test_s_cli_024() {
 
   flowai_test_pass "UC-CLI-024" "flowai mcp list creates minimal mcp.json from config"
 }
+
+# UC-CLI-026 / tests/usecases/026-cli-models-catalog-validation.md
+flowai_test_s_cli_026() {
+  local tmp out
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/.flowai"
+  printf '{}\n' >"$tmp/.flowai/config.json"
+  # shellcheck disable=SC2016
+  out="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
+    source "$FLOWAI_HOME/src/core/config.sh"
+    source "$FLOWAI_HOME/src/core/ai.sh"
+    flowai_ai_resolve_model_for_tool gemini "not-a-real-model-xyz"
+  ' 2>/dev/null)"
+  if [[ "$out" != *"gemini-2.5-pro"* ]]; then
+    printf 'FAIL UC-CLI-026: expected catalog fallback gemini-2.5-pro in stdout, got %q\n' "$out" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+  flowai_test_pass "UC-CLI-026" "unknown gemini model id falls back to catalog default"
+}
+
+# UC-CLI-028 / tests/usecases/028-cli-config-validate-invalid-model.md
+flowai_test_s_cli_028() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-028" "config validate rejects bad model"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-028" || return
+
+  jq '.roles["backend-engineer"].model = "___invalid_model_not_in_catalog___"' "$tmp/.flowai/config.json" >"$tmp/.flowai/config.json.new"
+  mv "$tmp/.flowai/config.json.new" "$tmp/.flowai/config.json"
+
+  flowai_test_invoke_in_dir "$tmp" config validate
+  flowai_test_assert_rc 1 "UC-CLI-028" || return
+  flowai_test_assert_combined_contains "Invalid model" "UC-CLI-028" || return
+  flowai_test_assert_combined_contains "models list" "UC-CLI-028" || return
+
+  flowai_test_pass "UC-CLI-028" "flowai config validate exits 1 when role model not in catalog"
+}
+
+# UC-CLI-029 / tests/usecases/029-cli-start-validates-models.md
+flowai_test_s_cli_029() {
+  if ! command -v jq >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq or tmux not installed)\n' "UC-CLI-029" "start fails when config models invalid"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  tmp="$(cd "$tmp" && pwd)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-029" || return
+
+  jq '.master.model = "___bad_master_model___"' "$tmp/.flowai/config.json" >"$tmp/.flowai/config.json.new"
+  mv "$tmp/.flowai/config.json.new" "$tmp/.flowai/config.json"
+
+  flowai_test_invoke_in_dir_env "$tmp" FLOWAI_HOME="$FLOWAI_HOME" FLOWAI_TESTING=0 "$FLOWAI_BIN" start --headless
+  flowai_test_assert_rc 1 "UC-CLI-029" || return
+  flowai_test_assert_combined_contains "Model validation failed" "UC-CLI-029" || return
+
+  flowai_test_pass "UC-CLI-029" "flowai start --headless exits 1 when model ids fail catalog validation"
+}
