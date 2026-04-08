@@ -6,6 +6,7 @@ This is the comprehensive manual for operating the FlowAI terminal orchestrator.
 
 | Command                               | Purpose                                                                  |
 | ------------------------------------- | ------------------------------------------------------------------------ |
+| `fai`                                 | **Short name** for the same binary as `flowai` — `bin/fai` is a **symlink** to `bin/flowai` (not a second script). `install.sh` also adds `/usr/local/bin/fai` → `…/bin/flowai`. |
 | `flowai init`                         | Creates `.flowai/` and bootstraps Spec Kit (`.specify/`) via `uvx`       |
 | `flowai start`                        | Boots `tmux` session (pass `--headless` to skip prompt and run detached) |
 | `flowai kill` / `flowai stop`         | End session (interactively prompts for confirmation if UI available)     |

@@ -56,11 +56,14 @@ fi
 
 $SUDO chmod -R a+rX "$INSTALL_DIR"
 $SUDO chmod +x "$INSTALL_DIR/bin/flowai"
+# Same script as flowai — short name only (symlink, not a second file).
+$SUDO sh -c "cd \"$INSTALL_DIR/bin\" && ln -sf flowai fai"
 $SUDO ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/flowai"
+$SUDO ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/fai"
 
 if [[ "$IS_NETWORK_INSTALL" -eq 1 ]]; then
   rm -rf "$FLOWAI_SRC"
 fi
 
 echo -e "\n${BOLD}${GREEN}✅ FlowAI installed.${RESET}"
-echo -e "Try: ${BOLD}flowai init${RESET} inside a git project, then ${BOLD}flowai start${RESET}."
+echo -e "Try: ${BOLD}flowai init${RESET} (or ${BOLD}fai init${RESET}) inside a git project, then ${BOLD}flowai start${RESET}."

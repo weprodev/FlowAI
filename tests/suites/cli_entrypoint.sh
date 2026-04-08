@@ -9,6 +9,7 @@ flowai_test_s_cli_001() {
   flowai_test_assert_rc 1 "UC-CLI-001" || return
   flowai_test_assert_combined_contains "Usage" "UC-CLI-001" || return
   flowai_test_assert_combined_contains "FlowAI" "UC-CLI-001" || return
+  flowai_test_assert_combined_contains "tip: run as fai" "UC-CLI-001" || return
   flowai_test_pass "UC-CLI-001" "flowai with no args prints usage and exits 1"
 }
 
@@ -17,6 +18,7 @@ flowai_test_s_cli_002() {
   flowai_test_invoke help
   flowai_test_assert_rc 0 "UC-CLI-002" || return
   flowai_test_assert_combined_contains "Usage" "UC-CLI-002" || return
+  flowai_test_assert_combined_contains "tip: run as fai" "UC-CLI-002" || return
   flowai_test_pass "UC-CLI-002" "flowai help exits 0 and shows usage"
 }
 
@@ -25,6 +27,7 @@ flowai_test_s_cli_003() {
   flowai_test_invoke -h
   flowai_test_assert_rc 0 "UC-CLI-003" || return
   flowai_test_assert_combined_contains "FlowAI" "UC-CLI-003" || return
+  flowai_test_assert_combined_contains "tip: run as fai" "UC-CLI-003" || return
   flowai_test_pass "UC-CLI-003" "flowai -h exits 0 and shows usage"
 }
 
@@ -33,6 +36,7 @@ flowai_test_s_cli_007() {
   flowai_test_invoke --help
   flowai_test_assert_rc 0 "UC-CLI-007" || return
   flowai_test_assert_combined_contains "FlowAI" "UC-CLI-007" || return
+  flowai_test_assert_combined_contains "tip: run as fai" "UC-CLI-007" || return
   flowai_test_pass "UC-CLI-007" "flowai --help exits 0 and shows usage"
 }
 
@@ -115,4 +119,38 @@ flowai_test_s_cli_025() {
   flowai_test_assert_combined_contains "Valid models: claude" "UC-CLI-025" || return
   flowai_test_assert_combined_contains "sonnet" "UC-CLI-025" || return
   flowai_test_pass "UC-CLI-025" "flowai models list prints catalog for gemini and claude"
+}
+
+# UC-CLI-030 / tests/usecases/030-cli-fai-short-alias.md
+flowai_test_s_cli_030() {
+  flowai_test_assert_path_exists "$FLOWAI_HOME/bin/fai" "UC-CLI-030" || return
+  local ver out err
+  ver="$(head -n1 "$FLOWAI_HOME/VERSION" 2>/dev/null | tr -d '\r' || true)"
+  out="$(mktemp)"
+  err="$(mktemp)"
+  set +e
+  (cd "$FLOWAI_HOME" && FLOWAI_TESTING=1 ./bin/fai version) >"$out" 2>"$err"
+  local rc=$?
+  set -e
+  FLOWAI_TEST_RC=$rc
+  FLOWAI_TEST_STDOUT="$(cat "$out")"
+  FLOWAI_TEST_STDERR="$(cat "$err")"
+  FLOWAI_TEST_COMBINED="$(cat "$out" "$err")"
+  rm -f "$out" "$err"
+  flowai_test_assert_rc 0 "UC-CLI-030" || return
+  flowai_test_assert_combined_contains "$ver" "UC-CLI-030" || return
+
+  out="$(mktemp)"
+  err="$(mktemp)"
+  set +e
+  (cd "$FLOWAI_HOME" && FLOWAI_TESTING=1 ./bin/fai help) >"$out" 2>"$err"
+  rc=$?
+  set -e
+  FLOWAI_TEST_RC=$rc
+  FLOWAI_TEST_COMBINED="$(cat "$out" "$err")"
+  rm -f "$out" "$err"
+  flowai_test_assert_rc 0 "UC-CLI-030" || return
+  flowai_test_assert_combined_contains "short for flowai" "UC-CLI-030" || return
+
+  flowai_test_pass "UC-CLI-030" "fai is an alias for flowai (version + help banner)"
 }

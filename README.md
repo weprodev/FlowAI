@@ -46,7 +46,7 @@ make install
 
 ```bash
 cd /path/to/your/repo
-flowai init
+flowai init   # or: fai init
 flowai start
 ```
 
