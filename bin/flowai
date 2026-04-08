@@ -14,6 +14,9 @@ FLOWAI_HOME="$(CDPATH="" cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)
 export FLOWAI_HOME
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 
+# Avoid inherited BOLD/CYAN/RESET from the environment (can break ANSI if set to literal "\033...").
+unset BOLD CYAN GREEN YELLOW RED RESET 2>/dev/null || true
+
 # shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
 # shellcheck source=src/core/version.sh
@@ -49,7 +52,7 @@ Commands:
   ${CYAN}skill${RESET}       Manage agent skills  (${CYAN}flowai skill add / apply / remove${RESET})
   ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
   ${CYAN}models${RESET}      List valid model ids per tool (from bundled catalog)
-  ${CYAN}config${RESET}      Validate project config (${CYAN}flowai config validate${RESET})
+  ${CYAN}validate${RESET}    Check project config vs models-catalog.json (alias: ${CYAN}flowai config validate${RESET})
   ${CYAN}version${RESET}     Print FlowAI version (for bug reports)
 
 Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${RESET}
@@ -61,7 +64,7 @@ Examples:
   flowai skill add context7 obra/superpowers/systematic-debugging
   flowai mcp add github
   flowai models list
-  flowai config validate
+  flowai validate
   flowai run plan
 EOF
 }
@@ -95,6 +98,9 @@ case "$cmd" in
     ;;
   models)
     bash "$FLOWAI_HOME/src/commands/models.sh" "$@"
+    ;;
+  validate)
+    bash "$FLOWAI_HOME/src/commands/config.sh" validate "$@"
     ;;
   config)
     bash "$FLOWAI_HOME/src/commands/config.sh" "$@"

@@ -9,11 +9,11 @@ SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLOWAI_SRC="$(CDPATH="" cd "$SCRIPT_DIR" && pwd)"
 IS_NETWORK_INSTALL=0
 
-BOLD="\033[1m"
-GREEN="\033[32m"
-CYAN="\033[36m"
-YELLOW="\033[33m"
-RESET="\033[0m"
+BOLD=$'\033[1m'
+GREEN=$'\033[32m'
+CYAN=$'\033[36m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
 
 echo -e "${BOLD}${CYAN}Installing FlowAI...${RESET}"
 

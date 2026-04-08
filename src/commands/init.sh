@@ -113,10 +113,10 @@ if [[ "${FLOWAI_TESTING:-0}" != "1" ]] && [[ -f "$FLOWAI_DIR/config.json" ]]; th
   # shellcheck source=src/core/config-validate.sh
   source "$FLOWAI_HOME/src/core/config-validate.sh"
   if ! flowai_config_validate_models; then
-    log_warn "Model fields do not match models-catalog.json — run: flowai config validate"
+    log_warn "Model fields do not match models-catalog.json — run: flowai validate"
   fi
 fi
 
 log_success "FlowAI is ready."
 log_info "Next: customize $FLOWAI_DIR/config.json and optionally copy roles from $FLOWAI_HOME/src/roles/"
-log_info "Then run: flowai config validate && flowai start"
+log_info "Then run: flowai validate && flowai start"

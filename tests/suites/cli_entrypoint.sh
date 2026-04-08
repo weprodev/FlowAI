@@ -89,7 +89,7 @@ flowai_test_s_cli_006() {
 # UC-CLI-027 / tests/usecases/027-cli-config-validate-ok.md
 flowai_test_s_cli_027() {
   if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-027" "flowai config validate happy path"
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-027" "flowai validate happy path"
     return 0
   fi
   local tmp
@@ -99,11 +99,11 @@ flowai_test_s_cli_027() {
   flowai_test_invoke_in_dir "$tmp" init
   flowai_test_assert_rc 0 "UC-CLI-027" || return
 
-  flowai_test_invoke_in_dir "$tmp" config validate
+  flowai_test_invoke_in_dir "$tmp" validate
   flowai_test_assert_rc 0 "UC-CLI-027" || return
   flowai_test_assert_combined_contains "matches models-catalog" "UC-CLI-027" || return
 
-  flowai_test_pass "UC-CLI-027" "flowai config validate exits 0 on fresh init config"
+  flowai_test_pass "UC-CLI-027" "flowai validate exits 0 on fresh init config"
 }
 
 # UC-CLI-025 / tests/usecases/025-cli-models-list.md

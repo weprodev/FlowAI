@@ -10,7 +10,7 @@ status: implemented
 
 ## Intent
 
-Same rules as `flowai config validate`, enforced before tmux starts (non-test runs).
+Same rules as `flowai validate`, enforced before tmux starts (non-test runs).
 
 ## Preconditions (Given)
 

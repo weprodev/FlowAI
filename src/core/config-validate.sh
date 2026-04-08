@@ -35,7 +35,40 @@ flowai_config_check_model_pair() {
   fi
 
   log_error "Invalid model '$model' at $label — not in models-catalog.json for tool '$tool'. Run: flowai models list $tool"
+  flowai_config_hint_model_wrong_tool "$tool" "$model" "$label"
   return 1
+}
+
+# If this id exists under a different tool in the catalog, explain (e.g. gpt-4o under cursor vs gemini).
+flowai_config_hint_model_wrong_tool() {
+  local expect_tool="$1" model="$2" label="$3"
+  local tline hint_tools=()
+
+  while IFS= read -r tline; do
+    [[ -z "$tline" ]] && continue
+    if [[ "$tline" != "$expect_tool" ]]; then
+      hint_tools+=("$tline")
+    fi
+  done < <(flowai_models_catalog_tools_listing_model "$model")
+
+  ((${#hint_tools[@]})) || return 0
+
+  local joined="" sep=""
+  for tline in "${hint_tools[@]}"; do
+    joined+="${sep}${tline}"
+    sep=", "
+  done
+
+  local msg
+  msg="Hint: '$model' is listed for tool(s): $joined — not for '$expect_tool'."
+  if [[ "$label" == *"default_model"* ]]; then
+    msg+=" Field default_model is only for the Gemini CLI; use a gemini id from flowai models list gemini (or move Cursor/OpenAI ids to master/roles with tool cursor)."
+  elif [[ "$label" == "master" ]]; then
+    msg+=" Set .master.tool to one of [$joined] if you meant that CLI, or choose a model id from flowai models list $expect_tool."
+  else
+    msg+=" Set roles.<role>.tool to match the vendor CLI, or pick an id from flowai models list $expect_tool."
+  fi
+  log_warn "$msg"
 }
 
 # Validate default_model (gemini), claude_default_model (claude), master, and roles.*.

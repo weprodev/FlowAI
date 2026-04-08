@@ -6,7 +6,7 @@ automated_test: flowai_test_s_cli_027
 status: implemented
 ---
 
-# UC-CLI-027 — `flowai config validate` (happy path)
+# UC-CLI-027 — `flowai validate` (happy path)
 
 ## Intent
 
@@ -15,7 +15,7 @@ After `flowai init`, model-related fields should pass validation against `models
 ## Action (When)
 
 ```bash
-flowai config validate
+flowai validate
 ```
 
 ## Expected outcome (Then)

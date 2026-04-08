@@ -6,7 +6,7 @@ automated_test: flowai_test_s_cli_028
 status: implemented
 ---
 
-# UC-CLI-028 — `flowai config validate` rejects unknown model ids
+# UC-CLI-028 — `flowai validate` rejects unknown model ids
 
 ## Intent
 
@@ -19,7 +19,7 @@ Manual edits to `.flowai/config.json` must be caught before phases run.
 ## Action (When)
 
 ```bash
-flowai config validate
+flowai validate
 ```
 
 ## Expected outcome (Then)

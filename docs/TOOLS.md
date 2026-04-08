@@ -21,7 +21,7 @@ flowai models list claude
 flowai models list cursor
 ```
 
-`flowai init` copies **`default_id`** from that file into `default_model`, `claude_default_model`, and each role’s `model` for new projects. After manual edits, run **`flowai config validate`**; **`flowai start`** also runs the same checks (fail-fast) in normal use.
+`flowai init` copies **`default_id`** from that file into `default_model`, `claude_default_model`, and each role’s `model` for new projects. After manual edits, run **`flowai validate`**; **`flowai start`** also runs the same checks (fail-fast) in normal use.
 
 ### Config keys
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "note": "Repo-root catalog: add new tool keys and model ids here when vendors ship updates. FLOWAI_ALLOW_UNKNOWN_MODEL=1 skips strict checks in flowai config validate / flowai start and in phase runs for gemini/claude. FLOWAI_SKIP_CONFIG_VALIDATE=1 skips only the start/validate gate. FLOWAI_HOME must contain this file.",
+  "note": "Repo-root catalog: add new tool keys and model ids here when vendors ship updates. FLOWAI_ALLOW_UNKNOWN_MODEL=1 skips strict checks in flowai validate / flowai start and in phase runs for gemini/claude. FLOWAI_SKIP_CONFIG_VALIDATE=1 skips only the start/validate gate. FLOWAI_HOME must contain this file.",
   "tools": {
     "claude": {
       "default_id": "sonnet",

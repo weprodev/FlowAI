@@ -72,7 +72,7 @@ if [[ "${FLOWAI_SKIP_CONFIG_VALIDATE:-0}" != "1" ]] && [[ "${FLOWAI_TESTING:-0}"
   source "$FLOWAI_HOME/src/core/config-validate.sh"
   if ! flowai_config_validate_models; then
     log_error "Model validation failed — fix .flowai/config.json or extend models-catalog.json."
-    printf '%s\n' "  Run: flowai config validate   ·   flowai models list <tool>"
+    printf '%s\n' "  Run: flowai validate   ·   flowai models list <tool>"
     printf '%s\n' "  Skip (not recommended): FLOWAI_SKIP_CONFIG_VALIDATE=1 or FLOWAI_ALLOW_UNKNOWN_MODEL=1"
     exit 1
   fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FlowAI — project configuration helpers
-# Usage: flowai config validate
+# Usage: flowai validate   (alias: flowai config validate)
 # shellcheck shell=bash
 
 set -euo pipefail
@@ -20,19 +20,19 @@ shift || true
 case "$subcmd" in
   validate)
     if ! flowai_config_validate_models; then
-      printf '%s\n' "  Tip: use ids from flowai models list <tool>, or set FLOWAI_ALLOW_UNKNOWN_MODEL=1 to allow unlisted ids."
+      log_info "Tip: use ids from flowai models list <tool>, or set FLOWAI_ALLOW_UNKNOWN_MODEL=1 to allow unlisted ids."
       exit 1
     fi
     log_success "Model configuration matches models-catalog.json"
     ;;
   -h|--help|help)
-    printf '%s\n' "Usage: flowai config validate"
+    printf '%s\n' "Usage: flowai validate   (same as: flowai config validate)"
     printf '%s\n' "  Checks default_model, claude_default_model, master, and roles.* against models-catalog.json."
     printf '%s\n' "  FLOWAI_ALLOW_UNKNOWN_MODEL=1 — warn only, exit 0."
     ;;
   *)
     log_error "Unknown config subcommand: ${subcmd:-}"
-    printf '%s\n' "Usage: flowai config validate"
+    printf '%s\n' "Usage: flowai validate   (same as: flowai config validate)"
     exit 1
     ;;
 esac

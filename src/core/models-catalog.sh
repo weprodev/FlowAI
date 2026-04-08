@@ -54,3 +54,18 @@ flowai_models_catalog_contains() {
   jq -e --arg t "$tool" --arg m "$model" \
     '.tools[$t].models | map(.id) | index($m) != null' "$f" >/dev/null 2>&1
 }
+
+# Print one tool key per line where this model id appears (may be empty if unknown everywhere).
+flowai_models_catalog_tools_listing_model() {
+  local model="$1"
+  local f
+  f="$(flowai_models_catalog_path)"
+  [[ -f "$f" ]] || return 0
+  [[ -n "$model" ]] || return 0
+  jq -r --arg m "$model" '
+    [ .tools | to_entries[]
+      | select(.value.models != null)
+      | select((.value.models | map(.id) | index($m)) != null)
+      | .key ] | unique | .[]
+  ' "$f" 2>/dev/null
+}

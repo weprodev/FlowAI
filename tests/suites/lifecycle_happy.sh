@@ -447,7 +447,7 @@ flowai_test_s_cli_026() {
 # UC-CLI-028 / tests/usecases/028-cli-config-validate-invalid-model.md
 flowai_test_s_cli_028() {
   if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-028" "config validate rejects bad model"
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-028" "validate rejects bad model"
     return 0
   fi
   local tmp
@@ -460,12 +460,12 @@ flowai_test_s_cli_028() {
   jq '.roles["backend-engineer"].model = "___invalid_model_not_in_catalog___"' "$tmp/.flowai/config.json" >"$tmp/.flowai/config.json.new"
   mv "$tmp/.flowai/config.json.new" "$tmp/.flowai/config.json"
 
-  flowai_test_invoke_in_dir "$tmp" config validate
+  flowai_test_invoke_in_dir "$tmp" validate
   flowai_test_assert_rc 1 "UC-CLI-028" || return
   flowai_test_assert_combined_contains "Invalid model" "UC-CLI-028" || return
   flowai_test_assert_combined_contains "models list" "UC-CLI-028" || return
 
-  flowai_test_pass "UC-CLI-028" "flowai config validate exits 1 when role model not in catalog"
+  flowai_test_pass "UC-CLI-028" "flowai validate exits 1 when role model not in catalog"
 }
 
 # UC-CLI-029 / tests/usecases/029-cli-start-validates-models.md

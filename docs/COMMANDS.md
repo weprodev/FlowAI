@@ -14,7 +14,7 @@ This is the comprehensive manual for operating the FlowAI terminal orchestrator.
 | `flowai help`                         | Global commands and usage overview                                       |
 | `flowai version` / `flowai --version` | Version from `VERSION` (use in bug reports)                              |
 | `flowai models list` [claude\|gemini\|cursor\|all] | Print valid model ids from repo-root `models-catalog.json` |
-| `flowai config validate` | Check `default_model`, `claude_default_model`, `master`, and `roles.*` against the catalog |
+| `flowai validate` | Check `default_model`, `claude_default_model`, `master`, and `roles.*` against the catalog (alias: `flowai config validate`) |
 
 ---
 
@@ -44,6 +44,6 @@ If it fails over the network or `uv` is unavailable, you can explicitly configur
 | `default_model` | Default Gemini model when a role omits `model` |
 | `claude_default_model` | Default Claude Code model when a role omits `model` or uses an invalid OpenAI-style id with `tool: "claude"` |
 
-**Before `flowai start`:** model fields are validated against **`models-catalog.json`** (unless `FLOWAI_TESTING=1`, `FLOWAI_SKIP_CONFIG_VALIDATE=1`, or `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). Run **`flowai config validate`** after editing `.flowai/config.json`.
+**Before `flowai start`:** model fields are validated against **`models-catalog.json`** (unless `FLOWAI_TESTING=1`, `FLOWAI_SKIP_CONFIG_VALIDATE=1`, or `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). Run **`flowai validate`** after editing `.flowai/config.json`.
 
 At **run time**, invalid Gemini/Claude ids are still corrected in `flowai_ai_run` with a warning (same escape hatch: `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). See [Supported AI Tools](TOOLS.md).
