@@ -59,7 +59,7 @@ _skill_config_add_assignment() {
     if (.skills.role_assignments[$role] | index($skill)) == null then
       .skills.role_assignments[$role] += [$skill]
     else . end
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json"
+  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
 }
 
 _skill_config_remove_assignment() {
@@ -70,7 +70,7 @@ _skill_config_remove_assignment() {
     .skills.role_assignments //= {} |
     .skills.role_assignments |= (to_entries |
       map(.value -= [$skill]) | from_entries)
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json"
+  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
 }
 
 # ─── list ─────────────────────────────────────────────────────────────────────

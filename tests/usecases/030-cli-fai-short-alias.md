@@ -8,7 +8,7 @@ status: implemented
 
 # UC-CLI-030 — `fai` short alias matches `flowai`
 
-Users can invoke **`fai`** (Flow + AI) as a shortcut for **`flowai`**. **`bin/fai`** is a **symlink** to **`bin/flowai`** — one script on disk. The same subcommands apply; **`fai help`** shows a green banner line that mentions the alias.
+Users can invoke **`fai`** (Flow + AI) as a shortcut for **`flowai`**. **`bin/fai`** is a **symlink** to **`bin/flowai`** — one script on disk. **`install.sh`** creates **`fai`** under the install prefix and in **`/usr/local/bin`**. The same subcommands apply; **`fai help`** shows a green banner line that mentions the alias.
 
 ## Preconditions
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "note": "Repo-root catalog: add new tool keys and model ids here when vendors ship updates. FLOWAI_ALLOW_UNKNOWN_MODEL=1 skips strict checks in flowai validate / flowai start and in phase runs for gemini/claude. FLOWAI_SKIP_CONFIG_VALIDATE=1 skips only the start/validate gate. FLOWAI_HOME must contain this file.",
+  "note": "Add tool entries and model ids here when vendors ship updates. See docs/TOOLS.md for config keys and escape hatches.",
   "tools": {
     "claude": {
       "default_id": "sonnet",
@@ -52,6 +52,19 @@
         { "id": "gemini-2.5-flash", "kind": "google", "description": "Google Gemini Flash in Cursor when connected" },
         { "id": "grok-2", "kind": "xai", "description": "xAI Grok when offered in Cursor" },
         { "id": "deepseek-v3", "kind": "third_party", "description": "DeepSeek and other hosted models Cursor may expose (Fireworks, etc.)" }
+      ]
+    },
+    "copilot": {
+      "default_id": "claude-3.5-sonnet",
+      "doc": "https://docs.github.com/en/copilot/github-copilot-in-the-cli",
+      "note": "GitHub Copilot connects to models securely managed by GitHub. Model availability may depend on your Copilot tier (e.g., Free vs Pro vs Enterprise).",
+      "models": [
+        { "id": "default", "kind": "github", "description": "Default GitHub Copilot routing" },
+        { "id": "claude-3.5-sonnet", "kind": "anthropic", "description": "Anthropic Claude 3.5 Sonnet (Recommended by GitHub)" },
+        { "id": "gpt-4o", "kind": "openai", "description": "OpenAI GPT-4o" },
+        { "id": "gemini-1.5-pro", "kind": "google", "description": "Google Gemini 1.5 Pro" },
+        { "id": "o1-preview", "kind": "openai", "description": "OpenAI o1-preview (reasoning)" },
+        { "id": "o1-mini", "kind": "openai", "description": "OpenAI o1-mini (fast reasoning)" }
       ]
     }
   }

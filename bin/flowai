@@ -5,7 +5,8 @@
 set -euo pipefail
 
 # Invocation name: `flowai` vs `fai` (bin/fai is a symlink to this file — one script).
-export FLOWAI_INVOKED_AS="${FLOWAI_INVOKED_AS:-$(basename "${BASH_SOURCE[0]}")}"
+# Always derive from BASH_SOURCE (basename); do not use FLOWAI_INVOKED_AS from the environment.
+export FLOWAI_INVOKED_AS="$(basename "${BASH_SOURCE[0]}")"
 
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do

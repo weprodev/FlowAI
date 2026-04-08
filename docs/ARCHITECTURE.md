@@ -1,79 +1,89 @@
-# FlowAI Architecture Blueprint
+# FlowAI Architecture
 
-FlowAI is built on **Domain-Driven Design (DDD)** and the Unix philosophy. It aggressively isolates the orchestration engine (the driver) from the vendor tools (the implementers).
+FlowAI is built on the Unix philosophy and Domain-Driven Design. The orchestration engine is intentionally decoupled from vendor AI tools — adding a new tool touches only two files.
 
-## The Orchestration Loop
-
-Currently, FlowAI operates inside a `tmux` session. 
-
-```mermaid
-flowchart TD
-    subgraph FlowAITerminal["Tmux Session (FlowAI Orchestrator)"]
-        direction TB
-        Master["Master Agent<br/>(Coordinator)"]
-        
-        subgraph Phases["Phase Injection (Isolated Context)"]
-            direction LR
-            Plan["1. Plan"] --> Impl["2. Implement"] --> Verify["3. Review"]
-        end
-
-        Master -->|"Delegates Work"| Phases
-        
-        subgraph Guardrails["Security Guardrails"]
-            Gum["Terminal UI (Gum)"]
-            Editor["Manual file review ($EDITOR)"]
-        end
-        
-        Phases -->|"Proposes Changes"| Guardrails
-        Guardrails -->|"Human Approval"| Files[(Local Filesystem)]
-    end
-```
-
-1. **The Master Agent**: Governs the core terminal window, deciding which phase to execute next.
-2. **Phase Injection**: Standard Bash files (like `plan.sh` and `implement.sh`) receive isolated prompts and execute strictly constrained loops.
-3. **Guardrails**: No AI agent is permitted to hijack the editor or UI natively. Output is verified strictly through `$EDITOR` via explicit terminal approval mechanisms (`gum pager`).
-
----
-
-## Evolution Roadmap
-
-FlowAI is designed toward enterprise-grade scaling. The following modules form the core of our mid-term architectural evolution:
+## Pipeline
 
 ```mermaid
 flowchart LR
-    subgraph FlowAI_v2["FlowAI Scalable Orchestrator"]
-        direction TB
-        Master2["Master Agent"]
-        
-        subgraph parallelDAG["Parallel Distributed Execution"]
-            direction LR
-            Pane1["Tmux Pane 1<br/>(Backend)"]
-            Pane2["Tmux Pane 2<br/>(Frontend)"]
-        end
-        
-        Master2 -->|"Spins up jobs"| parallelDAG
-    end
-
-    subgraph ExpansionLayers["Native Integrations"]
-        MCP["MCP Servers<br/>(Real-time Context)"]
-        VCS["GitHub / GitLab<br/>(CI Log Interception)"]
-    end
-    
-    MCP -.->|"Supplies Intelligence"| Master2
-    VCS -.->|"Supplies Error Logs"| parallelDAG
+    Spec["Spec\n(Master role)"] --> Plan --> Tasks --> Impl["Implement"] --> Review
 ```
 
-### 1. Model Context Protocol (MCP) Integration
-Instead of injecting monolithic text prompts dynamically through Bash processing, FlowAI will intercept native [Model Context Protocol (MCP)](https://github.com/microsoft/model-context-protocol) services.
-- **Goal**: Allow the Planning phase to query an MCP endpoint for localized architectural context (e.g., retrieving exact TypeScript AST structures natively before proposing edits).
-- **Wiring**: Future `flowai.json` configurations will define `mcp_servers` that `run.sh` bounds to the session context cleanly.
+Each phase runs in its own tmux pane, waits for the upstream `.ready` signal, invokes the AI, then blocks for human approval before emitting its own `.ready` signal.
 
-### 2. Version Control System (VCS) Integrations
-The orchestrator must break beyond local filesystems and map seamlessly to automated continuous deployments.
-- **Goal**: Full integration with **GitHub PRs** and **GitLab MRs**.
-- **Wiring**: The Spec Kit (`.specify/`) currently scaffolds features. FlowAI will expand internal phases (`flowai run review`) to pull isolated CI logs from GitHub Actions directly into the Terminal for the AI implementation layer to automatically revise broken commits.
+## Session Layout
 
-### 3. Distributed Parallel DAG Phases
-Currently, FlowAI operates in a strict procedural loop (Plan -> Implement -> Verify).
-- **Goal**: Break large features into decoupled dependency graphs.
-- **Wiring**: Future orchestrator versions will support spinning up localized `tmux` windows operating concurrently on distinct features, merging their Git states safely before the final Review phase.
+```mermaid
+flowchart TD
+    subgraph Session["Tmux Session"]
+        direction TB
+        Master["Master Agent\n(Coordinator)"]
+
+        subgraph Phases["Pipeline Panes"]
+            direction LR
+            Plan --> Tasks --> Impl --> Review
+        end
+
+        Master -->|"Drives spec phase"| Phases
+
+        subgraph Gates["Human Approval Gates"]
+            Gum["Terminal UI (gum)"]
+            Editor["$EDITOR / pager"]
+        end
+
+        Phases -->|"Artifact produced"| Gates
+        Gates -->|"Approved → .ready signal"| Phases
+    end
+```
+
+## Tool Plugin System
+
+AI tools are self-contained plugins in `src/tools/<name>.sh`. Each plugin defines two functions:
+
+- `flowai_tool_<name>_print_models()` — used by `flowai models list`
+- `flowai_tool_<name>_run()` — called by the phase dispatcher in `src/core/ai.sh`
+
+The dispatcher uses `declare -F` to resolve the function dynamically — no hardcoded tool list exists anywhere in the engine. Adding a new tool requires only:
+
+1. `src/tools/<name>.sh` with both plugin functions
+2. An entry in `models-catalog.json` with a `default_id` and `models[]` list
+
+Test `UC-CLI-033` enforces this contract on every CI run.
+
+## Signal Coordination
+
+Phases synchronise via marker files in `.flowai/signals/`:
+
+| File | Meaning |
+|------|---------|
+| `<phase>.ready` | Phase approved; downstream may start |
+| `<phase>.reject` | Human rejected; awaiting revision signal |
+| `<phase>.revision.ready` | Revision complete; phase retries |
+
+`flowai_phase_wait_for` polls for `.ready` every 2 seconds, respects `SIGINT` (clean exit 130), and enforces `FLOWAI_PHASE_TIMEOUT_SEC` when set.
+
+## Source Layout
+
+```
+bin/            flowai, fai
+src/
+  core/         ai.sh, config.sh, phase.sh, log.sh, skills.sh, models-catalog.sh
+  tools/        gemini.sh, claude.sh, cursor.sh, copilot.sh   ← tool plugins
+  phases/       spec.sh, plan.sh, tasks.sh, implement.sh, review.sh
+  commands/     init.sh, start.sh, models.sh, mcp.sh, skill.sh, validate.sh …
+  roles/        master.md, backend-engineer.md, reviewer.md, team-lead.md …
+  skills/       <skill-name>/SKILL.md
+  bootstrap/    specify.sh
+models-catalog.json   ← canonical tool + model registry
+```
+
+## Roadmap
+
+### MCP Integration
+Phase agents will query MCP servers for live project context (e.g., TypeScript AST, API schemas) instead of relying on injected text prompts. Configured via `.flowai/config.json` → `mcp.servers`.
+
+### VCS Integration
+`flowai run review` will optionally pull CI logs from GitHub Actions / GitLab CI into the Review pane, allowing the agent to iterate on broken commits without human copy-paste.
+
+### Parallel DAG Execution
+Currently phases are sequential. A future executor will allow phases to depend on each other in a directed acyclic graph, enabling parallel backend/frontend implementation panes that merge before Review.

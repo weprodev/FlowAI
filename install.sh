@@ -15,7 +15,7 @@ CYAN=$'\033[36m'
 YELLOW=$'\033[33m'
 RESET=$'\033[0m'
 
-echo -e "${BOLD}${CYAN}Installing FlowAI...${RESET}"
+printf '%b%s%b\n' "${BOLD}${CYAN}" "Installing FlowAI..." "${RESET}"
 
 INSTALL_DIR="/usr/local/flowai"
 BIN_DIR="/usr/local/bin"
@@ -65,5 +65,5 @@ if [[ "$IS_NETWORK_INSTALL" -eq 1 ]]; then
   rm -rf "$FLOWAI_SRC"
 fi
 
-echo -e "\n${BOLD}${GREEN}✅ FlowAI installed.${RESET}"
-echo -e "Try: ${BOLD}flowai init${RESET} (or ${BOLD}fai init${RESET}) inside a git project, then ${BOLD}flowai start${RESET}."
+printf '\n%b%s%b\n' "${BOLD}${GREEN}" "✅ FlowAI installed." "${RESET}"
+printf 'Try: %bflowai init%b (or %bfai init%b) inside a git project, then %bflowai start%b.\n' "${BOLD}" "${RESET}" "${BOLD}" "${RESET}" "${BOLD}" "${RESET}"

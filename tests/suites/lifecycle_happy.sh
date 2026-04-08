@@ -112,11 +112,14 @@ flowai_test_s_cli_018() {
   flowai_test_assert_rc 1 "UC-CLI-018" || return
   flowai_test_assert_combined_contains "Invalid JSON" "UC-CLI-018" || return
 
-  flowai_test_invoke_in_dir "$tmp" start --headless
-  flowai_test_assert_rc 1 "UC-CLI-018" || return
-  flowai_test_assert_combined_contains "Invalid JSON" "UC-CLI-018" || return
+  # flowai start requires tmux — only assert the JSON check when tmux is present
+  if command -v tmux >/dev/null 2>&1; then
+    flowai_test_invoke_in_dir "$tmp" start --headless
+    flowai_test_assert_rc 1 "UC-CLI-018" || return
+    flowai_test_assert_combined_contains "Invalid JSON" "UC-CLI-018" || return
+  fi
 
-  flowai_test_pass "UC-CLI-018" "invalid .flowai/config.json fails init and start with clear error"
+  flowai_test_pass "UC-CLI-018" "invalid .flowai/config.json fails init (and start when tmux present) with clear error"
 }
 
 # UC-CLI-022 / tests/usecases/022-cli-not-initialized.md
@@ -490,4 +493,194 @@ flowai_test_s_cli_029() {
   flowai_test_assert_combined_contains "Model validation failed" "UC-CLI-029" || return
 
   flowai_test_pass "UC-CLI-029" "flowai start --headless exits 1 when model ids fail catalog validation"
+}
+
+# UC-CLI-031 / tests/usecases/031-cli-models-list-help.md
+# Guards: models.sh help path — was crashing with 'local' at file scope.
+flowai_test_s_cli_031() {
+  flowai_test_invoke models list -h
+  flowai_test_assert_rc 0 "UC-CLI-031" || return
+  flowai_test_assert_combined_contains "Usage" "UC-CLI-031" || return
+
+  flowai_test_invoke models list --help
+  flowai_test_assert_rc 0 "UC-CLI-031" || return
+
+  flowai_test_invoke models list help
+  flowai_test_assert_rc 0 "UC-CLI-031" || return
+
+  flowai_test_pass "UC-CLI-031" "flowai models list -h/--help/help exits 0 and shows usage"
+}
+
+# UC-CLI-032 / tests/usecases/032-cli-models-list-unknown-tool.md
+# Guards: models.sh unknown-tool error path — was crashing with 'local' at file scope.
+flowai_test_s_cli_032() {
+  flowai_test_invoke models list __not_a_real_tool_xyz__
+  flowai_test_assert_rc 1 "UC-CLI-032" || return
+  flowai_test_assert_combined_contains "Unknown" "UC-CLI-032" || return
+  flowai_test_pass "UC-CLI-032" "flowai models list <unknown-tool> exits 1 with error"
+}
+
+# UC-CLI-033 / tests/usecases/033-cli-catalog-plugin-contract.md
+# THE OCP GUARDIAN: every tool in models-catalog.json must have a plugin file
+# that defines both flowai_tool_<name>_print_models() and flowai_tool_<name>_run().
+# This test would have caught the copilot gap immediately.
+# Adding a new tool and forgetting the plugin will fail here — not at runtime.
+flowai_test_s_cli_033() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-033" "catalog-to-plugin OCP contract"
+    return 0
+  fi
+
+  local catalog="$FLOWAI_HOME/models-catalog.json"
+  if [[ ! -f "$catalog" ]]; then
+    printf 'FAIL UC-CLI-033: models-catalog.json not found at %q\n' "$catalog" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  local err=0
+  local tool_name
+  while IFS= read -r tool_name; do
+    [[ -z "$tool_name" ]] && continue
+
+    local plugin_file="$FLOWAI_HOME/src/tools/${tool_name}.sh"
+
+    # 1. Plugin file must exist
+    if [[ ! -f "$plugin_file" ]]; then
+      printf 'FAIL UC-CLI-033: tool %q in models-catalog.json has no src/tools/%s.sh\n' \
+        "$tool_name" "$tool_name" >&2
+      err=$((err + 1))
+      continue
+    fi
+
+    # 2. flowai_tool_<name>_print_models() must be defined
+    if ! grep -q "^flowai_tool_${tool_name}_print_models()" "$plugin_file" 2>/dev/null; then
+      printf 'FAIL UC-CLI-033: src/tools/%s.sh missing flowai_tool_%s_print_models()\n' \
+        "$tool_name" "$tool_name" >&2
+      err=$((err + 1))
+    fi
+
+    # 3. flowai_tool_<name>_run() must be defined (the critical dispatcher contract)
+    if ! grep -q "^flowai_tool_${tool_name}_run()" "$plugin_file" 2>/dev/null; then
+      printf 'FAIL UC-CLI-033: src/tools/%s.sh missing flowai_tool_%s_run()\n' \
+        "$tool_name" "$tool_name" >&2
+      err=$((err + 1))
+    fi
+
+  done < <(jq -r '.tools | keys[]' "$catalog" 2>/dev/null)
+
+  if [[ "$err" -gt 0 ]]; then
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  flowai_test_pass "UC-CLI-033" "all catalog tools have src/tools/<name>.sh with _print_models() and _run()"
+}
+
+# UC-CLI-034 / tests/usecases/034-cli-run-review-contract.md
+# Guards: review phase SKIP_AI guard (was missing) and approval loop contract.
+flowai_test_s_cli_034() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-034" "flowai run review contract"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-034" || return
+
+  mkdir -p "$tmp/specs/feat-review"
+  printf 'ok\n' >"$tmp/specs/feat-review/spec.md"
+  printf 'ok\n' >"$tmp/specs/feat-review/tasks.md"
+  mkdir -p "$tmp/.flowai/signals"
+  touch "$tmp/.flowai/signals/impl.ready"
+
+  flowai_test_invoke_in_dir_env "$tmp" FLOWAI_TEST_SKIP_AI=1 "$FLOWAI_BIN" run review
+  flowai_test_assert_rc 0 "UC-CLI-034" || return
+  flowai_test_assert_combined_contains "contract test" "UC-CLI-034" || return
+
+  flowai_test_pass "UC-CLI-034" "flowai run review contract (SKIP_AI) exits 0 after fixture"
+}
+
+# UC-CLI-035 / tests/usecases/035-cli-multi-spec-dir-test-mode.md
+# Guards: multi-spec-dir resolution does NOT prompt/hang in test/CI mode.
+flowai_test_s_cli_035() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-035" "multi-spec-dir test mode auto-select"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-035" || return
+
+  # Two spec dirs — both need spec.md so the plan phase can resolve the feature dir
+  mkdir -p "$tmp/specs/feature-a"
+  mkdir -p "$tmp/specs/feature-b"
+  printf 'ok\n' >"$tmp/specs/feature-a/spec.md"
+  printf 'ok\n' >"$tmp/specs/feature-b/spec.md"
+  mkdir -p "$tmp/.flowai/signals"
+  touch "$tmp/.flowai/signals/spec.ready"
+
+  # FLOWAI_TESTING=1 is set by tests/run.sh — the phase must auto-select without prompting
+  flowai_test_invoke_in_dir_env "$tmp" FLOWAI_TEST_SKIP_AI=1 "$FLOWAI_BIN" run plan
+  flowai_test_assert_rc 0 "UC-CLI-035" || return
+  # Must NOT have printed the interactive prompt — test mode must stay silent on multi-dir
+  flowai_test_assert_combined_not_contains "please choose one" "UC-CLI-035" || return
+
+  flowai_test_pass "UC-CLI-035" "multiple spec dirs: test mode auto-selects newest without prompting"
+}
+
+# UC-CLI-036 — flowai run tasks contract (SKIP_AI)
+# Guards: tasks.sh previously had no FLOWAI_TEST_SKIP_AI guard.
+flowai_test_s_cli_036() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-036" "flowai run tasks contract"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-036" || return
+
+  mkdir -p "$tmp/specs/feat-tasks"
+  printf 'ok\n' >"$tmp/specs/feat-tasks/spec.md"
+  printf 'ok\n' >"$tmp/specs/feat-tasks/plan.md"
+  mkdir -p "$tmp/.flowai/signals"
+  touch "$tmp/.flowai/signals/plan.ready"
+
+  flowai_test_invoke_in_dir_env "$tmp" FLOWAI_TEST_SKIP_AI=1 "$FLOWAI_BIN" run tasks
+  flowai_test_assert_rc 0 "UC-CLI-036" || return
+  flowai_test_assert_combined_contains "contract test" "UC-CLI-036" || return
+
+  flowai_test_pass "UC-CLI-036" "flowai run tasks contract (SKIP_AI) exits 0 after fixture"
+}
+
+# UC-CLI-037 — flowai run spec contract (SKIP_AI)
+# Guards: spec.sh previously had no FLOWAI_TEST_SKIP_AI guard.
+flowai_test_s_cli_037() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-037" "flowai run spec contract"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-037" || return
+
+  mkdir -p "$tmp/specs/feat-spec"
+
+  flowai_test_invoke_in_dir_env "$tmp" FLOWAI_TEST_SKIP_AI=1 "$FLOWAI_BIN" run spec
+  flowai_test_assert_rc 0 "UC-CLI-037" || return
+  flowai_test_assert_combined_contains "contract test" "UC-CLI-037" || return
+
+  flowai_test_pass "UC-CLI-037" "flowai run spec contract (SKIP_AI) exits 0 after fixture"
 }

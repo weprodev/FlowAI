@@ -1,50 +1,68 @@
 # FlowAI Commands Reference
 
-This is the comprehensive manual for operating the FlowAI terminal orchestrator.
-
 ## Core Commands
 
-| Command                               | Purpose                                                                  |
-| ------------------------------------- | ------------------------------------------------------------------------ |
-| `fai`                                 | **Short name** for the same binary as `flowai` — `bin/fai` is a **symlink** to `bin/flowai` (not a second script). `install.sh` also adds `/usr/local/bin/fai` → `…/bin/flowai`. |
-| `flowai init`                         | Creates `.flowai/` and bootstraps Spec Kit (`.specify/`) via `uvx`       |
-| `flowai start`                        | Boots `tmux` session (pass `--headless` to skip prompt and run detached) |
-| `flowai kill` / `flowai stop`         | End session (interactively prompts for confirmation if UI available)     |
-| `flowai status`                       | List tmux windows if a session exists                                    |
-| `flowai run`                          | Menu to select a phase to run (or pass directly, e.g. `flowai run spec`) |
-| `flowai help`                         | Global commands and usage overview                                       |
-| `flowai version` / `flowai --version` | Version from `VERSION` (use in bug reports)                              |
-| `flowai models list` [claude\|gemini\|cursor\|all] | Print valid model ids from repo-root `models-catalog.json` |
-| `flowai validate` | Check `default_model`, `claude_default_model`, `master`, and `roles.*` against the catalog (alias: `flowai config validate`) |
+| Command | Purpose |
+|---------|---------|
+| `fai` | Short alias for `flowai` — `bin/fai` symlinks to `bin/flowai`. |
+| `flowai init` | Initialise `.flowai/` and bootstrap Spec Kit (`.specify/`) via `uvx`. |
+| `flowai start [--headless]` | Boot the tmux session. `--headless` skips the attach prompt (CI-safe). |
+| `flowai kill` / `flowai stop` | Terminate the session. |
+| `flowai status` | List tmux windows for the current session. |
+| `flowai run [<phase>]` | Run a pipeline phase. Omit `<phase>` for an interactive menu. |
+| `flowai models list [<tool>\|all]` | Print valid model ids from `models-catalog.json`. Tools: `gemini`, `claude`, `cursor`, `copilot`, `all`. |
+| `flowai validate` | Check `.flowai/config.json` model fields against `models-catalog.json`. Alias: `flowai config validate`. |
+| `flowai mcp list` | Emit `.flowai/mcp.json` from configured MCP servers. |
+| `flowai skill add \| remove \| list` | Manage skills assigned to pipeline roles. |
+| `flowai help` | Global usage overview. |
+| `flowai version` / `--version` | Print version string from `VERSION`. |
+
+---
+
+## Pipeline Phases
+
+Run individually with `flowai run <phase>` or all together via `flowai start`:
+
+| Phase | Command | Waits for |
+|-------|---------|-----------|
+| Spec | `flowai run spec` | _(none — first phase)_ |
+| Plan | `flowai run plan` | `spec.ready` |
+| Tasks | `flowai run tasks` | `plan.ready` |
+| Implement | `flowai run impl` | `tasks.ready` |
+| Review | `flowai run review` | `impl.ready` |
+
+Each phase runs the AI, then prompts for human approval before emitting its `.ready` signal. Rejecting returns to the AI loop after a revision signal.
 
 ---
 
 ## Technical Internals
 
-### Interactive vs Headless Routing
-Most `flowai` commands check standard input `[ -t 0 ]` to determine if they are running in an interactive terminal.
-If executed under CI or `FLOWAI_TESTING=1`, `gum` menus and confirmations are automatically safely bypassed to prevent deadlocking.
+### Interactive vs Headless
+
+Commands check `[ -t 0 ]` for TTY presence. Under CI or `FLOWAI_TESTING=1`, gum menus and confirmations are bypassed to prevent deadlocks.
 
 ### Spec Kit (Specify) Integration
-FlowAI requires Spec Kit to handle upstream feature branch and issue automation. `flowai init` will automatically attempt to bootstrap it via `uv`:
+
+`flowai init` bootstraps Spec Kit via:
 
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init . --script sh
 ```
 
-If it fails over the network or `uv` is unavailable, you can explicitly configure Spec Kit [manually](https://github.github.io/spec-kit/installation.html).
+Falls back to a bundled seed when the network or `uv` is unavailable.
 
-### Configuration (models and tools)
+### Configuration
 
-`.flowai/config.json` drives which CLI and model each phase uses:
+`.flowai/config.json` controls which CLI and model each phase uses. See [TOOLS.md](TOOLS.md) for the full key reference and model resolution order.
 
-| Key | Purpose |
-|-----|---------|
-| `master.tool` / `master.model` | Master (and spec) phase |
-| `roles.<id>.tool` / `roles.<id>.model` | Pipeline roles (plan, tasks, impl, review map via `pipeline`) |
-| `default_model` | Default Gemini model when a role omits `model` |
-| `claude_default_model` | Default Claude Code model when a role omits `model` or uses an invalid OpenAI-style id with `tool: "claude"` |
+**Before `flowai start`:** model fields are validated against `models-catalog.json` (unless `FLOWAI_TESTING=1`, `FLOWAI_SKIP_CONFIG_VALIDATE=1`, or `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). Run **`flowai validate`** after editing the config.
 
-**Before `flowai start`:** model fields are validated against **`models-catalog.json`** (unless `FLOWAI_TESTING=1`, `FLOWAI_SKIP_CONFIG_VALIDATE=1`, or `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). Run **`flowai validate`** after editing `.flowai/config.json`.
+### Environment Variables
 
-At **run time**, invalid Gemini/Claude ids are still corrected in `flowai_ai_run` with a warning (same escape hatch: `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). See [Supported AI Tools](TOOLS.md).
+| Variable | Purpose |
+|----------|---------|
+| `FLOWAI_ALLOW_UNKNOWN_MODEL=1` | Skip catalog model validation at runtime. |
+| `FLOWAI_SKIP_CONFIG_VALIDATE=1` | Skip start-time config validation only. |
+| `FLOWAI_PHASE_TIMEOUT_SEC=N` | Hard timeout (seconds) for phase signal waits. `0` = unlimited (default). |
+| `FLOWAI_TESTING=1` | Enable CI mode: bypass gum, auto-select dirs, skip dependency checks. |
+| `FLOWAI_TEST_SKIP_AI=1` | Contract-test mode: phase scripts exit 0 before invoking AI. |

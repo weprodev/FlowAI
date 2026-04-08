@@ -11,8 +11,8 @@ RESET  := \033[0m
 
 help:
 	@printf "$(BOLD)FlowAI Makefile commands:$(RESET)\n\n"
-	@printf "  $(CYAN)make install$(RESET)        Install FlowAI globally (/usr/local/bin)\n"
-	@printf "  $(CYAN)make audit$(RESET)          Run linters, automated test harness, and AI review\n"
+	@printf "  $(CYAN)make install$(RESET)        Install FlowAI globally (/usr/local/bin; creates flowai + fai symlinks)\n"
+	@printf "  $(CYAN)make audit$(RESET)          Lint → deterministic CLI harness → optional AI review (verify-ai)\n"
 	@printf "  $(CYAN)make build-skills$(RESET)   Fetch/refresh bundled skills from skills.sh sources\n\n"
 
 install:
@@ -21,6 +21,9 @@ install:
 # Application use cases: specs in tests/usecases/ — see tests/usecases/README.md
 test:
 	@bash tests/run.sh
+
+# Convenience alias (CI / habit): same as `make test` here.
+check: test
 
 # Only binding check (verbose); does not run the harness
 verify-usecases:
@@ -41,7 +44,11 @@ lint:
 		printf "$(YELLOW)╰──────────────────────────────────────────────────────╯$(RESET)\n\n"; \
 	fi
 
-audit: lint verify-ai
+# Sequential gate: lint, then tests/run.sh, then optional LLM smoke (verify-ai).
+audit:
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) verify-ai
 
 # Fetch/refresh bundled skills from their upstream sources.
 # Run this when upstream skills are updated; commit the result.

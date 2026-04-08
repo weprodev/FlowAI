@@ -22,8 +22,8 @@ flowai_specify_health() {
     return
   fi
   if [[ -f "$root/.specify/scripts/bash/common.sh" ]]; then
-    # Distinguish real Spec Kit from our seed
-    if grep -q "seeded_by.*flowai" "$root/.specify/memory/setup.json" 2>/dev/null; then
+    # Distinguish real Spec Kit from our seed using jq for reliable JSON parsing
+    if jq -e '.seeded_by // "" | test("flowai")' "$root/.specify/memory/setup.json" >/dev/null 2>&1; then
       echo "seeded"
     else
       echo "ok"

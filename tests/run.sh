@@ -8,12 +8,8 @@ set -euo pipefail
 
 TESTS_ROOT="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH="" cd "$TESTS_ROOT/.." && pwd)"
-# bin/fai → bin/flowai: prefer Makefile rule (order-only "|" prereq); else ln for bare ./tests/run.sh
-if command -v make >/dev/null 2>&1 && [[ -f "$REPO_ROOT/Makefile" ]]; then
-  make -C "$REPO_ROOT" -s bin/fai
-else
-  ( cd "$REPO_ROOT/bin" && ln -sf flowai fai )
-fi
+# bin/fai → bin/flowai for harness only (install.sh creates the same symlink under the install prefix).
+( cd "$REPO_ROOT/bin" && ln -sf flowai fai )
 export FLOWAI_HOME="$REPO_ROOT"
 export FLOWAI_TESTING=1
 
@@ -64,6 +60,13 @@ flowai_test_s_cli_027
 flowai_test_s_cli_028
 flowai_test_s_cli_029
 flowai_test_s_cli_030
+flowai_test_s_cli_031
+flowai_test_s_cli_032
+flowai_test_s_cli_033
+flowai_test_s_cli_034
+flowai_test_s_cli_035
+flowai_test_s_cli_036
+flowai_test_s_cli_037
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

@@ -16,27 +16,23 @@ if [[ -z "$FEATURE_DIR" ]]; then
   exit 1
 fi
 
+if [[ "${FLOWAI_TEST_SKIP_AI:-}" == "1" ]]; then
+  log_info "FLOWAI_TEST_SKIP_AI=1 — skipping AI run (contract test)."
+  exit 0
+fi
+
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "review")"
-
-export INJECTED_PROMPT="$FLOWAI_DIR/launch/review_prompt.md"
-mkdir -p "$FLOWAI_DIR/launch"
-
-cat <<EOF > "$INJECTED_PROMPT"
-$(cat "$ROLE_FILE")
-
-IMPORTANT PIPELINE DIRECTIVE:
+DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Review (QA / quality).
 Your WORKING DIRECTORY is: $PWD
 
 CONTEXT — read tasks and verify the codebase:
   $FEATURE_DIR/tasks.md
 
-Run checks (tests, linters) as appropriate. Summarize findings or confirm clean.
-EOF
+Run checks (tests, linters) as appropriate. Summarize findings or confirm clean."
+
+INJECTED_PROMPT="$(flowai_phase_write_prompt "review" "$ROLE_FILE" "$DIRECTIVE")"
+export INJECTED_PROMPT
 
 log_info "Booting Review phase..."
-
-flowai_ai_run "review" "$INJECTED_PROMPT" "false"
-
-touch "$SIGNALS_DIR/review.ready"
-log_success "Review phase complete."
+flowai_phase_run_loop "review" "$INJECTED_PROMPT" "$FEATURE_DIR/tasks.md" "Review" "review"

@@ -16,24 +16,39 @@ fi
 log_info "Initializing FlowAI in $PWD..."
 
 FLOWAI_DIR="$PWD/.flowai"
+reconfigure="no"
 
 if [[ -d "$FLOWAI_DIR" ]] && [[ -f "$FLOWAI_DIR/config.json" ]]; then
   if ! jq -e . "$FLOWAI_DIR/config.json" >/dev/null 2>&1; then
     log_error "Invalid JSON in $FLOWAI_DIR/config.json — fix syntax before continuing."
     exit 1
   fi
-  log_warn ".flowai already exists — leaving config in place."
-else
-  if [[ -f "$PWD/.specify/memory/setup.json" ]]; then
+  
+  if [[ -t 0 ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+    printf "\n"
+    log_warn "FlowAI is already configured in this directory."
+    read -r -p "Do you want to re-configure it from scratch? [y/N]: " ans_reconfig
+    if [[ "$ans_reconfig" =~ ^[Yy]$ ]]; then
+      reconfigure="yes"
+    else
+      log_warn ".flowai already exists — leaving config in place."
+    fi
+  else
+    log_warn ".flowai already exists — leaving config in place."
+  fi
+fi
+
+if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reconfigure" == "yes" ]]; then
+  if [[ -f "$PWD/.specify/memory/setup.json" ]] && [[ "$reconfigure" == "no" ]]; then
     mkdir -p "$FLOWAI_DIR/roles"
     mkdir -p "$FLOWAI_DIR/signals"
     mkdir -p "$FLOWAI_DIR/launch"
     log_info "Migrating legacy .specify/memory/setup.json → .flowai/config.json"
     cp "$PWD/.specify/memory/setup.json" "$FLOWAI_DIR/config.json"
     jq '.' "$FLOWAI_DIR/config.json" >/dev/null
+    log_success "Wrote $FLOWAI_DIR/config.json"
   else
-    # Bootstrap Spec Kit while the tree is still empty-ish — avoids specify init blocking on "directory not empty"
-    # once .flowai/ and specs/ exist.
+    # Bootstrap Spec Kit while the tree is still empty-ish
     if [[ "${FLOWAI_TESTING:-0}" != "1" ]] && ! flowai_specify_is_present "$PWD"; then
       log_info "Bootstrapping Spec Kit (requires uv)..."
       flowai_specify_ensure "$PWD" || true
@@ -41,24 +56,101 @@ else
     mkdir -p "$FLOWAI_DIR/roles"
     mkdir -p "$FLOWAI_DIR/signals"
     mkdir -p "$FLOWAI_DIR/launch"
+
     _mc="$FLOWAI_HOME/models-catalog.json"
     _gdef="gemini-2.5-pro"
     _cdef="sonnet"
+    
+    declare -a tool_names=()
     if [[ -f "$_mc" ]]; then
+      while IFS= read -r t_name; do
+        [[ -n "$t_name" ]] && tool_names+=("$t_name")
+      done < <(jq -r '.tools | keys[]' "$_mc")
+      
       _gdef="$(jq -r '.tools.gemini.default_id // "gemini-2.5-pro"' "$_mc")"
       _cdef="$(jq -r '.tools.claude.default_id // "sonnet"' "$_mc")"
     fi
+    
+    if [ ${#tool_names[@]} -eq 0 ]; then
+      tool_names=("gemini" "claude" "cursor")
+    fi
+
+    # Wizard Variables Default Values
+    wizard_branch="main"
+    wizard_tool="${tool_names[0]}"
+    wizard_auto_approve="false"
+
+    # Interactive Setup Wizard
+    if [[ -t 0 ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+      log_header "FlowAI Configuration Wizard"
+      
+      # 1. Default Branch
+      printf "Select your default branch (used for new spec kit tasks):\n"
+      printf "  1) main\n"
+      printf "  2) master\n"
+      printf "  3) develop\n"
+      printf "  4) Custom...\n"
+      read -r -p "Enter Choice (1-4) [1]: " ans_b
+      case "$ans_b" in
+        2) wizard_branch="master" ;;
+        3) wizard_branch="develop" ;;
+        4) 
+           read -r -p "     Enter custom branch name: " c_branch
+           [[ -n "$c_branch" ]] && wizard_branch="$c_branch"
+           ;;
+        *) wizard_branch="main" ;;
+      esac
+      printf "\n"
+      
+      # 2. Primary Tool
+      printf "Select your primary AI Provider for roles (Master, Plan, Review):\n"
+      i=1
+      for t in "${tool_names[@]}"; do
+        printf "  %d) %s\n" "$i" "$t"
+        i=$((i + 1))
+      done
+      read -r -p "Enter Choice (1-${#tool_names[@]}) [1]: " ans_t
+      
+      if [[ "$ans_t" =~ ^[0-9]+$ ]] && [[ "$ans_t" -ge 1 ]] && [[ "$ans_t" -le "${#tool_names[@]}" ]]; then
+        wizard_tool="${tool_names[$(( ans_t - 1 ))]}"
+      else
+        wizard_tool="${tool_names[0]}"
+      fi
+      printf "\n"
+
+      # 3. Auto Approve
+      read -r -p "Enable auto-approval for safe shell commands? (Recommended: N) [y/N]: " ans_aa
+      if [[ "$ans_aa" =~ ^[Yy]$ ]]; then
+        wizard_auto_approve="true"
+      fi
+      printf "\n"
+    fi
+
+    # Determine default model based on selection
+    if [[ -f "$_mc" ]]; then
+      wizard_model="$(jq -r --arg t "$wizard_tool" '.tools[$t].default_id // "default"' "$_mc")"
+    else
+      if [ "$wizard_tool" = "gemini" ]; then wizard_model="$_gdef";
+      elif [ "$wizard_tool" = "claude" ]; then wizard_model="$_cdef";
+      else wizard_model="default"; fi
+    fi
+
     jq -n \
       --argjson ra "$(cat "$FLOWAI_HOME/src/core/defaults/skills-role-assignments.json")" \
       --arg gdef "$_gdef" \
       --arg cdef "$_cdef" \
+      --arg wbranch "$wizard_branch" \
+      --arg wtool "$wizard_tool" \
+      --arg wmodel "$wizard_model" \
+      --argjson waap "$wizard_auto_approve" \
       '{
         platform: "generic",
         default_model: $gdef,
         claude_default_model: $cdef,
-        master: { tool: "gemini", model: $gdef },
+        default_branch: $wbranch,
+        master: { tool: $wtool, model: $wmodel },
         layout: "dashboard",
-        auto_approve: false,
+        auto_approve: $waap,
         pipeline: {
           plan: "team-lead",
           tasks: "backend-engineer",
@@ -66,9 +158,9 @@ else
           review: "reviewer"
         },
         roles: {
-          "team-lead":        { tool: "gemini", model: $gdef },
-          "backend-engineer": { tool: "gemini", model: $gdef },
-          "reviewer":         { tool: "gemini", model: $gdef }
+          "team-lead":        { tool: $wtool, model: $wmodel },
+          "backend-engineer": { tool: $wtool, model: $wmodel },
+          "reviewer":         { tool: $wtool, model: $wmodel }
         },
         skills: { role_assignments: $ra },
         mcp: {
@@ -82,11 +174,10 @@ else
           }
         }
       }' > "$FLOWAI_DIR/config.json"
+
+    log_success "Wrote $FLOWAI_DIR/config.json"
   fi
-
-  log_success "Wrote $FLOWAI_DIR/config.json"
 fi
-
 
 mkdir -p "$PWD/specs"
 

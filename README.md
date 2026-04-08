@@ -39,9 +39,6 @@ Alternatively, if you cloned the repository, execute:
 make install
 ```
 
-- **Install location:** `/usr/local/flowai`, with `flowai` linked into `/usr/local/bin`.
-- **Development:** run `./bin/flowai` from the repo, or add `bin` to your `PATH` — no install required.
-
 ## Quick start (any project)
 
 ```bash
@@ -70,7 +67,7 @@ FlowAI is built for scale. To fully harness its capabilities, refer to our singl
 FlowAI behaviour is verified natively. From the repository root:
 
 ```bash
-make audit           # runs linters, deterministic harness, and optional LLM context review
+make audit           # lint → tests/run.sh → optional verify-ai (LLM smoke)
 ```
 
 ## License

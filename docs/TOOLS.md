@@ -1,45 +1,50 @@
-# FlowAI Supported Tools and Editors
+# FlowAI Supported Tools
 
-Set `master.tool` and `roles.<role-id>.tool` in `.flowai/config.json` to one of these **`tool` ids** (implemented in `src/core/ai.sh`):
+Set `master.tool` and `roles.<role-id>.tool` in `.flowai/config.json` to one of these **`tool` ids** (each implemented as a plugin in `src/tools/<name>.sh`):
 
-| `tool` id | Product | Where it runs | Behaviour in FlowAI |
-|-----------|---------|---------------|----------------------|
-| `gemini` | [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`) | Terminal | Full CLI session in the tmux pane; non-interactive phases use `-m <model> -y` when appropriate. |
-| `claude` | [Claude Code](https://github.com/anthropics/claude-code) (`claude`) | Terminal | Full CLI in the pane; pipeline phases use `--model` and `-p` for prompts; optional `--dangerously-skip-permissions` when `auto_approve` is true. |
-| `cursor` | [Cursor](https://cursor.com/) (app + [CLI](https://cursor.com/docs/cli/overview)) | Terminal + Cursor app | FlowAI **stays in the terminal**: the combined prompt is printed in the pane (paste into Composer/Agent as needed). Cursor itself can use **many** provider models (Anthropic, OpenAI, Google, etc.); see [Cursor models](https://cursor.com/docs/models). The catalog’s `cursor` entries are **labels you can mirror in config** for documentation — FlowAI does not pass `--model` for this tool. |
+| `tool` id | Product | Where it runs | FlowAI behaviour |
+|-----------|---------|---------------|-----------------|
+| `gemini`  | [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) | Terminal | Full CLI session in the tmux pane; non-interactive phases add `-m <model> -y`. |
+| `claude`  | [Claude Code](https://github.com/anthropics/claude-code) | Terminal | Full CLI in the pane; pipeline phases use `--model` and `-p`; `--dangerously-skip-permissions` when `auto_approve: true`. Optional MCP config via `--mcp-config` if `.flowai/mcp.json` exists. |
+| `cursor`  | [Cursor](https://cursor.com/) | Terminal + Cursor app | FlowAI prints the enriched prompt in the terminal for manual paste into Composer/Agent. Cursor routes internally to many providers; see [Cursor models](https://cursor.com/docs/models). |
+| `copilot` | [GitHub Copilot Chat](https://docs.github.com/en/copilot) | Terminal + Copilot Chat | FlowAI prints the prompt for paste into Copilot Chat (no headless CLI available). Model routing is managed by GitHub. |
+
+**Adding a new tool:** create `src/tools/<name>.sh` defining `flowai_tool_<name>_print_models()` and `flowai_tool_<name>_run()`, then add the `tools.<name>` entry to `models-catalog.json`. No other files need to change.
+
+---
 
 ## Models and `.flowai/config.json`
 
-### Bundled catalog (source of truth)
+### Bundled catalog
 
-FlowAI ships **`models-catalog.json`** at the **repository root** (copied next to `bin/` and `src/` when you install). For each `tool` it lists **valid model ids**, **`default_id`**, optional **`note`**, and links to vendor docs. Run:
+FlowAI ships **`models-catalog.json`** at the repository root. For each tool it lists valid model ids, a `default_id`, optional notes, and links to vendor docs. Inspect with:
 
 ```bash
-flowai models list
+flowai models list          # all tools
 flowai models list gemini
 flowai models list claude
 flowai models list cursor
+flowai models list copilot
 ```
 
-`flowai init` copies **`default_id`** from that file into `default_model`, `claude_default_model`, and each role’s `model` for new projects. After manual edits, run **`flowai validate`**; **`flowai start`** also runs the same checks (fail-fast) in normal use.
+`flowai init` copies each tool's `default_id` from the catalog into the project config. After editing, run **`flowai validate`**. `flowai start` also validates on launch.
 
 ### Config keys
 
-- **`default_model`** — Gemini default when a role omits `model` or when resolving Gemini phases.
-- **`claude_default_model`** — Claude default for the same cases.
-- **`master.model`** / **`roles.<role-id>.model`** — Must be an **`id`** listed under the matching tool in the catalog.
+| Key | Purpose |
+|-----|---------|
+| `tool_defaults.<tool>.model` | Per-tool model override (any tool, new generic format) |
+| `default_model` | Gemini model override (legacy; still respected) |
+| `claude_default_model` | Claude model override (legacy; still respected) |
+| `master.model` / `roles.<id>.model` | Per-phase model (must be in catalog for gemini/claude) |
 
-At runtime, if the configured model is **not** in the catalog for that tool, FlowAI logs a warning and substitutes the catalog **`default_id`**. To pass through an id before you update the JSON (e.g. vendor shipped a new name), set **`FLOWAI_ALLOW_UNKNOWN_MODEL=1`**.
+At runtime, model ids not found in the catalog are replaced with `default_id` and a warning is logged. Use **`FLOWAI_ALLOW_UNKNOWN_MODEL=1`** to pass any id through unchecked.
 
-OpenAI-style ids with **`tool: "claude"`** (e.g. `gpt-4o`) are still rejected and replaced with **`claude_default_model`**.
+OpenAI-style ids (e.g. `gpt-4o`) with `tool: "claude"` are rejected and replaced with the Claude default.
 
 ### Vendor references
 
-The catalog is curated from:
-
-- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) (`--model`)
+- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) — `--model` values
 - [Gemini CLI models](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/model.md)
-
-Use `/model` inside Claude Code or Gemini CLI for live options tied to your account.
-
-**Extending:** Add ids to `models-catalog.json`, run `flowai models list` to verify, and extend `flowai_ai_run` in `src/core/ai.sh` if you add a new `tool` id.
+- [Cursor models](https://cursor.com/docs/models)
+- [GitHub Copilot model availability](https://docs.github.com/en/copilot/github-copilot-in-the-cli)
