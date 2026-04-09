@@ -70,23 +70,31 @@ _skill_config_add_assignment() {
   local skill="$1" role="$2"
   local tmp
   tmp="$(mktemp)"
-  jq --arg skill "$skill" --arg role "$role" '
+  if jq --arg skill "$skill" --arg role "$role" '
     .skills.role_assignments[$role] //= [] |
     if (.skills.role_assignments[$role] | index($skill)) == null then
       .skills.role_assignments[$role] += [$skill]
     else . end
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  ' "$FLOWAI_DIR/config.json" > "$tmp"; then
+    mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 _skill_config_remove_assignment() {
   local skill="$1"
   local tmp
   tmp="$(mktemp)"
-  jq --arg skill "$skill" '
+  if jq --arg skill "$skill" '
     .skills.role_assignments //= {} |
     .skills.role_assignments |= (to_entries |
       map(.value -= [$skill]) | from_entries)
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  ' "$FLOWAI_DIR/config.json" > "$tmp"; then
+    mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # Append a project-relative directory to skills.paths[] (idempotent).
@@ -99,12 +107,16 @@ _skill_config_register_path() {
   fi
   local tmp
   tmp="$(mktemp)"
-  jq --arg p "$rel_path" '
+  if jq --arg p "$rel_path" '
     .skills.paths //= [] |
     if (.skills.paths | index($p)) == null then
       .skills.paths += [$p]
     else . end
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  ' "$FLOWAI_DIR/config.json" > "$tmp"; then
+    mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # List skill names found under a directory (looks for <dir>/<name>/SKILL.md).

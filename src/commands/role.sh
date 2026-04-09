@@ -80,9 +80,13 @@ _role_config_set_prompt_file() {
 
   local tmp
   tmp="$(mktemp)"
-  jq --arg r "$role" --arg p "$rel_path" '
+  if jq --arg r "$role" --arg p "$rel_path" '
     .roles[$r].prompt_file = $p
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  ' "$FLOWAI_DIR/config.json" > "$tmp"; then
+    mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # Remove prompt_file key for a role from config.json.
@@ -90,9 +94,13 @@ _role_config_unset_prompt_file() {
   local role="$1"
   local tmp
   tmp="$(mktemp)"
-  jq --arg r "$role" '
+  if jq --arg r "$role" '
     if .roles[$r] then .roles[$r] |= del(.prompt_file) else . end
-  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  ' "$FLOWAI_DIR/config.json" > "$tmp"; then
+    mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # ─── list ─────────────────────────────────────────────────────────────────────

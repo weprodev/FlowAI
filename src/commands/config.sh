@@ -21,10 +21,10 @@ case "$subcmd" in
   validate)
     if ! flowai_config_validate_models; then
       log_info "Tip: use ids from flowai models list <tool>, or set FLOWAI_ALLOW_UNKNOWN_MODEL=1 to allow unlisted ids."
-      printf "${YELLOW}╭──────────────────────────────────────────────────────────╮${RESET}\n" >&2
-      printf "${YELLOW}│ ⚠ Warning: To reconfigure all flowai from scratch, run:  │${RESET}\n" >&2
-      printf "${YELLOW}│   rm -rf .flowai && flowai init                          │${RESET}\n" >&2
-      printf "${YELLOW}╰──────────────────────────────────────────────────────────╯${RESET}\n" >&2
+      printf '%b╭──────────────────────────────────────────────────────────╮%b\n' "${YELLOW}" "${RESET}" >&2
+      printf '%b│ ⚠ Warning: To reconfigure all flowai from scratch, run:  │%b\n' "${YELLOW}" "${RESET}" >&2
+      printf '%b│   rm -rf .flowai && flowai init                          │%b\n' "${YELLOW}" "${RESET}" >&2
+      printf '%b╰──────────────────────────────────────────────────────────╯%b\n' "${YELLOW}" "${RESET}" >&2
       exit 1
     fi
     log_success "Model configuration matches models-catalog.json"

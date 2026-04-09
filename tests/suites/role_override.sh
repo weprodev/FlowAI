@@ -5,9 +5,10 @@
 
 # Helper: run flowai_phase_resolve_role_prompt in an isolated project env.
 _role_resolve() {
-  local phase="$1" flowai_dir="$2" pwd_dir="${3:-$(dirname "$flowai_dir")}"
+  local phase="$1" flowai_dir="$2"
+  local pwd_dir="${3:-$(dirname "$flowai_dir")}"
   (
-    cd "$pwd_dir"
+    cd "$pwd_dir" || exit
     FLOWAI_DIR="$flowai_dir" \
     FLOWAI_HOME="$FLOWAI_HOME" \
     bash -c "

@@ -5,8 +5,9 @@
 set -euo pipefail
 
 # Invocation name: `flowai` vs `fai` (bin/fai is a symlink to this file — one script).
-# Always derive from BASH_SOURCE (basename); do not use FLOWAI_INVOKED_AS from the environment.
-export FLOWAI_INVOKED_AS="$(basename "${BASH_SOURCE[0]}")"
+# Always derive from BASH_SOURCE; do not use FLOWAI_INVOKED_AS from the environment.
+FLOWAI_INVOKED_AS="${BASH_SOURCE[0]##*/}"
+export FLOWAI_INVOKED_AS
 
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
@@ -69,6 +70,7 @@ Commands:
   ${CYAN}kill${RESET}|${CYAN}stop${RESET}   Kill (or stop) the session for this repository
   ${CYAN}status${RESET}      Show session, config, Spec Kit, skills and MCP health
   ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET} or ${CYAN}fai run plan${RESET})
+  ${CYAN}logs${RESET}        View logs for a backgrounded phase (${CYAN}flowai logs master${RESET})
   ${CYAN}skill${RESET}       Manage agent skills  (${CYAN}flowai skill add / apply / remove${RESET})
   ${CYAN}role${RESET}        Manage role prompts  (${CYAN}flowai role list / edit / set-prompt / reset${RESET})
   ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
@@ -112,6 +114,9 @@ case "$cmd" in
     ;;
   status)
     bash "$FLOWAI_HOME/src/commands/status.sh" "$@"
+    ;;
+  logs)
+    bash "$FLOWAI_HOME/src/commands/logs.sh" "$@"
     ;;
   skill)
     bash "$FLOWAI_HOME/src/commands/skill.sh" "$@"

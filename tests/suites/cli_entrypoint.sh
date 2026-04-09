@@ -132,10 +132,13 @@ flowai_test_s_cli_030() {
   (cd "$FLOWAI_HOME" && FLOWAI_TESTING=1 ./bin/fai version) >"$out" 2>"$err"
   local rc=$?
   set -e
-  FLOWAI_TEST_RC=$rc
+  export FLOWAI_TEST_RC=$rc
   FLOWAI_TEST_STDOUT="$(cat "$out")"
+  export FLOWAI_TEST_STDOUT
   FLOWAI_TEST_STDERR="$(cat "$err")"
+  export FLOWAI_TEST_STDERR
   FLOWAI_TEST_COMBINED="$(cat "$out" "$err")"
+  export FLOWAI_TEST_COMBINED
   rm -f "$out" "$err"
   flowai_test_assert_rc 0 "UC-CLI-030" || return
   flowai_test_assert_combined_contains "$ver" "UC-CLI-030" || return
@@ -146,8 +149,9 @@ flowai_test_s_cli_030() {
   (cd "$FLOWAI_HOME" && FLOWAI_TESTING=1 ./bin/fai help) >"$out" 2>"$err"
   rc=$?
   set -e
-  FLOWAI_TEST_RC=$rc
+  export FLOWAI_TEST_RC=$rc
   FLOWAI_TEST_COMBINED="$(cat "$out" "$err")"
+  export FLOWAI_TEST_COMBINED
   rm -f "$out" "$err"
   flowai_test_assert_rc 0 "UC-CLI-030" || return
   flowai_test_assert_combined_contains "short for flowai" "UC-CLI-030" || return

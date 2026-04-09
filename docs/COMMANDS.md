@@ -9,6 +9,7 @@
 | `flowai start [--headless]` | Boot the tmux session. `--headless` skips the attach prompt (CI-safe). |
 | `flowai kill` / `flowai stop` | Terminate the session. |
 | `flowai status` | List tmux windows for the current session. |
+| `flowai logs [<phase>]` | View the output buffer of a running phase (defaults to `master`). Output is paginated with `less`. |
 | `flowai run [<phase>]` | Run a pipeline phase. Omit `<phase>` for an interactive menu. |
 | `flowai models list [<tool>\|all]` | Print valid model ids from `models-catalog.json`. Tools: `gemini`, `claude`, `cursor`, `copilot`, `all`. |
 | `flowai validate` | Check `.flowai/config.json` model fields against `models-catalog.json`. Alias: `flowai config validate`. |

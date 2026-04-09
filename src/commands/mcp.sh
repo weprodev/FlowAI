@@ -104,13 +104,17 @@ _mcp_write_server() {
   _mcp_init_file
   local tmp
   tmp="$(mktemp)"
-  jq --arg id "$id" --arg pkg "$pkg" --argjson def "$is_default" '
+  if jq --arg id "$id" --arg pkg "$pkg" --argjson def "$is_default" '
     .mcpServers[$id] = {
       "command": "npx",
       "args": ["-y", $pkg],
       "default": $def
     }
-  ' "$MCP_CONFIG" > "$tmp" && mv "$tmp" "$MCP_CONFIG" || rm -f "$tmp"
+  ' "$MCP_CONFIG" > "$tmp"; then
+    mv "$tmp" "$MCP_CONFIG" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 cmd_mcp_add() {
@@ -219,7 +223,11 @@ cmd_mcp_remove() {
 
   local tmp
   tmp="$(mktemp)"
-  jq --arg id "$target_id" 'del(.mcpServers[$id])' "$MCP_CONFIG" > "$tmp" && mv "$tmp" "$MCP_CONFIG" || rm -f "$tmp"
+  if jq --arg id "$target_id" 'del(.mcpServers[$id])' "$MCP_CONFIG" > "$tmp"; then
+    mv "$tmp" "$MCP_CONFIG" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
   log_success "Removed MCP server: $target_id"
 }
 

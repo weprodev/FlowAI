@@ -7,7 +7,7 @@
 _skl_resolve_skill_path() {
   local name="$1" flowai_dir="$2" pwd_dir="$3"
   (
-    cd "$pwd_dir"
+    cd "$pwd_dir" || exit
     FLOWAI_DIR="$flowai_dir" \
     FLOWAI_HOME="$FLOWAI_HOME" \
     bash -c "
@@ -22,7 +22,7 @@ _skl_resolve_skill_path() {
 _skl_skills_all() {
   local flowai_dir="$1" pwd_dir="$2"
   (
-    cd "$pwd_dir"
+    cd "$pwd_dir" || exit
     FLOWAI_DIR="$flowai_dir" \
     FLOWAI_HOME="$FLOWAI_HOME" \
     bash -c '
@@ -186,7 +186,7 @@ JSON
 
 # UC-SKL-006 — flowai_validate_repo_rel_path rejects traversal / absolute paths
 flowai_test_s_skl_006() {
-  (
+  if (
     source "$FLOWAI_HOME/src/core/config.sh"
     flowai_validate_repo_rel_path "docs/skills" || exit 1
     flowai_validate_repo_rel_path "./docs/skills" || exit 1
@@ -198,10 +198,12 @@ flowai_test_s_skl_006() {
     local n
     n="$(flowai_normalize_repo_rel_path "./docs/foo")"
     [[ "$n" == "docs/foo" ]] || exit 1
-  ) && flowai_test_pass "UC-SKL-006" "flowai_validate_repo_rel_path / normalize guard repo-relative paths" || {
+  ); then
+    flowai_test_pass "UC-SKL-006" "flowai_validate_repo_rel_path / normalize guard repo-relative paths"
+  else
     printf 'FAIL UC-SKL-006: path validation/normalize\n' >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
-  }
+  fi
 }
 
 # UC-SKL-007 — first entry in skills.paths wins when the same skill exists in two dirs
