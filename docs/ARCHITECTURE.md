@@ -77,6 +77,55 @@ src/
 models-catalog.json   ← canonical tool + model registry
 ```
 
+## Skills & Roles Resolution
+
+### Skill Path — 4 Tiers (first match wins)
+
+| Tier | Location | How registered |
+|------|----------|----------------|
+| 1 | `.flowai/skills/<name>/SKILL.md` | `flowai skill add` → skills.sh or GitHub download |
+| 2 | `<skills.paths[]>/<name>/SKILL.md` | `flowai skill add` → "Local directory" menu option |
+| 3 | `$FLOWAI_HOME/src/skills/<name>/SKILL.md` | Ships with FlowAI |
+| 4 | _(not found)_ | `log_warn` emitted at prompt-build time |
+
+Tier 2 paths are stored **relative to `$PWD`** in `.flowai/config.json` under `skills.paths[]`:
+
+```jsonc
+// .flowai/config.json
+{
+  "skills": {
+    "paths": ["docs/skills"],          // project-relative; committed to the repo
+    "role_assignments": { ... }
+  }
+}
+```
+
+### Role Prompt — 5 Tiers (first match wins)
+
+| Tier | Location | How set |
+|------|----------|---------|
+| 1 | `.flowai/roles/<phase>.md` | File drop by phase name (`plan`, `tasks` …) |
+| 2 | `.flowai/roles/<role-name>.md` | File drop by role name (`team-lead`, `reviewer` …) — `flowai role edit` |
+| 3 | `<prompt_file>` from `config.json` | `flowai role set-prompt <role> <path>` |
+| 4 | `$FLOWAI_HOME/src/roles/<role>.md` | Bundled |
+| 5 | `$FLOWAI_HOME/src/roles/backend-engineer.md` | Ultimate fallback |
+
+Tier 1 & 2 are file-drop only — no config.json change needed.
+Tier 3 stores a project-relative path (version-controlled, team-visible):
+
+```jsonc
+// .flowai/config.json
+{
+  "roles": {
+    "team-lead": {
+      "tool": "gemini",
+      "model": "gemini-2.5-pro",
+      "prompt_file": "docs/roles/team-lead.md"   // relative to $PWD
+    }
+  }
+}
+```
+
 ## Roadmap
 
 ### MCP Integration

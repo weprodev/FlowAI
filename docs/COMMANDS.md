@@ -13,7 +13,8 @@
 | `flowai models list [<tool>\|all]` | Print valid model ids from `models-catalog.json`. Tools: `gemini`, `claude`, `cursor`, `copilot`, `all`. |
 | `flowai validate` | Check `.flowai/config.json` model fields against `models-catalog.json`. Alias: `flowai config validate`. |
 | `flowai mcp list` | Emit `.flowai/mcp.json` from configured MCP servers. |
-| `flowai skill add \| remove \| list` | Manage skills assigned to pipeline roles. |
+| `flowai skill add \| apply \| remove \| list` | Manage skills assigned to pipeline roles. Interactive menu includes GitHub (skills.sh), Context7, Local directory, or manual path. |
+| `flowai role list \| edit \| set-prompt \| reset` | Manage role prompt overrides. `edit` copies a bundled role for local editing; `set-prompt` points a role at a project file. |
 | `flowai help` | Global usage overview. |
 | `flowai version` / `--version` | Print version string from `VERSION`. |
 
@@ -56,6 +57,27 @@ Falls back to a bundled seed when the network or `uv` is unavailable.
 `.flowai/config.json` controls which CLI and model each phase uses. See [TOOLS.md](TOOLS.md) for the full key reference and model resolution order.
 
 **Before `flowai start`:** model fields are validated against `models-catalog.json` (unless `FLOWAI_TESTING=1`, `FLOWAI_SKIP_CONFIG_VALIDATE=1`, or `FLOWAI_ALLOW_UNKNOWN_MODEL=1`). Run **`flowai validate`** after editing the config.
+
+### Skill Local Paths
+
+Register a project-relative skill directory (committed to your repo, shared with the team):
+
+```bash
+flowai skill add   # choose "Local directory (project path)" in the interactive menu
+```
+
+This appends to `skills.paths[]` in `.flowai/config.json`. Skills inside that directory are discovered automatically. See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the full resolution chain.
+
+### Role Overrides
+
+```bash
+flowai role list                          # see which roles have overrides
+flowai role edit team-lead                # copy bundled → .flowai/roles/team-lead.md, open in $EDITOR
+flowai role set-prompt reviewer docs/roles/reviewer.md  # point a role at a repo file
+flowai role reset team-lead               # remove all overrides, revert to bundled
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete 5-tier role prompt resolution chain.
 
 ### Environment Variables
 

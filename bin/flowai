@@ -70,6 +70,7 @@ Commands:
   ${CYAN}status${RESET}      Show session, config, Spec Kit, skills and MCP health
   ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET} or ${CYAN}fai run plan${RESET})
   ${CYAN}skill${RESET}       Manage agent skills  (${CYAN}flowai skill add / apply / remove${RESET})
+  ${CYAN}role${RESET}        Manage role prompts  (${CYAN}flowai role list / edit / set-prompt / reset${RESET})
   ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
   ${CYAN}models${RESET}      List valid model ids per tool (from bundled catalog)
   ${CYAN}validate${RESET}    Check project config vs models-catalog.json (alias: ${CYAN}flowai config validate${RESET})
@@ -114,6 +115,9 @@ case "$cmd" in
     ;;
   skill)
     bash "$FLOWAI_HOME/src/commands/skill.sh" "$@"
+    ;;
+  role)
+    bash "$FLOWAI_HOME/src/commands/role.sh" "$@"
     ;;
   mcp)
     bash "$FLOWAI_HOME/src/commands/mcp.sh" "$@"

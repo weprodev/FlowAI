@@ -201,24 +201,52 @@ flowai_phase_run_loop() {
 }
 
 # Resolve the role prompt file for a phase.
-# Checks project-local override first, then bundled src/roles/, then fallback.
+#
+# Resolution chain (first match wins):
+#   Tier 1  .flowai/roles/<phase>.md          — phase-level file drop (undocumented today, now documented)
+#   Tier 2  .flowai/roles/<role-name>.md      — role-level file drop (NEW)
+#   Tier 3  config.json roles[<role>].prompt_file — project-relative path in repo (NEW)
+#   Tier 4  $FLOWAI_HOME/src/roles/<role>.md  — bundled
+#   Tier 5  $FLOWAI_HOME/src/roles/backend-engineer.md — ultimate fallback
 flowai_phase_resolve_role_prompt() {
   local phase="$1"
 
-  if [[ -f "$FLOWAI_DIR/roles/${phase}.md" ]]; then
-    printf '%s' "$FLOWAI_DIR/roles/${phase}.md"
-    return
-  fi
-
+  # Resolve the role name for this phase
   local role_name=""
   case "$phase" in
     master|spec) role_name="master" ;;
     *)           role_name="$(flowai_cfg_pipeline_role "$phase" "backend-engineer")" ;;
   esac
 
+  # Tier 1 — phase-level override (e.g. .flowai/roles/plan.md)
+  if [[ -f "$FLOWAI_DIR/roles/${phase}.md" ]]; then
+    printf '%s' "$FLOWAI_DIR/roles/${phase}.md"
+    return
+  fi
+
+  # Tier 2 — role-name override (e.g. .flowai/roles/team-lead.md)
+  if [[ -f "$FLOWAI_DIR/roles/${role_name}.md" ]]; then
+    printf '%s' "$FLOWAI_DIR/roles/${role_name}.md"
+    return
+  fi
+
+  # Tier 3 — config.json prompt_file (project-relative, version-controlled)
+  if [[ -f "$FLOWAI_DIR/config.json" ]]; then
+    local prompt_file
+    prompt_file="$(jq -r --arg r "$role_name" '.roles[$r].prompt_file // empty' "$FLOWAI_DIR/config.json" 2>/dev/null)"
+    if [[ -n "$prompt_file" ]] && flowai_validate_repo_rel_path "$prompt_file" && [[ -f "$PWD/$prompt_file" ]]; then
+      printf '%s' "$PWD/$prompt_file"
+      return
+    fi
+  fi
+
+  # Tier 4 — bundled role file
   if [[ -f "$FLOWAI_HOME/src/roles/${role_name}.md" ]]; then
     printf '%s' "$FLOWAI_HOME/src/roles/${role_name}.md"
-  else
-    printf '%s' "$FLOWAI_HOME/src/roles/backend-engineer.md"
+    return
   fi
+
+  # Tier 5 — ultimate fallback
+  printf '%s' "$FLOWAI_HOME/src/roles/backend-engineer.md"
 }
+

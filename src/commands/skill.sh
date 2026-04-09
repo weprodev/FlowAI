@@ -43,6 +43,22 @@ _skill_installed_list() {
   fi
 }
 
+# List skills from project-relative paths in skills.paths[] (Tier 2).
+# Outputs lines of "<skill-name>\t<rel-dir>" for display.
+_skill_project_list() {
+  if [[ ! -f "$FLOWAI_DIR/config.json" ]]; then return; fi
+  local rel_dir
+  while IFS= read -r rel_dir; do
+    [[ -z "$rel_dir" ]] && continue
+    local abs_dir="$PWD/$rel_dir"
+    [[ -d "$abs_dir" ]] || continue
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      printf '%s\t%s\n' "$name" "$rel_dir"
+    done < <(_skill_discover_in_dir "$abs_dir")
+  done < <(_flowai_cfg_skill_paths)
+}
+
 _skill_roles_for_skill() {
   local target="$1"
   jq -r --arg skill "$target" \
@@ -71,6 +87,33 @@ _skill_config_remove_assignment() {
     .skills.role_assignments |= (to_entries |
       map(.value -= [$skill]) | from_entries)
   ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+}
+
+# Append a project-relative directory to skills.paths[] (idempotent).
+_skill_config_register_path() {
+  local rel_path="$1"
+  rel_path="$(flowai_normalize_repo_rel_path "$rel_path")"
+  if ! flowai_validate_repo_rel_path "$rel_path"; then
+    log_error "skills.paths must be project-relative without '..': $rel_path"
+    return 1
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg p "$rel_path" '
+    .skills.paths //= [] |
+    if (.skills.paths | index($p)) == null then
+      .skills.paths += [$p]
+    else . end
+  ' "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
+}
+
+# List skill names found under a directory (looks for <dir>/<name>/SKILL.md).
+_skill_discover_in_dir() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    find "$dir" -maxdepth 2 -name "SKILL.md" | \
+      while IFS= read -r f; do basename "$(dirname "$f")"; done | sort
+  fi
 }
 
 # ─── list ─────────────────────────────────────────────────────────────────────
@@ -109,6 +152,22 @@ cmd_skill_list() {
     fi
   done < <(_skill_installed_list)
   [[ $installed_count -eq 0 ]] && printf '  — none. Try: %s\n' "flowai skill add"
+
+  printf '\n %s\n' "Project paths (Tier 2)"
+  local project_count=0
+  while IFS=$'\t' read -r name rel_dir; do
+    [[ -z "$name" ]] && continue
+    project_count=$((project_count + 1))
+    local roles
+    roles="$(_skill_roles_for_skill "$name")"
+    if [[ -n "$roles" ]]; then
+      log_success "  $name  ($rel_dir)  → $roles"
+    else
+      log_info "  $name  ($rel_dir)  (unassigned)"
+    fi
+  done < <(_skill_project_list)
+  [[ $project_count -eq 0 ]] && printf '  — none. Use: %s\n' "flowai skill add → Local directory"
+
   printf '\n'
 }
 
@@ -200,8 +259,65 @@ cmd_skill_add() {
 
   local source_choice
   source_choice="$(gum choose --header "Select skill source (see https://skills.sh / https://context7.com/skills):" \
-    "skills.sh (recommended)" "Context7 / GitHub path" "Paste GitHub path")"
+    "skills.sh (recommended)" "Context7 / GitHub path" "Local directory (project path)" "Paste GitHub path")"
 
+  # ── Local directory (project-relative, team-shared) ──────────────────────
+  if [[ "$source_choice" == "Local directory"* ]]; then
+    local rel_dir=""
+    if [[ -t 0 ]] && command -v gum >/dev/null 2>&1 && gum file --help 2>&1 | grep -qF -- '--directory'; then
+      local picked
+      log_info "Pick the folder that contains skill subfolders, or cancel to type a path."
+      picked="$(gum file "$PWD" --directory --file=false --header "Skills root (subfolders = skill names)" 2>/dev/null)" || true
+      if [[ -n "$picked" ]] && [[ -d "$picked" ]]; then
+        local abs_pick abs_pwd
+        abs_pick="$(cd "$picked" && pwd)"
+        abs_pwd="$(cd "$PWD" && pwd)"
+        if [[ "$abs_pick" == "$abs_pwd" ]]; then
+          rel_dir="."
+        elif [[ "$abs_pick" == "$abs_pwd"/* ]]; then
+          rel_dir="${abs_pick#"$abs_pwd"/}"
+        else
+          log_error "Selected folder must be inside the project: $abs_pwd"
+          exit 1
+        fi
+      fi
+    fi
+    if [[ -z "$rel_dir" ]]; then
+      rel_dir="$(gum input --placeholder "docs/skills")"
+    fi
+    [[ -z "$rel_dir" ]] && { log_error "No directory entered."; exit 1; }
+    rel_dir="$(flowai_normalize_repo_rel_path "$rel_dir")"
+    if ! flowai_validate_repo_rel_path "$rel_dir"; then
+      log_error "Use a project-relative path without '..': $rel_dir"
+      exit 1
+    fi
+
+    local abs_dir="$PWD/$rel_dir"
+    if [[ ! -d "$abs_dir" ]]; then
+      log_error "Directory not found: $abs_dir"
+      exit 1
+    fi
+
+    local discovered_skills
+    mapfile -t discovered_skills < <(_skill_discover_in_dir "$abs_dir")
+    if [[ ${#discovered_skills[@]} -eq 0 ]]; then
+      log_error "No skills found in $abs_dir (expected <dir>/<skill-name>/SKILL.md)"
+      exit 1
+    fi
+
+    _skill_config_register_path "$rel_dir" || exit 1
+    log_success "Registered project path: $rel_dir"
+    log_info "Discovered skills: ${discovered_skills[*]}"
+
+    if gum confirm "Assign discovered skills to roles now?"; then
+      for sk in "${discovered_skills[@]}"; do
+        cmd_skill_apply "$sk"
+      done
+    fi
+    return
+  fi
+
+  # ── GitHub / skills.sh paths ─────────────────────────────────────────────
   local skill_path=""
   if [[ "$source_choice" == "Paste GitHub path" ]]; then
     skill_path="$(gum input --placeholder "owner/repo/skill-name")"
@@ -227,7 +343,6 @@ cmd_skill_add() {
     else
       local skill_name
       skill_name="$(echo "$selection" | awk '{print $1}')"
-      # Find matching entry
       for entry in "${_SKILL_CATALOG[@]}"; do
         if [[ "${entry##*/}" == "$skill_name"* ]]; then
           skill_path="${entry%%|*}"

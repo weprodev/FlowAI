@@ -8,6 +8,34 @@ export FLOWAI_CONFIG="${FLOWAI_DIR}/config.json"
 # shellcheck disable=SC1091
 [[ -n "${FLOWAI_HOME:-}" ]] && source "$FLOWAI_HOME/src/core/models-catalog.sh"
 
+# Reject absolute paths and ".." segments so stored paths cannot escape $PWD at read time.
+flowai_validate_repo_rel_path() {
+  local p="${1:-}"
+  [[ -z "$p" ]] && return 1
+  [[ "$p" == /* ]] && return 1
+  local IFS='/'
+  local -a parts=()
+  read -ra parts <<< "$p"
+  local seg
+  for seg in "${parts[@]}"; do
+    [[ -z "$seg" ]] && continue
+    [[ "$seg" == "." ]] && continue
+    [[ "$seg" == ".." ]] && return 1
+  done
+  return 0
+}
+
+# Strip leading "./" for stable storage and comparison.
+flowai_normalize_repo_rel_path() {
+  local p="${1:-}"
+  while [[ "$p" == ./* ]]; do p="${p#./}"; done
+  if [[ -z "$p" ]]; then
+    printf '.'
+  else
+    printf '%s' "$p"
+  fi
+}
+
 # Read a jq path from config.json, returning default_val when absent or null.
 flowai_cfg_read() {
   local jq_path="$1"
