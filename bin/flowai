@@ -71,6 +71,7 @@ Commands:
   ${CYAN}status${RESET}      Show session, config, Spec Kit, skills and MCP health
   ${CYAN}run${RESET}         Run a phase (e.g. ${CYAN}flowai run plan${RESET} or ${CYAN}fai run plan${RESET})
   ${CYAN}logs${RESET}        View logs for a backgrounded phase (${CYAN}flowai logs master${RESET})
+  ${CYAN}graph${RESET}       Knowledge graph  (${CYAN}flowai graph build / update / query / lint${RESET})
   ${CYAN}skill${RESET}       Manage agent skills  (${CYAN}flowai skill add / apply / remove${RESET})
   ${CYAN}role${RESET}        Manage role prompts  (${CYAN}flowai role list / edit / set-prompt / reset${RESET})
   ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
@@ -84,6 +85,9 @@ Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${R
 Examples:
   flowai init          # or: fai init
   flowai start
+  flowai graph build
+  flowai graph update
+  flowai graph query "How does the skill resolution chain work?"
   flowai skill add obra/superpowers/systematic-debugging
   flowai skill add context7 obra/superpowers/systematic-debugging
   flowai mcp add github
@@ -117,6 +121,9 @@ case "$cmd" in
     ;;
   logs)
     bash "$FLOWAI_HOME/src/commands/logs.sh" "$@"
+    ;;
+  graph)
+    bash "$FLOWAI_HOME/src/commands/graph.sh" "$@"
     ;;
   skill)
     bash "$FLOWAI_HOME/src/commands/skill.sh" "$@"

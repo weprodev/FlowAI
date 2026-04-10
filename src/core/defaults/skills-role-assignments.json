@@ -1,27 +1,58 @@
 {
+  "api-engineer": [
+    "graph-aware-navigation",
+    "executing-plans",
+    "test-driven-development"
+  ],
+  "data-engineer": [
+    "graph-aware-navigation",
+    "executing-plans"
+  ],
+  "devops-engineer": [
+    "graph-aware-navigation",
+    "executing-plans"
+  ],
+  "docs-writer": [
+    "graph-aware-navigation",
+    "executing-plans"
+  ],
+  "performance-engineer": [
+    "graph-aware-navigation",
+    "executing-plans"
+  ],
+  "security-engineer": [
+    "graph-aware-navigation",
+    "executing-plans"
+  ],
   "backend-engineer": [
+    "graph-aware-navigation",
     "systematic-debugging",
     "test-driven-development",
     "executing-plans",
     "finishing-a-development-branch"
   ],
   "frontend-engineer": [
+    "graph-aware-navigation",
     "executing-plans",
     "verification-before-completion"
   ],
   "qa-engineer": [
+    "graph-aware-navigation",
     "test-driven-development",
     "verification-before-completion"
   ],
   "reviewer": [
+    "graph-aware-navigation",
     "requesting-code-review",
     "verification-before-completion",
     "systematic-debugging"
   ],
   "team-lead": [
+    "graph-aware-navigation",
     "writing-plans"
   ],
   "master": [
+    "graph-aware-navigation",
     "writing-plans",
     "subagent-driven-development"
   ]

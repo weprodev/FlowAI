@@ -43,6 +43,8 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
     mkdir -p "$FLOWAI_DIR/roles"
     mkdir -p "$FLOWAI_DIR/signals"
     mkdir -p "$FLOWAI_DIR/launch"
+    mkdir -p "$FLOWAI_DIR/wiki"
+    mkdir -p "$FLOWAI_DIR/wiki/cache"
     log_info "Migrating legacy .specify/memory/setup.json → .flowai/config.json"
     cp "$PWD/.specify/memory/setup.json" "$FLOWAI_DIR/config.json"
     jq '.' "$FLOWAI_DIR/config.json" >/dev/null
@@ -56,6 +58,8 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
     mkdir -p "$FLOWAI_DIR/roles"
     mkdir -p "$FLOWAI_DIR/signals"
     mkdir -p "$FLOWAI_DIR/launch"
+    mkdir -p "$FLOWAI_DIR/wiki"
+    mkdir -p "$FLOWAI_DIR/wiki/cache"
 
     _mc="$FLOWAI_HOME/models-catalog.json"
     _gdef="gemini-2.5-pro"
@@ -163,6 +167,14 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
           "reviewer":         { tool: $wtool, model: $wmodel }
         },
         skills: { role_assignments: $ra },
+        graph: {
+          enabled: true,
+          scan_paths: ["src", "docs", "specs"],
+          ignore_patterns: ["*.generated.*", "*.min.js", "*.min.css"],
+          max_age_hours: 24,
+          auto_build: false,
+          semantic_enabled: false
+        },
         mcp: {
           servers: {
             context7: {

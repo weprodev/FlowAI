@@ -6,11 +6,12 @@
 |---------|---------|
 | `fai` | Short alias for `flowai` — `bin/fai` symlinks to `bin/flowai`. |
 | `flowai init` | Initialise `.flowai/` and bootstrap Spec Kit (`.specify/`) via `uvx`. |
-| `flowai start [--headless]` | Boot the tmux session. `--headless` skips the attach prompt (CI-safe). |
+| `flowai start [--headless] [--skip-graph]` | Boot the tmux session. Prompts to build knowledge graph if missing. `--skip-graph` bypasses the graph requirement (degraded mode). |
 | `flowai kill` / `flowai stop` | Terminate the session. |
-| `flowai status` | List tmux windows for the current session. |
+| `flowai status` | Show session, config, Spec Kit, skills, MCP, and knowledge graph health. |
 | `flowai logs [<phase>]` | View the output buffer of a running phase (defaults to `master`). Output is paginated with `less`. |
 | `flowai run [<phase>]` | Run a pipeline phase. Omit `<phase>` for an interactive menu. |
+| `flowai graph <subcommand>` | Knowledge graph management — see [Knowledge Graph](#knowledge-graph) below. |
 | `flowai models list [<tool>\|all]` | Print valid model ids from `models-catalog.json`. Tools: `gemini`, `claude`, `cursor`, `copilot`, `all`. |
 | `flowai validate` | Check `.flowai/config.json` model fields against `models-catalog.json`. Alias: `flowai config validate`. |
 | `flowai mcp list` | Emit `.flowai/mcp.json` from configured MCP servers. |
@@ -89,3 +90,60 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete
 | `FLOWAI_PHASE_TIMEOUT_SEC=N` | Hard timeout (seconds) for phase signal waits. `0` = unlimited (default). |
 | `FLOWAI_TESTING=1` | Enable CI mode: bypass gum, auto-select dirs, skip dependency checks. |
 | `FLOWAI_TEST_SKIP_AI=1` | Contract-test mode: phase scripts exit 0 before invoking AI. |
+| `FLOWAI_SKIP_GRAPH=1` | Skip graph enforcement in `flowai start` (same as `--skip-graph` flag). |
+
+---
+
+## Knowledge Graph
+
+FlowAI maintains a **compiled knowledge graph** of your project at `.flowai/wiki/`.
+Every pipeline agent reads this graph as its primary navigation layer, replacing
+blind file searches with structured, token-efficient codebase context.
+
+### Subcommands
+
+```bash
+flowai graph build [--force]   # Build the full graph (--force ignores cache)
+flowai graph update             # Incremental update (changed files only)
+flowai graph ingest <file>      # Ingest a document → update wiki pages
+flowai graph query "<question>" # Query + file answer back as a wiki page
+flowai graph lint               # Health-check: orphans, contradictions, stale
+flowai graph status             # Show node/edge counts, age, staleness
+flowai graph report             # Read GRAPH_REPORT.md in the pager
+```
+
+### Graph outputs at `.flowai/wiki/`
+
+| File | Contents |
+|---|---|
+| `GRAPH_REPORT.md` | God nodes, communities, insights, suggested queries. **Start here.** |
+| `graph.json` | Full graph: nodes, edges, provenance (`EXTRACTED`/`INFERRED`/`AMBIGUOUS`), metadata |
+| `index.md` | Content catalog — every wiki page with a one-line summary |
+| `log.md` | Append-only operation log (`## [date] op | detail`) |
+
+### Integration with `flowai start`
+
+`flowai start` enforces that a graph exists:
+- If **no graph** → prompts to build one (default: yes)
+- If **graph is stale** (>24h by default) → warns and suggests `flowai graph update`
+- Use `--skip-graph` / `FLOWAI_SKIP_GRAPH=1` for degraded mode (not recommended)
+
+### Agent context injection
+
+When a graph exists, every agent automatically receives a navigation block in its
+system prompt directing it to read `GRAPH_REPORT.md` before accessing raw files.
+This is a **platform-level** capability — all roles and phases get it regardless
+of which skills are assigned.
+
+The `graph-aware-navigation` skill (bundled, assigned to all roles) teaches agents
+the full navigation protocol: `GRAPH_REPORT.md → index.md → wiki/ → graph.json → source files`.
+
+### Team sharing
+
+By default `.flowai/wiki/` is gitignored (local graph). To share with the team:
+1. Remove `.flowai/wiki/` from `.gitignore`
+2. Commit `.flowai/wiki/`
+3. Run `flowai graph update` in CI to keep it fresh
+
+For full conceptual documentation see [GRAPH.md](GRAPH.md).
+

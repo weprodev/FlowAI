@@ -29,6 +29,8 @@ source "$TESTS_ROOT/suites/lifecycle_happy.sh"
 source "$TESTS_ROOT/suites/skill_local_path.sh"
 # shellcheck source=tests/suites/role_override.sh
 source "$TESTS_ROOT/suites/role_override.sh"
+# shellcheck source=tests/suites/graph_knowledge.sh
+source "$TESTS_ROOT/suites/graph_knowledge.sh"
 
 echo "FlowAI test run — FLOWAI_HOME=$FLOWAI_HOME"
 echo ""
@@ -90,6 +92,39 @@ flowai_test_s_role_006
 flowai_test_s_role_007
 flowai_test_s_role_008
 flowai_test_s_role_009
+# knowledge graph & wiki
+flowai_test_s_graph_001
+flowai_test_s_graph_002
+flowai_test_s_graph_003
+flowai_test_s_graph_004
+flowai_test_s_graph_005
+flowai_test_s_graph_006
+flowai_test_s_graph_007
+flowai_test_s_graph_008
+flowai_test_s_graph_009
+flowai_test_s_graph_010
+flowai_test_s_graph_011
+flowai_test_s_graph_012
+flowai_test_s_graph_013
+flowai_test_s_graph_014
+flowai_test_s_graph_015
+flowai_test_s_graph_016
+flowai_test_s_graph_017
+flowai_test_s_graph_018
+flowai_test_s_graph_019
+flowai_test_s_graph_020
+# phase 1+2: chronicle, frontmatter, lint
+flowai_test_s_graph_021
+flowai_test_s_graph_022
+flowai_test_s_graph_023
+flowai_test_s_graph_024
+flowai_test_s_graph_025
+flowai_test_s_graph_026
+flowai_test_s_graph_027
+flowai_test_s_graph_028
+flowai_test_s_graph_029
+flowai_test_s_graph_030
+flowai_test_s_graph_031
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

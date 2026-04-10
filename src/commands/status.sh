@@ -14,6 +14,13 @@ if [[ -f "$FLOWAI_HOME/src/bootstrap/specify.sh" ]]; then
   # shellcheck source=src/bootstrap/specify.sh
   source "$FLOWAI_HOME/src/bootstrap/specify.sh" 2>/dev/null || true
 fi
+# Graph runtime — optional (skip gracefully if not yet installed)
+if [[ -f "$FLOWAI_HOME/src/core/graph.sh" ]]; then
+  # shellcheck source=src/core/graph.sh
+  source "$FLOWAI_HOME/src/core/graph.sh" 2>/dev/null || true
+  # shellcheck source=src/graph/build.sh
+  [[ -f "$FLOWAI_HOME/src/graph/build.sh" ]] && source "$FLOWAI_HOME/src/graph/build.sh" 2>/dev/null || true
+fi
 
 _status_check() {
   local label="$1" value="$2" ok="$3"
@@ -89,6 +96,13 @@ if [[ -f "$MCP_CONFIG" ]]; then
   fi
 else
   _status_check "MCP" "none — try: flowai mcp add" "warn"
+fi
+
+# ── Knowledge Graph ─────────────────────────────────────────────────────────
+if declare -f flowai_graph_print_status >/dev/null 2>&1; then
+  flowai_graph_print_status
+else
+  _status_check "Knowledge" "graph.sh not found — re-install FlowAI" "warn"
 fi
 
 printf '\n'

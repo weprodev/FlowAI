@@ -14,6 +14,8 @@
 source "$FLOWAI_HOME/src/core/log.sh"
 # shellcheck source=src/core/config.sh
 source "$FLOWAI_HOME/src/core/config.sh"
+# shellcheck source=src/core/graph.sh
+source "$FLOWAI_HOME/src/core/graph.sh"
 
 _FLOWAI_DEFAULT_SKILLS_JSON="$FLOWAI_HOME/src/core/defaults/skills-role-assignments.json"
 
@@ -132,6 +134,17 @@ flowai_skills_build_prompt() {
 --- [PROJECT CONSTITUTION] ---
 $(cat "$constitution")
 ---"
+  fi
+
+  # Inject knowledge graph context (platform-level — not per-role, fires for all agents)
+  # The graph context is the primary navigation layer; inject it before any skill files
+  # so agents read it at the top of their context window.
+  if flowai_graph_is_enabled && flowai_graph_exists; then
+    local graph_block
+    graph_block="$(flowai_graph_context_block)"
+    if [[ -n "$graph_block" ]]; then
+      prompt="${prompt}${graph_block}"
+    fi
   fi
 
   # Inject assigned skills

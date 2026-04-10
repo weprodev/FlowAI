@@ -9,14 +9,19 @@ source "$FLOWAI_HOME/src/core/config.sh"
 source "$FLOWAI_HOME/src/core/session.sh"
 source "$FLOWAI_HOME/src/core/mcp-json.sh"
 source "$FLOWAI_HOME/src/bootstrap/specify.sh"
+source "$FLOWAI_HOME/src/core/graph.sh"
+source "$FLOWAI_HOME/src/graph/build.sh"
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
 HEADLESS=false
+SKIP_GRAPH=false
 [[ "${FLOWAI_START_HEADLESS:-}" == "1" ]] && HEADLESS=true
+[[ "${FLOWAI_SKIP_GRAPH:-}" == "1" ]] && SKIP_GRAPH=true
 for _fa in "$@"; do
   case "$_fa" in
-    --headless) HEADLESS=true ;;
+    --headless)    HEADLESS=true ;;
+    --skip-graph)  SKIP_GRAPH=true ;;
   esac
 done
 
@@ -28,6 +33,23 @@ fi
 if ! command -v jq >/dev/null 2>&1; then
   log_error "jq is required for configuration. Install jq (e.g. brew install jq) and retry."
   exit 1
+fi
+
+# ── Knowledge Graph prerequisites (structural pass requirements) ──────────────
+# The graph engine uses only standard Unix tools. We verify the key ones here
+# so failures have clear error messages rather than cryptic jq/bash errors.
+if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+  if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
+    log_warn "Neither shasum nor sha256sum found — graph incremental cache disabled (all files will be re-processed)."
+    log_info "Install: brew install coreutils (macOS) or use sha256sum (Linux built-in)"
+  fi
+
+  # Verify jq supports slurp mode (required for graph JSON accumulation)
+  if ! printf '1' | jq -sc '.' >/dev/null 2>&1; then
+    log_error "jq version too old — graph engine requires jq >=1.5 with -sc support."
+    log_info "Upgrade: brew upgrade jq"
+    exit 1
+  fi
 fi
 
 if [[ "$HEADLESS" != true ]]; then
@@ -153,6 +175,50 @@ if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
   fi
 
   printf '\n'
+fi
+
+# ── Knowledge Graph (Mandatory) ────────────────────────────────────────────
+if [[ "$SKIP_GRAPH" != "true" ]] && flowai_graph_is_enabled; then
+  if ! flowai_graph_exists; then
+    log_warn "No knowledge graph found. The graph is required for optimal agent performance."
+    printf '\n'
+
+    _do_build_graph=false
+    if [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
+      # In test mode: skip graph build to avoid LLM calls
+      _do_build_graph=false
+    elif [[ "$HEADLESS" == "true" ]]; then
+      log_warn "Headless mode: skipping graph build. Run 'flowai graph build' manually."
+      _do_build_graph=false
+    elif command -v gum >/dev/null 2>&1; then
+      if gum confirm "Build knowledge graph now? (recommended)"; then
+        _do_build_graph=true
+      else
+        log_warn "Skipping graph build. Run 'flowai graph build' before starting agents."
+        log_warn "Or re-run: flowai start --skip-graph (degraded mode)"
+      fi
+    else
+      read -r -p "Build knowledge graph now? [Y/n]: " _graph_ans </dev/tty || true
+      if [[ ! "$_graph_ans" =~ ^[nN] ]]; then
+        _do_build_graph=true
+      else
+        log_warn "Skipping graph build. Agents will work without codebase context."
+      fi
+    fi
+
+    if [[ "$_do_build_graph" == "true" ]]; then
+      flowai_graph_build "false"
+    fi
+  elif flowai_graph_is_stale; then
+    log_warn "Knowledge graph is stale. Agents may use outdated context."
+    log_info "Run: flowai graph update"
+  else
+    local _nodes _edges _age
+    _nodes="$(_flowai_graph_node_count)"
+    _edges="$(_flowai_graph_edge_count)"
+    _age="$(_flowai_graph_age_label)"
+    _dep_ok "Knowledge" && printf '  %-14s %s\n' "" "${_nodes} nodes · ${_edges} edges · built ${_age}"
+  fi
 fi
 
 SESSION="$(flowai_session_name "$PWD")"
