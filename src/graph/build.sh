@@ -690,8 +690,8 @@ _graph_generate_report() {
 
   # Git-derived evolution (Karpathy wiki: compiled, incremental history — not re-parsing git each time)
   local evo_event_total specs_with_git_trail
-  evo_event_total="$(jq '[.nodes[] | (.evolution // []) | length] | add // 0' "$graph_file" 2>/dev/null || echo 0)"
-  specs_with_git_trail="$(jq '[.nodes[] | select(.type == "spec" and ((.evolution // []) | length) > 0)] | length' "$graph_file" 2>/dev/null || echo 0)"
+  evo_event_total="$(jq -r '.metadata.evolution_event_count // 0' "$graph_file")"
+  specs_with_git_trail="$(jq -r '.metadata.specs_with_git_activity // 0' "$graph_file")"
 
   spec_nodes_list="$(jq -r '
     .nodes |

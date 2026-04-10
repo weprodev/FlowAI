@@ -1143,3 +1143,28 @@ SPEC
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
+
+# UC-GRAPH-032 — graph.json metadata outputs schema initializes newly added evolution variables
+flowai_test_s_graph_032() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/specs" "$tmp/.flowai/wiki"
+
+  # Minimal run should emit the defaults for new schema elements
+  _graph_build_in "$tmp/.flowai" "$tmp" 'flowai_graph_build "true"' >/dev/null 2>&1
+
+  local graph="$tmp/.flowai/wiki/graph.json"
+
+  if [[ -f "$graph" ]] && jq empty "$graph" 2>/dev/null && \
+     jq -e '.metadata.implements_edge_count' "$graph" >/dev/null 2>&1 && \
+     jq -e '.metadata.evolution_event_count' "$graph" >/dev/null 2>&1 && \
+     jq -e '.metadata.specs_with_git_activity' "$graph" >/dev/null 2>&1; then
+    flowai_test_pass "UC-GRAPH-032" "metadata schema initializes evolution/implements parameters successfully"
+  else
+    printf 'FAIL UC-GRAPH-032: graph.json missing implements/evolution schema elements in metadata block\n' >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

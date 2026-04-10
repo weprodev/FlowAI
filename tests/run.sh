@@ -125,6 +125,7 @@ flowai_test_s_graph_028
 flowai_test_s_graph_029
 flowai_test_s_graph_030
 flowai_test_s_graph_031
+flowai_test_s_graph_032
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then
@@ -134,4 +135,4 @@ if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then
 fi
 
 echo ""
-echo "All tests passed."
+All tests passed
