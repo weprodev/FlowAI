@@ -11,6 +11,7 @@ source "$FLOWAI_HOME/src/core/mcp-json.sh"
 source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 source "$FLOWAI_HOME/src/core/graph.sh"
 source "$FLOWAI_HOME/src/graph/build.sh"
+source "$FLOWAI_HOME/src/core/phases.sh"
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
@@ -247,6 +248,10 @@ mkdir -p "$FLOWAI_DIR/signals"
 mkdir -p "$FLOWAI_DIR/launch"
 rm -f "$FLOWAI_DIR/signals"/*.ready 2>/dev/null || true
 
+# Initialize the shared event log for cross-agent visibility
+source "$FLOWAI_HOME/src/core/eventlog.sh"
+flowai_event_reset
+
 layout="$(flowai_cfg_layout)"
 
 flowai_write_phase_launcher() {
@@ -271,7 +276,8 @@ tmux set-window-option -t "${SESSION}:master" pane-border-format " #[bold]#{pane
 tmux send-keys -t "${SESSION}:master" "bash '$FLOWAI_DIR/launch/tmux_master.sh'" Enter
 tmux select-pane -t "${SESSION}:master" -T "👑 Master Agent"
 
-pipelines=(plan tasks impl review)
+# Pipeline phases to launch in tmux windows (skip spec — master handles it interactively)
+pipelines=("${FLOWAI_PIPELINE_PHASES[@]:1}")
 win_index=1
 
 for phase in "${pipelines[@]}"; do

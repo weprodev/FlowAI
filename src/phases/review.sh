@@ -22,14 +22,37 @@ if [[ "${FLOWAI_TEST_SKIP_AI:-}" == "1" ]]; then
 fi
 
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "review")"
+# Path injected into the AI directive below — the Review AI agent writes to this
+# file when it finds issues. The Implement agent reads it on re-run.
+readonly REJECTION_CONTEXT_FILE="$FLOWAI_DIR/signals/impl.rejection_context"
+
 DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Review (QA / quality).
 Your WORKING DIRECTORY is: $PWD
 
-CONTEXT — read tasks and verify the codebase:
-  $FEATURE_DIR/tasks.md
+CONTEXT — read ALL upstream artifacts to perform a thorough review:
+  $FEATURE_DIR/spec.md    (original requirements and acceptance criteria)
+  $FEATURE_DIR/plan.md    (architecture decisions and approach)
+  $FEATURE_DIR/tasks.md   (implementation checklist — verify all tasks completed)
 
-Run checks (tests, linters) as appropriate. Summarize findings or confirm clean."
+Review the implementation against the spec's acceptance criteria and the plan's
+architecture decisions. Run checks (tests, linters) as appropriate.
+
+IMPORTANT: If you find issues, write a structured rejection summary to:
+  $REJECTION_CONTEXT_FILE
+
+Format your rejection file as:
+  ## Failed Tasks
+  - [ ] Task description — reason for failure
+  ## Test Failures
+  - file:line — error message
+  ## Required Fixes
+  - Description of what needs to change
+
+This file will be provided to the Implement agent on re-run so it can focus
+on ONLY the failing items instead of re-implementing everything.
+
+Summarize findings or confirm clean."
 
 INJECTED_PROMPT="$(flowai_phase_write_prompt "review" "$ROLE_FILE" "$DIRECTIVE")"
 export INJECTED_PROMPT

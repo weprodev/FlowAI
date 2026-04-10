@@ -69,7 +69,7 @@ _graph_run_semantic_pass() {
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file"; then
       local rel_path="${file#$PWD/}"
       local cache_key semantic_file
-      cache_key="$(printf '%s' "$rel_path" | tr '/' '_').json"
+      cache_key="$(_graph_path_to_key "$rel_path").json"
       semantic_file="${FLOWAI_GRAPH_CACHE_DIR}/semantic/${cache_key}"
       if [[ -f "$semantic_file" ]]; then
         skipped=$(( skipped + 1 ))
@@ -130,12 +130,18 @@ _graph_sha256() {
   fi
 }
 
-# Cache file path for a given source file (maps path → SHA256).
+# Convert a relative file path to a flat alphanumeric cache key.
+# Uses double-underscore to avoid collisions from naive replacement.
+_graph_path_to_key() {
+  printf '%s' "$1" | sed 's|/|__|g' | tr ' ' '_'
+}
+
+# Cache file path for a given source file (maps relative path → deterministic key).
+# Uses a relative path to ensure the cache is portable across machine clones.
 _graph_cache_key_file() {
   local file="$1"
-  local key
-  key="$(printf '%s' "$file" | tr '/' '_' | tr ' ' '_')"
-  printf '%s/%s.sha' "$FLOWAI_GRAPH_CACHE_DIR" "$key"
+  local rel_path="${file#$PWD/}"
+  printf '%s/%s.sha' "$FLOWAI_GRAPH_CACHE_DIR" "$(_graph_path_to_key "$rel_path")"
 }
 
 # Returns 0 if cached SHA256 matches current file SHA256 (file not changed).
@@ -294,6 +300,101 @@ _graph_structural_extract_file() {
     done < <(grep -E '^[[:space:]]*(flowai_[a-z_]+|_[a-z_]+)\(\)' "$file" 2>/dev/null || true)
   fi
 
+  # ── Python: import/class/def detection ─────────────────────────────────────
+  if [[ "$file" == *.py ]]; then
+    # Import detection: 'from X import Y' and 'import X'
+    while IFS= read -r imp_line; do
+      [[ -z "$imp_line" ]] && continue
+      local imp_module
+      # Extract module path from 'from X.Y import Z' or 'import X.Y'
+      imp_module="$(printf '%s' "$imp_line" | sed -n 's/^from[[:space:]]\+\([a-zA-Z0-9_.]*\).*/\1/p')"
+      [[ -z "$imp_module" ]] && imp_module="$(printf '%s' "$imp_line" | sed -n 's/^import[[:space:]]\+\([a-zA-Z0-9_.]*\).*/\1/p')"
+      [[ -z "$imp_module" ]] && continue
+      local imp_id
+      imp_id="$(printf '%s' "$imp_module" | tr '.' '.')"
+      edges+=("$(_graph_edge_json "$file_id" "$imp_id" "imports" "EXTRACTED")")
+    done < <(grep -E '^(from|import)\s+[a-zA-Z]' "$file" 2>/dev/null | head -50 || true)
+
+    # Class and function definitions
+    while IFS= read -r def_line; do
+      [[ -z "$def_line" ]] && continue
+      local def_name def_type
+      def_name="$(printf '%s' "$def_line" | sed -n 's/^[[:space:]]*\(class\|def\)[[:space:]]\+\([a-zA-Z_][a-zA-Z0-9_]*\).*/\2/p')"
+      def_type="$(printf '%s' "$def_line" | sed -n 's/^[[:space:]]*\(class\|def\).*/\1/p')"
+      [[ -z "$def_name" ]] && continue
+      local def_node_type="function"
+      [[ "$def_type" == "class" ]] && def_node_type="class"
+      local def_id="${file_id}.${def_name}"
+      nodes+=("$(_graph_node_json "$def_id" "$def_name" "$def_node_type" "$rel_path")")
+      edges+=("$(_graph_edge_json "$file_id" "$def_id" "defines" "EXTRACTED")")
+    done < <(grep -E '^[[:space:]]*(class|def)\s+[a-zA-Z_]' "$file" 2>/dev/null | head -50 || true)
+  fi
+
+  # ── TypeScript/JavaScript: import/export detection ───────────────────────
+  if [[ "$file" == *.ts || "$file" == *.tsx || "$file" == *.js || "$file" == *.jsx ]]; then
+    # Import detection: import { X } from 'Y', import X from 'Y', require('Y')
+    while IFS= read -r imp_line; do
+      [[ -z "$imp_line" ]] && continue
+      local ts_module
+      # Extract module from: from 'module' or from "module" or require('module')
+      ts_module="$(printf '%s' "$imp_line" | grep -oE "(from|require\()[[:space:]]*['\"]([^'\"]+)['\"]" | \
+        grep -oE "['\"][^'\"]+['\"]" | tr -d "'\""  | head -1)"
+      [[ -z "$ts_module" ]] && continue
+      # Skip external modules (node_modules)
+      [[ "$ts_module" != .* && "$ts_module" != /* ]] && continue
+      local ts_id
+      ts_id="$(printf '%s' "$ts_module" | sed 's|^\./||;s|^/||' | tr '/' '.' | sed 's/\.\(ts\|tsx\|js\|jsx\)$//')"
+      edges+=("$(_graph_edge_json "$file_id" "$ts_id" "imports" "EXTRACTED")")
+    done < <(grep -E "^[[:space:]]*(import|const|let|var).*from[[:space:]]*['\"]|require\(" "$file" 2>/dev/null | head -50 || true)
+
+    # Export declarations: export function/class/const/default
+    while IFS= read -r exp_line; do
+      [[ -z "$exp_line" ]] && continue
+      local exp_name
+      exp_name="$(printf '%s' "$exp_line" | sed -n 's/^[[:space:]]*export[[:space:]]\+\(default[[:space:]]\+\)\?\(function\|class\|const\|let\|var\|interface\|type\|enum\)[[:space:]]\+\([a-zA-Z_][a-zA-Z0-9_]*\).*/\3/p')"
+      [[ -z "$exp_name" ]] && continue
+      local exp_id="${file_id}.${exp_name}"
+      nodes+=("$(_graph_node_json "$exp_id" "$exp_name" "function" "$rel_path")")
+      edges+=("$(_graph_edge_json "$file_id" "$exp_id" "defines" "EXTRACTED")")
+    done < <(grep -E '^[[:space:]]*export[[:space:]]+(default[[:space:]]+)?(function|class|const|let|var|interface|type|enum)\s' "$file" 2>/dev/null | head -50 || true)
+  fi
+
+  # ── Go: import/func/type detection ──────────────────────────────────────
+  if [[ "$file" == *.go ]]; then
+    # Import detection: import "path" or import ( "path" )
+    while IFS= read -r imp_line; do
+      [[ -z "$imp_line" ]] && continue
+      local go_module
+      go_module="$(printf '%s' "$imp_line" | grep -oE '"[^"]+"' | tr -d '"' | head -1)"
+      [[ -z "$go_module" ]] && continue
+      local go_id
+      go_id="$(printf '%s' "$go_module" | tr '/' '.')"
+      edges+=("$(_graph_edge_json "$file_id" "$go_id" "imports" "EXTRACTED")")
+    done < <(grep -E '^\s*"[a-zA-Z]' "$file" 2>/dev/null | head -50 || true)
+
+    # Function and type definitions
+    while IFS= read -r def_line; do
+      [[ -z "$def_line" ]] && continue
+      local go_name go_type
+      go_name="$(printf '%s' "$def_line" | sed -n 's/^func[[:space:]]\+\(([^)]*)[[:space:]]\+\)\?\([A-Za-z_][A-Za-z0-9_]*\).*/\2/p')"
+      if [[ -n "$go_name" ]]; then
+        local go_fn_id="${file_id}.${go_name}"
+        nodes+=("$(_graph_node_json "$go_fn_id" "$go_name" "function" "$rel_path")")
+        edges+=("$(_graph_edge_json "$file_id" "$go_fn_id" "defines" "EXTRACTED")")
+      fi
+    done < <(grep -E '^func\s' "$file" 2>/dev/null | head -50 || true)
+
+    while IFS= read -r type_line; do
+      [[ -z "$type_line" ]] && continue
+      local go_type_name
+      go_type_name="$(printf '%s' "$type_line" | sed -n 's/^type[[:space:]]\+\([A-Za-z_][A-Za-z0-9_]*\).*/\1/p')"
+      [[ -z "$go_type_name" ]] && continue
+      local go_type_id="${file_id}.${go_type_name}"
+      nodes+=("$(_graph_node_json "$go_type_id" "$go_type_name" "class" "$rel_path")")
+      edges+=("$(_graph_edge_json "$file_id" "$go_type_id" "defines" "EXTRACTED")")
+    done < <(grep -E '^type\s+[A-Z]' "$file" 2>/dev/null | head -50 || true)
+  fi
+
   # ── Markdown: link/reference detection (non-spec files) ────────────────────
   if [[ "$file" == *.md ]] && ! _graph_is_spec_file "$file"; then
     while IFS= read -r linked; do
@@ -360,7 +461,7 @@ _graph_run_structural_pass() {
     [[ -f "$file" ]] || continue
     total=$(( total + 1 ))
     local rel="${file#$PWD/}"
-    local fragment_cache="$cache_dir/$(printf '%s' "$rel" | tr '/' '_').json"
+    local fragment_cache="$cache_dir/$(_graph_path_to_key "$rel").json"
 
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file" && [[ -f "$fragment_cache" ]]; then
       # Append cached fragment's nodes/edges to accumulators
@@ -456,7 +557,7 @@ _graph_semantic_extract_file() {
   mkdir -p "$cache_dir"
 
   local cache_key
-  cache_key="$(printf '%s' "$rel_path" | tr '/' '_').json"
+  cache_key="$(_graph_path_to_key "$rel_path").json"
   local cache_file="${cache_dir}/${cache_key}"
 
   # Return cached result if file hasn't changed
@@ -507,6 +608,20 @@ _graph_merge() {
 
   log_info "Merging structural + semantic passes..."
 
+  # Version the existing graph before overwriting (configurable retention)
+  if [[ -f "$output_file" ]]; then
+    local backup="${output_file}.$(date +%Y%m%dT%H%M%S)"
+    cp "$output_file" "$backup"
+    # Prune old backups beyond the configured limit (default: 5)
+    local keep
+    keep="$(flowai_cfg_read '.graph.versions_to_keep' '5')"
+    find "$(dirname "$output_file")" -maxdepth 1 \
+      -name "$(basename "$output_file").*" \
+      -not -name "*.pre-rollback" -not -name "*.lock" \
+      2>/dev/null | sort -r | tail -n +"$((keep + 1))" | \
+      while IFS= read -r old_backup; do rm -f "$old_backup"; done
+  fi
+
   # Collect all semantic fragment files
   local semantic_files=()
   if [[ -d "$semantic_dir" ]]; then
@@ -549,7 +664,7 @@ _graph_merge() {
         "built_at": $built_at,
         "version": "1.0",
         "node_count": (($sn + $mn) | unique_by(.id) | length),
-        "edge_count": (($se + $me) | length),
+        "edge_count": (($se + $me) | unique_by({source: .source, target: .target, relation: .relation}) | length),
         "community_count": 0,
         "spec_count": (($sn + $mn) | map(select(.type == "spec")) | length),
         "specifies_edge_count": (($se + $me) | map(select(.relation == "SPECIFIES")) | length),
@@ -558,7 +673,7 @@ _graph_merge() {
         "specs_with_git_activity": 0
       },
       "nodes": (($sn + $mn) | unique_by(.id)),
-      "edges": ($se + $me),
+      "edges": (($se + $me) | unique_by({source: .source, target: .target, relation: .relation})),
       "insights": ($insights | unique)
     }' > "$output_file"
 
@@ -571,56 +686,82 @@ _graph_merge() {
 
 # ─── Community Detection ──────────────────────────────────────────────────────
 
-# Lightweight degree-based community detection (pure jq/bash).
-# No external dependencies. Groups nodes by their highest-degree neighbors.
+# Community detection: degree-based centrality + label propagation.
+# Assigns each node a centrality_class (god/hub/leaf based on degree) and a
+# community_id (via label propagation over the edge graph).
 # Updates metadata.community_count in graph.json.
 _graph_detect_communities() {
   local graph_file="$FLOWAI_GRAPH_JSON"
   [[ -f "$graph_file" ]] || return 0
 
-  log_info "Detecting communities (degree-based clustering)..."
+  log_info "Detecting communities (label propagation + degree classification)..."
 
-  # Write jq program to a temp file to avoid shell quoting issues with 'as' bindings
+  # Write jq program to a temp file to avoid shell quoting issues
   local jq_prog_file
   jq_prog_file="$(mktemp /tmp/flowai_community.XXXXXX.jq)"
   cat > "$jq_prog_file" <<'JQ_PROG'
-reduce .edges[] as $e
-  ({};
-   .[$e.source] = ((.[$e.source] // 0) + 1) |
-   .[$e.target] = ((.[$e.target] // 0) + 1)
-  ) as $degree |
-  input |
-  .nodes |= map(
-    . + {
-      "degree": ($degree[.id] // 0),
-      "community": (
-        if ($degree[.id] // 0) >= 10 then "god"
-        elif ($degree[.id] // 0) >= 5 then "hub"
-        else "leaf"
-        end
-      )
-    }
-  ) |
+# Step 1: Compute degree for each node
+([ .edges[] | .source, .target ] | group_by(.) | map({key: .[0], value: length}) | from_entries) as $deg |
+
+# Step 2: Build adjacency list
+(reduce .edges[] as $e ({};
+  .[$e.source] = ((.[$e.source] // []) + [$e.target]) |
+  .[$e.target] = ((.[$e.target] // []) + [$e.source])
+)) as $adj |
+
+# Step 3: Initialize labels — each node starts with its own id as community
+(.nodes | map({key: .id, value: .id}) | from_entries) as $init_labels |
+
+# Step 4: Label propagation (5 iterations — sufficient for convergence on typical graphs)
+(reduce range(5) as $iter ($init_labels;
+  . as $labels |
+  reduce (keys[]) as $node ($labels;
+    ($adj[$node] // []) as $neighbors |
+    if ($neighbors | length) == 0 then .
+    else
+      # Pick the most common label among neighbors
+      ([$neighbors[] | $labels[.] // .] | group_by(.) | sort_by(-(length)) | .[0][0]) as $best |
+      .[$node] = $best
+    end
+  )
+)) as $final_labels |
+
+# Step 5: Annotate nodes with degree, centrality_class, and community_id
+.nodes |= map(
+  ($deg[.id] // 0) as $d |
+  (if $d >= 10 then "god" elif $d >= 5 then "hub" else "leaf" end) as $cls |
   . + {
-    "metadata": (.metadata + {
-      "community_count": (.nodes | map(.community) | unique | length)
-    })
+    "degree": $d,
+    "centrality_class": $cls,
+    "community": $cls,
+    "community_id": ($final_labels[.id] // .id)
   }
+) |
+
+# Step 6: Count distinct communities and update metadata
+.metadata.community_count = ([.nodes[].community_id] | unique | length)
 JQ_PROG
 
   local updated
-  updated="$(jq --null-input -f "$jq_prog_file" --jsonargs < "$graph_file" 2>/dev/null || true)"
+  updated="$(jq -f "$jq_prog_file" "$graph_file" 2>/dev/null || true)"
   rm -f "$jq_prog_file"
 
-  # Simpler fallback: degree-annotate nodes directly
+  # Fallback: simpler degree-only annotation if label propagation fails
   if [[ -z "$updated" ]]; then
+    log_warn "Label propagation failed — falling back to degree-only classification"
     updated="$(jq '
       ([ .edges[] | .source, .target ] | group_by(.) | map({key: .[0], value: length}) | from_entries) as $deg |
-      .nodes |= map(. + {
-        "degree": ($deg[.id] // 0),
-        "community": (if ($deg[.id] // 0) >= 10 then "god" elif ($deg[.id] // 0) >= 5 then "hub" else "leaf" end)
-      }) |
-      .metadata.community_count = (.nodes | map(.community) | unique | length)
+      .nodes |= map(
+        ($deg[.id] // 0) as $d |
+        (if $d >= 10 then "god" elif $d >= 5 then "hub" else "leaf" end) as $cls |
+        . + {
+          "degree": $d,
+          "centrality_class": $cls,
+          "community": $cls,
+          "community_id": .id
+        }
+      ) |
+      .metadata.community_count = (.nodes | length)
     ' "$graph_file" 2>/dev/null || cat "$graph_file")"
   fi
 
@@ -798,11 +939,24 @@ These questions can be answered efficiently using this knowledge graph:
 
 ## Community Structure
 
-| Community | Description |
+### Centrality Classes
+
+| Class | Description |
 |---|---|
 | god   | Central hubs with ≥10 edges — architectural load-bearers |
 | hub   | Well-connected modules with 5-9 edges |
 | leaf  | Peripheral files with <5 edges |
+
+### Detected Communities (Label Propagation)
+
+Nodes are grouped by \`community_id\` — clusters of related modules identified via label propagation. Agents can use \`community_id\` in \`graph.json\` to find related code.
+
+$(jq -r '
+  [.nodes[] | .community_id] | group_by(.) | sort_by(-(length)) |
+  .[0:10] |
+  .[] |
+  "- **" + .[0] + "** (" + (length | tostring) + " members)"
+' "$graph_file" 2>/dev/null || echo "_No communities detected yet._")
 
 ---
 

@@ -13,6 +13,7 @@
 #   query "<question>"  Query the wiki; answer is filed back as a wiki page
 #   status              Show graph health (nodes, edges, age, staleness)
 #   report              Open GRAPH_REPORT.md in the terminal pager
+#   rollback [--latest] Interactive version browser to restore a previous graph
 #
 # shellcheck shell=bash
 
@@ -151,6 +152,164 @@ cmd_graph_chronicle() {
   flowai_graph_chronicle
 }
 
+# ─── Rollback ────────────────────────────────────────────────────────────────
+
+# List graph backups as an array, newest first.
+_graph_list_backups() {
+  local graph_dir graph_base
+  graph_dir="$(dirname "$FLOWAI_GRAPH_JSON")"
+  graph_base="$(basename "$FLOWAI_GRAPH_JSON")"
+  find "$graph_dir" -maxdepth 1 -name "${graph_base}.*" \
+    -not -name "*.pre-rollback" -not -name "*.lock" \
+    2>/dev/null | sort -r
+}
+
+# Print a formatted version table.
+_graph_print_version_table() {
+  local -a backups=("$@")
+
+  printf '\n'
+  log_header "FlowAI Graph — Version History"
+  printf '  %-4s %-22s %7s %7s %6s\n' "#" "Date" "Nodes" "Edges" "Size"
+  printf '  %-4s %-22s %7s %7s %6s\n' "--" "--------------------" "-----" "-----" "----"
+
+  if [[ -f "$FLOWAI_GRAPH_JSON" ]]; then
+    local cur_nodes cur_edges cur_size
+    cur_nodes="$(jq -r '.metadata.node_count // (.nodes | length) // "?"' "$FLOWAI_GRAPH_JSON" 2>/dev/null || echo '?')"
+    cur_edges="$(jq -r '.metadata.edge_count // (.edges | length) // "?"' "$FLOWAI_GRAPH_JSON" 2>/dev/null || echo '?')"
+    cur_size="$(du -h "$FLOWAI_GRAPH_JSON" 2>/dev/null | cut -f1 | tr -d ' ')"
+    printf '  %-4s %-22s %7s %7s %6s  %s\n' "0" "(current)" "$cur_nodes" "$cur_edges" "$cur_size" "<- active"
+  fi
+
+  local i=1
+  local graph_base
+  graph_base="$(basename "$FLOWAI_GRAPH_JSON")"
+  for backup in "${backups[@]}"; do
+    local ts_raw ts_display nodes edges size
+    ts_raw="$(basename "$backup" | sed "s/${graph_base}\.//")"
+    ts_display="$(printf '%s' "$ts_raw" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)T\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/' 2>/dev/null || echo "$ts_raw")"
+    nodes="$(jq -r '.metadata.node_count // (.nodes | length) // "?"' "$backup" 2>/dev/null || echo '?')"
+    edges="$(jq -r '.metadata.edge_count // (.edges | length) // "?"' "$backup" 2>/dev/null || echo '?')"
+    size="$(du -h "$backup" 2>/dev/null | cut -f1 | tr -d ' ')"
+    printf '  %-4s %-22s %7s %7s %6s\n' "$i" "$ts_display" "$nodes" "$edges" "$size"
+    i=$((i + 1))
+  done
+  printf '\n'
+}
+
+cmd_graph_rollback() {
+  _graph_require_flowai_dir
+
+  local -a backups=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && backups+=("$line")
+  done < <(_graph_list_backups)
+
+  if [[ ${#backups[@]} -eq 0 ]]; then
+    log_error "No graph backups found. Nothing to roll back to."
+    exit 1
+  fi
+
+  local selected_idx=1
+
+  # --latest flag: non-interactive mode (scripts, CI, tests)
+  local interactive=true
+  for arg in "$@"; do
+    [[ "$arg" == "--latest" ]] && interactive=false
+  done
+  [[ "${FLOWAI_TESTING:-0}" == "1" ]] && interactive=false
+
+  if [[ "$interactive" == "true" ]]; then
+    _graph_print_version_table "${backups[@]}"
+
+    if command -v gum >/dev/null 2>&1; then
+      local -a labels=()
+      local i=1
+      local graph_base
+      graph_base="$(basename "$FLOWAI_GRAPH_JSON")"
+      for backup in "${backups[@]}"; do
+        local ts_raw ts_display
+        ts_raw="$(basename "$backup" | sed "s/${graph_base}\.//")"
+        ts_display="$(printf '%s' "$ts_raw" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)T\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/' 2>/dev/null || echo "$ts_raw")"
+        labels+=("#${i}: ${ts_display}")
+        i=$((i + 1))
+      done
+      local choice
+      choice="$(gum choose "${labels[@]}")"
+      selected_idx="$(printf '%s' "$choice" | sed 's/#\([0-9]*\):.*/\1/')"
+    else
+      printf '  Select version to restore (1-%d) [1]: ' "${#backups[@]}"
+      local user_input
+      read -r user_input < /dev/tty || true
+      [[ -n "$user_input" ]] && selected_idx="$user_input"
+    fi
+
+    if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || [[ "$selected_idx" -lt 1 ]] || [[ "$selected_idx" -gt ${#backups[@]} ]]; then
+      log_error "Invalid selection: $selected_idx (expected 1-${#backups[@]})"
+      exit 1
+    fi
+
+    local newer_count=$((selected_idx - 1))
+    local graph_base
+    graph_base="$(basename "$FLOWAI_GRAPH_JSON")"
+    local selected_ts
+    selected_ts="$(basename "${backups[$((selected_idx - 1))]}" | sed "s/${graph_base}\.//")"
+
+    printf '\n'
+    printf '  %s!! WARNING: This will:%s\n' "${YELLOW}" "${RESET}"
+    printf '     - Restore graph.json to version #%d (%s)\n' "$selected_idx" "$selected_ts"
+    if [[ "$newer_count" -gt 0 ]]; then
+      printf '     - %sDELETE %d newer version(s) permanently%s\n' "${RED}" "$newer_count" "${RESET}"
+    fi
+    printf '     - A pre-rollback safety copy will be saved\n\n'
+
+    local confirmed=false
+    if command -v gum >/dev/null 2>&1; then
+      gum confirm "Are you sure?" && confirmed=true
+    else
+      printf '  Are you sure? [y/N]: '
+      local ans
+      read -r ans < /dev/tty || true
+      [[ "$ans" =~ ^[yY] ]] && confirmed=true
+    fi
+
+    if [[ "$confirmed" != "true" ]]; then
+      log_info "Rollback cancelled."
+      exit 0
+    fi
+  fi
+
+  # -- Execute rollback --
+  local selected_backup="${backups[$((selected_idx - 1))]}"
+  local graph_base
+  graph_base="$(basename "$FLOWAI_GRAPH_JSON")"
+  local selected_ts
+  selected_ts="$(basename "$selected_backup" | sed "s/${graph_base}\.//")"
+
+  if [[ -f "$FLOWAI_GRAPH_JSON" ]]; then
+    cp "$FLOWAI_GRAPH_JSON" "${FLOWAI_GRAPH_JSON}.pre-rollback"
+  fi
+
+  cp "$selected_backup" "$FLOWAI_GRAPH_JSON"
+
+  local deleted=0
+  local i=0
+  while [[ "$i" -lt $((selected_idx - 1)) ]]; do
+    rm -f "${backups[$i]}"
+    deleted=$((deleted + 1))
+    i=$((i + 1))
+  done
+
+  _graph_generate_report 2>/dev/null || true
+  _graph_generate_index 2>/dev/null || true
+
+  flowai_graph_log_append "rollback" "restored from $selected_ts (deleted $deleted newer version(s))"
+  log_success "Graph rolled back to $selected_ts"
+  [[ "$deleted" -gt 0 ]] && log_info "$deleted newer version(s) removed."
+  log_info "Pre-rollback state saved as graph.json.pre-rollback"
+}
+
+
 # ─── Lint ─────────────────────────────────────────────────────────────────────
 
 # Lint has two modes:
@@ -192,6 +351,7 @@ Usage:
   flowai graph ${CYAN}ingest${RESET} <file>           Ingest a document into the wiki
   flowai graph ${CYAN}query${RESET} "<question>"      Query the wiki + file answer back
   flowai graph ${CYAN}status${RESET}                  Show graph health and file locations
+  flowai graph ${CYAN}rollback${RESET}                 Restore graph.json to the previous version
   flowai graph ${CYAN}report${RESET}                  Read GRAPH_REPORT.md in terminal pager
 
 The knowledge graph lives at: .flowai/wiki/
@@ -239,6 +399,7 @@ case "$subcmd" in
   lint)           cmd_graph_lint "$@" ;;
   status|"")      cmd_graph_status ;;
   report)         cmd_graph_report ;;
+  rollback)       cmd_graph_rollback "$@" ;;
   -h|--help|help) graph_usage ;;
   *)
     log_error "Unknown graph subcommand: $subcmd"

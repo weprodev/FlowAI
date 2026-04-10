@@ -31,6 +31,12 @@ source "$TESTS_ROOT/suites/skill_local_path.sh"
 source "$TESTS_ROOT/suites/role_override.sh"
 # shellcheck source=tests/suites/graph_knowledge.sh
 source "$TESTS_ROOT/suites/graph_knowledge.sh"
+# shellcheck source=tests/suites/event_log.sh
+source "$TESTS_ROOT/suites/event_log.sh"
+# shellcheck source=tests/suites/tool_plugins.sh
+source "$TESTS_ROOT/suites/tool_plugins.sh"
+# shellcheck source=tests/suites/phase_signals.sh
+source "$TESTS_ROOT/suites/phase_signals.sh"
 
 echo "FlowAI test run — FLOWAI_HOME=$FLOWAI_HOME"
 echo ""
@@ -126,6 +132,33 @@ flowai_test_s_graph_029
 flowai_test_s_graph_030
 flowai_test_s_graph_031
 flowai_test_s_graph_032
+# event log
+flowai_test_s_evt_001
+flowai_test_s_evt_002
+flowai_test_s_evt_003
+flowai_test_s_evt_004
+flowai_test_s_evt_005
+flowai_test_s_evt_006
+# token compression formats
+flowai_test_s_evt_007
+flowai_test_s_evt_008
+flowai_test_s_evt_009
+flowai_test_s_evt_010
+flowai_test_s_evt_011
+flowai_test_s_evt_012
+# tool plugins
+flowai_test_s_tpl_001
+flowai_test_s_tpl_002
+flowai_test_s_tpl_003
+flowai_test_s_tpl_004
+flowai_test_s_tpl_005
+# phase signals
+flowai_test_s_sig_001
+flowai_test_s_sig_002
+flowai_test_s_sig_003
+flowai_test_s_sig_004
+flowai_test_s_sig_005
+flowai_test_s_sig_006
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then
@@ -135,4 +168,4 @@ if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then
 fi
 
 echo ""
-All tests passed
+echo "All tests passed"

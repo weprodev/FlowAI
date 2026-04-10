@@ -16,6 +16,8 @@ source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/config.sh"
 # shellcheck source=src/core/graph.sh
 source "$FLOWAI_HOME/src/core/graph.sh"
+# shellcheck source=src/core/eventlog.sh
+source "$FLOWAI_HOME/src/core/eventlog.sh"
 
 _FLOWAI_DEFAULT_SKILLS_JSON="$FLOWAI_HOME/src/core/defaults/skills-role-assignments.json"
 
@@ -145,6 +147,20 @@ $(cat "$constitution")
     if [[ -n "$graph_block" ]]; then
       prompt="${prompt}${graph_block}"
     fi
+  fi
+
+  # Inject pipeline event log context (cross-agent visibility)
+  local event_context
+  event_context="$(flowai_event_format_for_prompt 30)"
+  if [[ -n "$event_context" ]]; then
+    prompt="${prompt}
+
+--- [PIPELINE EVENT LOG] ---
+Recent pipeline activity (most recent last). Use this to understand what
+other agents have done, what has been approved/rejected, and overall progress.
+
+${event_context}
+---"
   fi
 
   # Inject assigned skills

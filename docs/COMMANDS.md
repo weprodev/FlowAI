@@ -92,6 +92,24 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete
 | `FLOWAI_TEST_SKIP_AI=1` | Contract-test mode: phase scripts exit 0 before invoking AI. |
 | `FLOWAI_SKIP_GRAPH=1` | Skip graph enforcement in `flowai start` (same as `--skip-graph` flag). |
 
+### Event Log Configuration
+
+Control how pipeline events are formatted when injected into agent prompts:
+
+```json
+{
+  "event_log": {
+    "prompt_format": "compact"
+  }
+}
+```
+
+| Value | Tokens/event | Description |
+|-------|-------------|-------------|
+| `compact` | ~8 | Deduplicated, short `HH:MM` timestamps (default) |
+| `minimal` | ~3 | `phase:event` only — maximum token savings |
+| `full` | ~20 | Raw JSONL — maximum detail |
+
 ---
 
 ## Knowledge Graph
@@ -103,13 +121,15 @@ blind file searches with structured, token-efficient codebase context.
 ### Subcommands
 
 ```bash
-flowai graph build [--force]   # Build the full graph (--force ignores cache)
-flowai graph update             # Incremental update (changed files only)
-flowai graph ingest <file>      # Ingest a document → update wiki pages
-flowai graph query "<question>" # Query + file answer back as a wiki page
-flowai graph lint               # Health-check: orphans, contradictions, stale
-flowai graph status             # Show node/edge counts, age, staleness
-flowai graph report             # Read GRAPH_REPORT.md in the pager
+flowai graph build [--force]       # Build the full graph (--force ignores cache)
+flowai graph update                 # Incremental update (changed files only)
+flowai graph chronicle              # Mine git log → IMPLEMENTS edges + spec evolution
+flowai graph ingest <file>          # Ingest a document → update wiki pages
+flowai graph query "<question>"     # Query + file answer back as a wiki page
+flowai graph lint [--structural]    # Coverage analysis: unimplemented specs, zombies, debt
+flowai graph status                 # Show node/edge counts, age, staleness
+flowai graph report                 # Read GRAPH_REPORT.md in the pager
+flowai graph rollback [--latest]    # Interactive version browser (--latest for CI/scripts)
 ```
 
 ### Graph outputs at `.flowai/wiki/`

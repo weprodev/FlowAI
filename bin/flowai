@@ -26,6 +26,8 @@ unset BOLD CYAN GREEN YELLOW RED RESET 2>/dev/null || true
 source "$FLOWAI_HOME/src/core/log.sh"
 # shellcheck source=src/core/version.sh
 source "$FLOWAI_HOME/src/core/version.sh"
+# shellcheck source=src/core/phases.sh
+source "$FLOWAI_HOME/src/core/phases.sh"
 
 # Green line above main help (empty invocation, flowai help, -h, --help).
 flowai_print_top_help_banner() {
@@ -44,6 +46,14 @@ flowai_print_top_help_banner() {
 }
 
 run_usage() {
+  # Build phase list dynamically from canonical constant
+  local phase_list="${CYAN}master${RESET}"
+  local p
+  for p in "${FLOWAI_PIPELINE_PHASES[@]}"; do
+    phase_list+=", ${CYAN}${p}${RESET}"
+  done
+  # Show "implement" as an alias for "impl"
+  phase_list+=", ${CYAN}implement${RESET}"
   cat <<EOF
 ${BOLD}flowai run — run a pipeline phase${RESET}
 
@@ -51,7 +61,7 @@ Usage:
   flowai run <phase> [args passed to the phase script]
 
 Phases:
-  ${CYAN}master${RESET}, ${CYAN}spec${RESET}, ${CYAN}plan${RESET}, ${CYAN}tasks${RESET}, ${CYAN}implement${RESET}, ${CYAN}review${RESET}
+  ${phase_list}
 
 Help:  flowai run -h | flowai run --help
 EOF
@@ -154,10 +164,14 @@ case "$cmd" in
     if [[ -z "$phase" ]]; then
       if [ -t 0 ] && [ "${FLOWAI_TESTING:-0}" != "1" ]; then
         log_info "No phase specified. Please choose one:"
+        # Build choice list from canonical constant
+        local _choices=("master" "${FLOWAI_PIPELINE_PHASES[@]}" "implement")
         if command -v gum >/dev/null 2>&1; then
-          phase="$(gum choose "master" "spec" "plan" "tasks" "implement" "review")"
+          phase="$(gum choose "${_choices[@]}")"
         else
-          read -r -p "Select phase (master, spec, plan, tasks, implement, review): " phase < /dev/tty || true
+          local _phase_csv
+          _phase_csv="$(IFS=', '; printf '%s' "${_choices[*]}")"
+          read -r -p "Select phase (${_phase_csv}): " phase < /dev/tty || true
         fi
       fi
       if [[ -z "$phase" ]]; then

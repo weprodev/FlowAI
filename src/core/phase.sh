@@ -4,6 +4,7 @@
 
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/config.sh"
+source "$FLOWAI_HOME/src/core/eventlog.sh"
 
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export SIGNALS_DIR="${FLOWAI_DIR}/signals"
@@ -22,6 +23,7 @@ flowai_phase_wait_for() {
 
   [[ -f "$SIGNALS_DIR/${signal}.ready" ]] && return 0
 
+  flowai_event_emit "$my_phase" "waiting" "Blocked on ${signal}.ready"
   printf "\n${YELLOW}⏳ [%s] Waiting for '%s'...${RESET}\n" "$my_phase" "$signal"
 
   local _interrupted=0
@@ -114,6 +116,7 @@ flowai_phase_verify_artifact() {
     esac
   done
 
+  flowai_event_emit "$phase_name" "artifact_produced" "$target_file"
   log_success "$phase_name artifact ready: $target_file"
 
   while true; do
@@ -156,10 +159,12 @@ flowai_phase_verify_artifact() {
 
     if [[ "$decision" == "Approve" ]]; then
       touch "$SIGNALS_DIR/${current_signal}.ready"
+      flowai_event_emit "$phase_name" "approved" "$target_file"
       return 0
     fi
 
     touch "$SIGNALS_DIR/${current_signal}.reject" 2>/dev/null || true
+    flowai_event_emit "$phase_name" "rejected" "Human rejected artifact"
     log_warn "Phase rejected — coordinate with Master, then resume."
     return 2
   done
@@ -187,11 +192,16 @@ flowai_phase_run_loop() {
   local artifact_label="$4"
   local signal_name="$5"
 
+  flowai_event_emit "$phase_name" "started" "Beginning AI run"
+
   while true; do
     flowai_ai_run "$phase_name" "$prompt_file" "false"
     flowai_phase_verify_artifact "$artifact_file" "$artifact_label" "$signal_name"
     local rc=$?
-    [[ "$rc" -eq 0 ]] && break
+    if [[ "$rc" -eq 0 ]]; then
+      flowai_event_emit "$phase_name" "phase_complete" "Approved and signalled"
+      break
+    fi
     if [[ "$rc" -eq 2 ]]; then
       rm -f "$SIGNALS_DIR/${signal_name}.reject" 2>/dev/null || true
       flowai_phase_wait_for "${signal_name}.revision" "${artifact_label} revision"

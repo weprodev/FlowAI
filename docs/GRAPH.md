@@ -60,6 +60,17 @@ Extracts the objective, deterministic structure from your code:
 - Markdown cross-references and links
 - JSON configuration key mapping
 
+**Cross-language support:** The structural pass extracts definitions and imports from:
+
+| Language | Extracted |
+|----------|-----------|
+| Bash | `source`, function definitions, `command -v` |
+| Python | `import`, `from`, `class`, `def` |
+| TypeScript/JavaScript | `import`, `export`, `require` |
+| Go | `import`, `func`, `type` |
+| Markdown | `[links]()`, headings |
+| JSON | Top-level keys |
+
 All results are tagged `EXTRACTED` (high confidence). No inference involved.
 
 **Result:** `.flowai/wiki/cache/structural.json`
@@ -81,11 +92,64 @@ Results are tagged `EXTRACTED`, `INFERRED`, or `AMBIGUOUS` with confidence score
 
 ### Merge + Community Detection
 
-Both passes are merged into `graph.json`. Nodes are deduplicated by ID.
-Community detection runs a degree-based clustering algorithm (no external dependencies):
-- **God** — ≥10 edges (architectural load-bearers)
-- **Hub** — 5–9 edges (well-connected modules)
-- **Leaf** — <5 edges (peripheral files)
+Both passes are merged into `graph.json`. Nodes are deduplicated by ID; edges are deduplicated by `{source, target, relation}`.
+
+Community detection runs a **two-layer algorithm** (no external dependencies):
+
+1. **Centrality classification** — degree-based:
+   - **God** — ≥10 edges (architectural load-bearers)
+   - **Hub** — 5–9 edges (well-connected modules)
+   - **Leaf** — <5 edges (peripheral files)
+
+2. **Label propagation** — 5-iteration algorithm in jq that groups related modules into `community_id` clusters. Each node adopts the most common label among its neighbors, converging on natural module boundaries.
+
+### Graph Versioning & Rollback
+
+Before every merge, the previous `graph.json` is backed up with a timestamp (e.g., `graph.json.20260410T143000`). Old backups are pruned to the configured retention limit.
+
+**Interactive rollback** — `flowai graph rollback` presents a version browser:
+
+```
+FlowAI Graph — Version History
+#   Date                   Nodes   Edges   Size
+--  --------------------   -----   -----   ----
+0   (current)                142     387    48K  <- active
+1   2026-04-10 18:45:12      138     380    46K
+2   2026-04-09 22:15:33      125     350    42K
+
+Select version to restore (1-2) [1]: 2
+
+!! WARNING: This will:
+   - Restore graph.json to version #2 (20260409T221533)
+   - DELETE 1 newer version(s) permanently
+   - A pre-rollback safety copy will be saved
+
+Are you sure? [y/N]:
+```
+
+The rollback:
+1. Shows all backups with metadata (date, node/edge count, file size)
+2. Lets you pick which version to restore (gum choose or plain read)
+3. Warns before deleting newer versions (red "DELETE" warning)
+4. Always saves a `.pre-rollback` safety copy before overwriting
+
+**Non-interactive mode** for scripts and CI:
+
+```bash
+flowai graph rollback --latest   # restores most recent backup, no confirmation
+```
+
+Configure retention in `.flowai/config.json`:
+
+```json
+{
+  "graph": {
+    "versions_to_keep": 10
+  }
+}
+```
+
+Default: `5` versions.
 
 ---
 
@@ -196,7 +260,8 @@ The `graph` section in `.flowai/config.json`:
     "scan_paths": ["src", "docs", "specs"],
     "ignore_patterns": ["*.generated.*", "*.min.js", "*.min.css"],
     "max_age_hours": 24,
-    "auto_build": false
+    "auto_build": false,
+    "versions_to_keep": 5
   }
 }
 ```
@@ -208,6 +273,7 @@ The `graph` section in `.flowai/config.json`:
 | `ignore_patterns` | `[]` | Glob patterns to exclude from scanning |
 | `max_age_hours` | `24` | Age threshold before graph is considered stale |
 | `auto_build` | `false` | Reserved for future CI integration |
+| `versions_to_keep` | `5` | Number of graph.json backups to retain |
 
 ---
 

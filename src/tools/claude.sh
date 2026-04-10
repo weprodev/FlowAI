@@ -35,5 +35,17 @@ flowai_tool_claude_run() {
     return 0
   fi
 
-  "${cmd[@]}" -p "$sys_prompt" < /dev/null || return $?
+  "${cmd[@]}" --system-prompt "$sys_prompt" -p "Execute the pipeline directive in your system prompt. Begin immediately." < /dev/null || return $?
+}
+
+# Non-interactive single-shot invocation for graph semantic extraction.
+# Args: $1=model  $2=prompt_file
+# Returns: raw LLM output on stdout.
+flowai_tool_claude_run_oneshot() {
+  local model="$1"
+  local prompt_file="$2"
+  local prompt
+  prompt="$(cat "$prompt_file")"
+
+  claude --model "$model" --system-prompt "You are a knowledge graph extraction engine. Return ONLY valid JSON. No markdown fences, no explanation." -p "$prompt" < /dev/null 2>/dev/null || echo '{}'
 }

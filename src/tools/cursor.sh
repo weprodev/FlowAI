@@ -19,3 +19,10 @@ flowai_tool_cursor_run() {
   printf '%s\n' "$sys_prompt"
   return 0
 }
+
+# Cursor has no headless CLI — oneshot returns empty fallback.
+# Args: $1=model  $2=prompt_file
+flowai_tool_cursor_run_oneshot() {
+  log_warn "Cursor does not support oneshot extraction — returning empty graph fragment." >&2
+  printf '{"nodes":[],"edges":[],"insights":[]}'
+}

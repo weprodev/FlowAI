@@ -9,7 +9,18 @@ Set `master.tool` and `roles.<role-id>.tool` in `.flowai/config.json` to one of 
 | `cursor`  | [Cursor](https://cursor.com/) | Terminal + Cursor app | FlowAI prints the enriched prompt in the terminal for manual paste into Composer/Agent. Cursor routes internally to many providers; see [Cursor models](https://cursor.com/docs/models). |
 | `copilot` | [GitHub Copilot Chat](https://docs.github.com/en/copilot) | Terminal + Copilot Chat | FlowAI prints the prompt for paste into Copilot Chat (no headless CLI available). Model routing is managed by GitHub. |
 
-**Adding a new tool:** create `src/tools/<name>.sh` defining `flowai_tool_<name>_print_models()` and `flowai_tool_<name>_run()`, then add the `tools.<name>` entry to `models-catalog.json`. No other files need to change.
+**Adding a new tool:** create `src/tools/<name>.sh` defining three functions, then add the `tools.<name>` entry to `models-catalog.json`. No other files need to change.
+
+| Function | Purpose |
+|----------|---------|
+| `flowai_tool_<name>_print_models()` | Used by `flowai models list` |
+| `flowai_tool_<name>_run(model, auto_approve, run_interactive, sys_prompt)` | Phase dispatcher — runs full AI session |
+| `flowai_tool_<name>_run_oneshot(model, prompt_file)` | Non-interactive single-prompt for knowledge graph semantic extraction |
+
+Tools without a headless CLI (Cursor, Copilot) should return empty JSON from `_run_oneshot`:
+```bash
+printf '{"nodes":[],"edges":[],"insights":[]}'
+```
 
 ---
 
