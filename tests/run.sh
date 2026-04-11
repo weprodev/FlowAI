@@ -9,7 +9,11 @@ set -euo pipefail
 TESTS_ROOT="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH="" cd "$TESTS_ROOT/.." && pwd)"
 # bin/fai → bin/flowai for harness only (install.sh creates the same symlink under the install prefix).
-( cd "$REPO_ROOT/bin" && ln -sf flowai fai )
+if [[ "$(uname -s 2>/dev/null)" == MINGW* || "$(uname -s 2>/dev/null)" == MSYS* ]]; then
+  cp -f "$REPO_ROOT/bin/flowai" "$REPO_ROOT/bin/fai" 2>/dev/null || true
+else
+  ( cd "$REPO_ROOT/bin" && ln -sf flowai fai )
+fi
 export FLOWAI_HOME="$REPO_ROOT"
 export FLOWAI_TESTING=1
 

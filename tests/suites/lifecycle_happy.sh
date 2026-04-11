@@ -46,6 +46,11 @@ flowai_test_s_cli_016() {
 
 # UC-CLI-017 / tests/usecases/017-cli-missing-dependencies.md
 flowai_test_s_cli_017() {
+  # Skip on Windows — symlinked bash can't resolve shared libraries in MSYS/Git Bash
+  if [[ "$(uname -s 2>/dev/null)" == MINGW* || "$(uname -s 2>/dev/null)" == MSYS* ]]; then
+    flowai_test_pass "UC-CLI-017" "missing dependency errors (skipped: Windows symlink limitation)"
+    return 0
+  fi
   local tmp fake_root bash_only jqbin tmuxbin gumdir path_no_gum
   tmp="$(mktemp -d)"
   fake_root="$(flowai_test_mktemp_fake_bash_only_root)"
