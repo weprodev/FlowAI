@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq tmux
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install jq tmux || true
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install jq -y --no-progress
+
+      - name: Syntax check
+        run: |
+          errors=0
+          for f in bin/flowai install.sh src/commands/*.sh src/phases/*.sh \
+                   src/core/*.sh src/bootstrap/*.sh src/graph/*.sh src/os/*.sh src/os/lib/*.sh; do
+            if ! bash -n "$f" 2>&1; then
+              echo "::error file=$f::Syntax error"
+              errors=$((errors + 1))
+            fi
+          done
+          [[ "$errors" -eq 0 ]] || exit 1
+
+      - name: Run tests
+        run: |
+          FLOWAI_TEST_ALLOW_MISSING_TMUX=1 bash tests/run.sh
+
+      - name: Install (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          sudo bash install.sh
+
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          NO_SUDO=1 PREFIX="$HOME/.local" bash install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify commands
+        run: |
+          flowai version
+          flowai --help
+          fai version
