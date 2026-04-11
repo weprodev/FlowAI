@@ -365,6 +365,27 @@ if [[ "${FLOWAI_TESTING:-0}" != "1" ]] && [[ -f "$FLOWAI_DIR/config.json" ]]; th
   fi
 fi
 
-log_success "FlowAI is ready."
-log_info "Next: customize $FLOWAI_DIR/config.json and optionally copy roles from $FLOWAI_HOME/src/roles/"
-log_info "Then run: flowai validate && flowai start"
+  cfg_rel=".flowai/config.json"
+  roles_rel="src/roles/"
+
+  printf '\n'
+  if command -v gum >/dev/null 2>&1; then
+    gum style \
+      --border rounded \
+      --padding "1 3" \
+      --margin "0 0" \
+      --border-foreground 42 \
+      "$(gum style --foreground 42 --bold '✓ FlowAI is successfully initialized.')" "" \
+      "$(gum style --foreground 244 'Next:') customize ${cfg_rel}" \
+      "$(gum style --foreground 244 '      ') and optionally copy role overrides from ${roles_rel}" "" \
+      "$(gum style --foreground 244 'Then:') $(gum style --bold 'flowai validate && flowai start')"
+  else
+    printf '╭─────────────────────────────────────────────────────────────────╮\n'
+    printf '│ ✓ FlowAI is successfully initialized.                           │\n'
+    printf '│                                                                 │\n'
+    printf '│ Next: customize %-47s │\n' "$cfg_rel"
+    printf '│       and optionally copy role overrides from %-17s │\n' "$roles_rel"
+    printf '│ Then: flowai validate && flowai start                           │\n'
+    printf '╰─────────────────────────────────────────────────────────────────╯\n'
+  fi
+  printf '\n'

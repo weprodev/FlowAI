@@ -18,7 +18,23 @@
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 FLOWAI_WIKI_DIR="${FLOWAI_DIR:-$PWD/.flowai}/wiki"
-FLOWAI_GRAPH_REPORT="${FLOWAI_WIKI_DIR}/GRAPH_REPORT.md"
+
+if [[ -n "${FLOWAI_GRAPH_REPORT_PATH:-}" ]]; then
+  FLOWAI_GRAPH_REPORT="${FLOWAI_GRAPH_REPORT_PATH}"
+else
+  _cfg_report_path=""
+  if type flowai_cfg_read >/dev/null 2>&1; then
+    _cfg_report_path="$(flowai_cfg_read '.graph.report_path' '')"
+  fi
+
+  if [[ -n "$_cfg_report_path" ]]; then
+    FLOWAI_GRAPH_REPORT="$(pwd -P)/${_cfg_report_path}"
+  elif [[ -d "$(pwd -P)/docs" ]]; then
+    FLOWAI_GRAPH_REPORT="$(pwd -P)/docs/GRAPH_REPORT.md"
+  else
+    FLOWAI_GRAPH_REPORT="$(pwd -P)/GRAPH_REPORT.md"
+  fi
+fi
 FLOWAI_GRAPH_JSON="${FLOWAI_WIKI_DIR}/graph.json"
 FLOWAI_GRAPH_INDEX="${FLOWAI_WIKI_DIR}/index.md"
 FLOWAI_GRAPH_LOG="${FLOWAI_WIKI_DIR}/log.md"

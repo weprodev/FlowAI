@@ -80,9 +80,17 @@ _graph_run_semantic_pass() {
         continue
       fi
     fi
+    local rel
+    rel="$(_graph_rel_path "$file")"
+    printf "\r  \033[36mℹ\033[0m \033[90mAnalyzing:\033[0m %s\033[K" "$rel" >&2
+
     _graph_semantic_extract_file "$file" >/dev/null
     processed=$(( processed + 1 ))
   done < <(_graph_discover_files)
+  
+  # Clear the progress line completely
+  printf "\r\033[K" >&2
+  
   log_success "Semantic pass: ${processed} processed · ${skipped} skipped (unchanged)" >&2
 }
 
@@ -465,6 +473,10 @@ _graph_run_structural_pass() {
     total=$(( total + 1 ))
     local rel
     rel="$(_graph_rel_path "$file")"
+    
+    # Progress visualization (updates in place)
+    printf "\r  \033[36mℹ\033[0m \033[90mExtracting:\033[0m %s\033[K" "$rel" >&2
+    
     local fragment_cache="$cache_dir/$(_graph_path_to_key "$rel").json"
 
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file" && [[ -f "$fragment_cache" ]]; then
@@ -493,6 +505,9 @@ _graph_run_structural_pass() {
     processed=$(( processed + 1 ))
   done < <(_graph_discover_files)
 
+  # Clear the progress line completely
+  printf "\r\033[K" >&2
+  
   log_success "Structural pass: ${total} files (${processed} processed · ${cached} cached)" >&2
 
   # Convert JSONL accumulators to proper JSON arrays
@@ -797,6 +812,7 @@ _graph_generate_report() {
   local report_file="$FLOWAI_GRAPH_REPORT"
   [[ -f "$graph_file" ]] || return 1
 
+  mkdir -p "$(dirname "$report_file")"
   log_info "Generating GRAPH_REPORT.md..."
 
   local built_at node_count edge_count community_count

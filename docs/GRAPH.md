@@ -18,11 +18,16 @@ knowledge graph** that agents read as their primary navigation layer.
 
 ```
 .flowai/wiki/
-├── GRAPH_REPORT.md  ← Start here: god nodes, communities, suggested queries
 ├── graph.json       ← Full graph: nodes, edges, provenance, metadata
 ├── index.md         ← Content catalog: every wiki page with a one-line summary
 ├── log.md           ← Append-only log of all graph operations
 └── cache/           ← SHA256 per-file hashes for incremental builds
+```
+
+Additionally, outside the internal cache, FlowAI automatically generates a human-readable dashboard. It dynamically places this in your `docs/` folder if it exists, or directly in your project root identically (e.g., `./GRAPH_REPORT.md`). You can also manually configure this path via the `"report_path"` key under `"graph"` in `.flowai/config.json`, or override it temporarily via the `FLOWAI_GRAPH_REPORT_PATH` environment variable.
+```
+docs/
+└── GRAPH_REPORT.md  ← Start here: god nodes, communities, suggested queries
 ```
 
 ### `GRAPH_REPORT.md`
@@ -208,10 +213,10 @@ context in its system prompt when a graph exists. The injected block looks like:
 --- [FLOWAI KNOWLEDGE GRAPH] ---
 A compiled knowledge graph of this codebase is available...
   Graph:  .flowai/wiki/graph.json — 234 nodes · 891 edges · 3 communities · built 2h ago
-  Start:  .flowai/wiki/GRAPH_REPORT.md
+  Start:  docs/GRAPH_REPORT.md
   Index:  .flowai/wiki/index.md
 Navigation protocol:
-  1. Read GRAPH_REPORT.md before searching any files
+  1. Read docs/GRAPH_REPORT.md before searching any files
   2. Use index.md to find the exact wiki page for any concept
   ...
 ---
@@ -226,16 +231,14 @@ the full navigation protocol: `GRAPH_REPORT.md → index.md → wiki pages → g
 
 ## Sharing the Graph with Your Team
 
-By default, `.flowai/wiki/` is local to your machine (gitignored via `.flowai/`).
+The raw compiled graph database living in `.flowai/wiki/` (including `graph.json` and `cache/`) is **automatically ignored in git by default** (handled via `.gitignore`). You should **never force-commit it** to GitHub. It behaves identically to an AI `node_modules` folder, rapidly accumulating large incremental JSON blocks that will cause immediate merge conflict nightmares.
 
-**To share the graph with your team** — so everyone benefits from a pre-built graph:
+Instead, every time FlowAI builds the graph locally, it automatically compiles and exports a concise, human-readable markdown dashboard: **`docs/GRAPH_REPORT.md`**
 
-1. Remove `.flowai/wiki/` from your `.gitignore` (or the line that ignores `.flowai/`)
-2. Commit `.flowai/wiki/` to your repository
-3. Add a CI step: `flowai graph update` (runs the structural pass + any changed files)
-
-All team members and CI agents will then read the same compiled graph, making cold-starts
-a solved problem across the team.
+**To seamlessly share architectural visibility with your team:**
+1. Leave `.flowai/` strictly ignored in version control.
+2. Commit `docs/GRAPH_REPORT.md` cleanly to your repository.
+3. Your human team leads can immediately verify the health, code coverage, and God nodes right on GitHub, while any developer who checks out the repository can instantly compile the raw JSON variant locally by running `flowai build`.
 
 ---
 

@@ -229,47 +229,13 @@ flowai_scaffold_editor_interactive() {
     return 0
   fi
 
-  # 3. Ask about additional editors
+  # 3. Automatically scaffold all other supported editors for team compatibility
   printf '\n'
-  log_info "FlowAI can also create context files for other AI editors your team may use."
+  log_info "Creating context files for other AI editors your team may use:"
 
-  if command -v gum >/dev/null 2>&1; then
-    local labels=()
-    for e in "${others[@]}"; do
-      labels+=("$(_scaffold_editor_label "$e")")
-    done
-
-    local selected
-    selected="$(gum choose --no-limit --header "Select additional editors to scaffold (space to toggle):" "${labels[@]}" 2>/dev/null)" || true
-
-    if [[ -n "$selected" ]]; then
-      while IFS= read -r label; do
-        [[ -z "$label" ]] && continue
-        # Extract editor name from label (first word, lowercased)
-        local editor_name
-        editor_name="$(echo "$label" | awk '{print tolower($1)}')"
-        flowai_scaffold_editor_config "$root" "$editor_name" || true
-      done <<< "$selected"
-    fi
-  else
-    # Fallback: numbered menu
-    printf '  Additional editors:\n'
-    local i=1
-    for e in "${others[@]}"; do
-      printf '    %d) %s\n' "$i" "$(_scaffold_editor_label "$e")"
-      i=$((i + 1))
-    done
-    printf '    0) Skip\n'
-    read -r -p "  Enter numbers separated by spaces (e.g. 1 3), or 0 to skip: " ans_editors < /dev/tty || true
-
-    if [[ "$ans_editors" != "0" ]] && [[ -n "$ans_editors" ]]; then
-      for num in $ans_editors; do
-        if [[ "$num" =~ ^[0-9]+$ ]] && [[ "$num" -ge 1 ]] && [[ "$num" -le "${#others[@]}" ]]; then
-          flowai_scaffold_editor_config "$root" "${others[$((num - 1))]}" || true
-        fi
-      done
-    fi
-  fi
+  for e in "${others[@]}"; do
+    flowai_scaffold_editor_config "$root" "$e" || true
+  done
 
   printf '\n'
 }
