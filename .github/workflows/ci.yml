@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    if: "!contains(github.event.head_commit.message, '[skip branch ci]')"
+    if: "!contains(github.event.head_commit.message, '[skip-ci]')"
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
