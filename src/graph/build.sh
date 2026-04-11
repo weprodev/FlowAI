@@ -20,6 +20,9 @@
 
 # shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=src/core/jq.sh
+source "$FLOWAI_HOME/src/core/jq.sh"
+flowai_prefer_jq_path
 # shellcheck source=src/core/config.sh
 source "$FLOWAI_HOME/src/core/config.sh"
 # shellcheck source=src/core/graph.sh
@@ -173,8 +176,9 @@ _graph_cache_update() {
 # Emit JSON for a single node.
 _graph_node_json() {
   local id="$1" label="$2" type="$3" path="$4"
-  jq -n --arg id "$id" --arg label "$label" --arg type "$type" --arg path "$path" \
-    '{"id":$id,"label":$label,"type":$type,"path":$path}'
+  # jq 1.6 (e.g. conda) reserves `label`; use --arg lbl / $lbl for compatibility.
+  jq -n --arg id "$id" --arg lbl "$label" --arg type "$type" --arg path "$path" \
+    '{"id":$id,"label":$lbl,"type":$type,"path":$path}'
 }
 
 # Emit JSON for a single edge.
@@ -262,10 +266,10 @@ _graph_structural_extract_file() {
     # Spec node carries richer metadata
     nodes+=("$(jq -n \
       --arg id "$file_id" \
-      --arg label "$spec_title" \
+      --arg lbl "$spec_title" \
       --arg path "$rel_path" \
       --argjson meta "$spec_meta" \
-      '{"id":$id,"label":$label,"type":"spec","path":$path,
+      '{"id":$id,"label":$lbl,"type":"spec","path":$path,
         "feature_ids":$meta.feature_ids,"criteria":$meta.criteria,
         "trust":"HIGH"}')")
 
@@ -464,11 +468,17 @@ _graph_run_structural_pass() {
     local fragment_cache="$cache_dir/$(_graph_path_to_key "$rel").json"
 
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file" && [[ -f "$fragment_cache" ]]; then
-      # Append cached fragment's nodes/edges to accumulators
-      jq -c '.nodes[]' "$fragment_cache" >> "$tmp_nodes" 2>/dev/null || true
-      jq -c '.edges[]' "$fragment_cache" >> "$tmp_edges" 2>/dev/null || true
-      cached=$(( cached + 1 ))
-      continue
+      # Validate cached fragment: reject stale cache with zero nodes (corrupt from prior bug)
+      local _cached_node_count
+      _cached_node_count="$(jq '.nodes | length' "$fragment_cache" 2>/dev/null || echo 0)"
+      if [[ "$_cached_node_count" -gt 0 ]]; then
+        # Append cached fragment's nodes/edges to accumulators
+        jq -c '.nodes[]' "$fragment_cache" >> "$tmp_nodes" 2>/dev/null || true
+        jq -c '.edges[]' "$fragment_cache" >> "$tmp_edges" 2>/dev/null || true
+        cached=$(( cached + 1 ))
+        continue
+      fi
+      # Cache has 0 nodes — treat as stale and fall through to re-extract
     fi
 
     local fragment
@@ -624,7 +634,7 @@ _graph_merge() {
       while IFS= read -r old_backup; do rm -f "$old_backup"; done
   fi
 
-  # Collect all semantic fragment files
+  # Collect all semantic fragment files (guarded for set -u on older Bash)
   local semantic_files=()
   if [[ -d "$semantic_dir" ]]; then
     while IFS= read -r f; do
@@ -639,15 +649,17 @@ _graph_merge() {
 
   local sem_nodes='[]' sem_edges='[]' all_insights='[]'
 
-  for sf in "${semantic_files[@]}"; do
-    local snodes sedges insights
-    snodes="$(jq '.nodes // []' "$sf" 2>/dev/null)"
-    sedges="$(jq '.edges // []' "$sf" 2>/dev/null)"
-    insights="$(jq '.insights // []' "$sf" 2>/dev/null)"
-    sem_nodes="$(jq -n --argjson a "$sem_nodes" --argjson b "$snodes" '$a + $b')"
-    sem_edges="$(jq -n --argjson a "$sem_edges" --argjson b "$sedges" '$a + $b')"
-    all_insights="$(jq -n --argjson a "$all_insights" --argjson b "$insights" '$a + $b')"
-  done
+  if [[ "${semantic_files[*]-}" != "" ]]; then
+    for sf in "${semantic_files[@]}"; do
+      local snodes sedges insights
+      snodes="$(jq '.nodes // []' "$sf" 2>/dev/null)"
+      sedges="$(jq '.edges // []' "$sf" 2>/dev/null)"
+      insights="$(jq '.insights // []' "$sf" 2>/dev/null)"
+      sem_nodes="$(jq -n --argjson a "$sem_nodes" --argjson b "$snodes" '$a + $b')"
+      sem_edges="$(jq -n --argjson a "$sem_edges" --argjson b "$sedges" '$a + $b')"
+      all_insights="$(jq -n --argjson a "$all_insights" --argjson b "$insights" '$a + $b')"
+    done
+  fi
 
   # Merge all nodes (deduplicate by id, structural takes precedence)
   # Merge all edges

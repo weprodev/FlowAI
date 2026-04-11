@@ -400,7 +400,7 @@ shift || true
 # Help should work without jq; all other graph operations depend on it.
 if [[ "$subcmd" != "-h" && "$subcmd" != "--help" && "$subcmd" != "help" ]]; then
   _graph_require_jq
-}
+fi
 
 case "$subcmd" in
   build)          cmd_graph_build "$@" ;;

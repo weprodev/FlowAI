@@ -24,6 +24,9 @@ unset BOLD CYAN GREEN YELLOW RED RESET 2>/dev/null || true
 
 # shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=src/core/jq.sh
+source "$FLOWAI_HOME/src/core/jq.sh"
+flowai_prefer_jq_path
 # shellcheck source=src/core/version.sh
 source "$FLOWAI_HOME/src/core/version.sh"
 # shellcheck source=src/core/phases.sh

@@ -53,25 +53,9 @@ if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
   fi
 fi
 
-if [[ "$HEADLESS" != true ]]; then
-  if [ -t 0 ] && [ "${FLOWAI_TESTING:-0}" != "1" ]; then
-    log_info "Start mode: Headless runs in background (CI-safe). Standard attaches interactively."
-    if command -v gum >/dev/null 2>&1; then
-      if gum confirm "Start in headless mode?"; then
-        HEADLESS=true
-      fi
-    else
-      read -r -p "Start in headless mode? [y/N]: " ans < /dev/tty || true
-      if [[ "$ans" =~ ^[yY] ]]; then
-        HEADLESS=true
-      fi
-    fi
-  fi
-
-  if [[ "$HEADLESS" != true ]] && ! command -v gum >/dev/null 2>&1; then
-    log_error "gum is required for phase approval menus. Install gum (e.g. brew install gum)."
-    exit 1
-  fi
+if [[ "$HEADLESS" != true ]] && ! command -v gum >/dev/null 2>&1; then
+  log_error "gum is required for phase approval menus. Install gum (e.g. brew install gum)."
+  exit 1
 fi
 
 FLOWAI_DIR="$PWD/.flowai"
