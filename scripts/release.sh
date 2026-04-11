@@ -102,7 +102,7 @@ git add VERSION
 
 # Commit if there's anything modified (VERSION)
 if [[ -n "$(git status --porcelain)" ]]; then
-  git commit -m "chore(release): bump version to v${NEW_VERSION} [skip-ci]"
+  git commit -m "chore(release): bump version to v${NEW_VERSION}"
 fi
 
 CURRENT_VERSION="$NEW_VERSION"
