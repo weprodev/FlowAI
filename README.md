@@ -303,7 +303,6 @@ git tag v0.2.0 && git push origin main --tags
 | [Commands](docs/COMMANDS.md) | Every CLI command, environment variables, event log config |
 | [Knowledge Graph](docs/GRAPH.md) | Build passes, community detection, versioning, chronicle, configuration |
 | [Supported Tools](docs/TOOLS.md) | Tool plugin API, model catalog, config keys, vendor references |
-
 ---
 
 ## License
