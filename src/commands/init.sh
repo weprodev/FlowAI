@@ -81,8 +81,8 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
         [[ -n "$t_name" ]] && tool_names+=("$t_name")
       done < <(jq -r '.tools | keys[]' "$_mc")
       
-      _gdef="$(jq -r '.tools.gemini.default_id // "gemini-2.5-pro"' "$_mc")"
-      _cdef="$(jq -r '.tools.claude.default_id // "sonnet"' "$_mc")"
+      _gdef="$(jq -r '.tools.gemini.default_id // "gemini-2.5-pro"' "$_mc" | tr -d '\r')"
+      _cdef="$(jq -r '.tools.claude.default_id // "sonnet"' "$_mc" | tr -d '\r')"
     fi
     
     if [ ${#tool_names[@]} -eq 0 ]; then
@@ -169,7 +169,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
 
       # 4. Phase Agent Configuration
       printf "── Phase Agent Configuration ──────────────────────────────────\n\n"
-      _default_model="$(jq -r --arg t "$wizard_tool" '.tools[$t].default_id // "default"' "$_mc" 2>/dev/null || echo 'default')"
+      _default_model="$(jq -r --arg t "$wizard_tool" '.tools[$t].default_id // "default"' "$_mc" 2>/dev/null | tr -d '\r' || echo 'default')"
       printf "FlowAI runs %d pipeline phases. Each phase is assigned a role with its own AI tool and model.\n" "${#FLOWAI_PIPELINE_PHASES[@]}"
       printf "Default: all phases use %s / %s.\n\n" "$wizard_tool" "$_default_model"
 
@@ -212,13 +212,13 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
 
           # Model selection — show catalog for the chosen tool
           _ptool="$_sel_tool"
-          _pmodel_default="$(jq -r --arg t "$_ptool" '.tools[$t].default_id // "default"' "$_mc" 2>/dev/null || echo 'default')"
+          _pmodel_default="$(jq -r --arg t "$_ptool" '.tools[$t].default_id // "default"' "$_mc" 2>/dev/null | tr -d '\r' || echo 'default')"
 
           if command -v gum >/dev/null 2>&1; then
             declare -a _model_choices=()
             while IFS= read -r mid; do
               [[ -n "$mid" ]] && _model_choices+=("$mid")
-            done < <(jq -r --arg t "$_ptool" '.tools[$t].models[].id' "$_mc" 2>/dev/null)
+            done < <(jq -r --arg t "$_ptool" '.tools[$t].models[].id' "$_mc" 2>/dev/null | tr -d '\r')
             if [[ ${#_model_choices[@]} -gt 0 ]]; then
               _sel_model="$(gum choose --header "    Model for '$phase' (default: $_pmodel_default):" "${_model_choices[@]}" 2>/dev/null)" || _sel_model=""
               [[ -z "$_sel_model" ]] && _sel_model="$_pmodel_default"
@@ -241,7 +241,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
 
     # ── Determine default model based on primary tool ─────────────────────
     if [[ -f "$_mc" ]]; then
-      wizard_model="$(jq -r --arg t "$wizard_tool" '.tools[$t].default_id // "default"' "$_mc")"
+      wizard_model="$(jq -r --arg t "$wizard_tool" '.tools[$t].default_id // "default"' "$_mc" | tr -d '\r')"
     else
       if [ "$wizard_tool" = "gemini" ]; then wizard_model="$_gdef";
       elif [ "$wizard_tool" = "claude" ]; then wizard_model="$_cdef";
@@ -329,7 +329,7 @@ mkdir -p "$PWD/specs"
 # so that agents immediately understand the project structure and FlowAI conventions.
 _scaffold_tool="${wizard_tool:-gemini}"
 if [[ -f "$FLOWAI_DIR/config.json" ]]; then
-  _scaffold_tool="$(jq -r '.master.tool // "gemini"' "$FLOWAI_DIR/config.json" 2>/dev/null || echo "gemini")"
+  _scaffold_tool="$(jq -r '.master.tool // "gemini"' "$FLOWAI_DIR/config.json" 2>/dev/null | tr -d '\r' || echo "gemini")"
 fi
 
 if [[ -t 0 ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then

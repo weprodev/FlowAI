@@ -12,7 +12,7 @@ flowai_models_catalog_default_for_tool() {
   local f
   f="$(flowai_models_catalog_path)"
   [[ -f "$f" ]] || return 0
-  jq -r --arg t "$tool" '.tools[$t].default_id // empty' "$f" 2>/dev/null
+  jq -r --arg t "$tool" '.tools[$t].default_id // empty' "$f" 2>/dev/null | tr -d '\r'
 }
 
 # One model id per line for tool.
@@ -21,7 +21,7 @@ flowai_models_catalog_ids_for_tool() {
   local f
   f="$(flowai_models_catalog_path)"
   [[ -f "$f" ]] || return 0
-  jq -r --arg t "$tool" '.tools[$t].models[]?.id // empty' "$f" 2>/dev/null
+  jq -r --arg t "$tool" '.tools[$t].models[]?.id // empty' "$f" 2>/dev/null | tr -d '\r'
 }
 
 # Document URL for tool (for CLI hints).
@@ -30,7 +30,7 @@ flowai_models_catalog_doc_for_tool() {
   local f
   f="$(flowai_models_catalog_path)"
   [[ -f "$f" ]] || return 0
-  jq -r --arg t "$tool" '.tools[$t].doc // empty' "$f" 2>/dev/null
+  jq -r --arg t "$tool" '.tools[$t].doc // empty' "$f" 2>/dev/null | tr -d '\r'
 }
 
 # Exit 0 if .tools.<tool> exists in the catalog.
@@ -67,5 +67,5 @@ flowai_models_catalog_tools_listing_model() {
       | select(.value.models != null)
       | select((.value.models | map(.id) | index($m)) != null)
       | .key ] | unique | .[]
-  ' "$f" 2>/dev/null
+  ' "$f" 2>/dev/null | tr -d '\r'
 }
