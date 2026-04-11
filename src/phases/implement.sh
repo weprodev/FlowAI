@@ -64,10 +64,10 @@ _impl_track_progress() {
   while true; do
     sleep 10
     [[ -f "$tasks_file" ]] || continue
-    local total done
+    local total done_count
     total="$(grep -cE '^[[:space:]]*- \[' "$tasks_file" 2>/dev/null || echo 0)"
-    done="$(grep -cE '^[[:space:]]*- \[x\]' "$tasks_file" 2>/dev/null || echo 0)"
-    local report="${done}/${total} tasks complete"
+    done_count="$(grep -cE '^[[:space:]]*- \[x\]' "$tasks_file" 2>/dev/null || echo 0)"
+    local report="${done_count}/${total} tasks complete"
     if [[ "$report" != "$last_report" && "$total" -gt 0 ]]; then
       flowai_event_emit "impl" "progress" "$report"
       last_report="$report"

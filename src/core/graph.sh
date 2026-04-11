@@ -24,6 +24,37 @@ FLOWAI_GRAPH_INDEX="${FLOWAI_WIKI_DIR}/index.md"
 FLOWAI_GRAPH_LOG="${FLOWAI_WIKI_DIR}/log.md"
 FLOWAI_GRAPH_CACHE_DIR="${FLOWAI_WIKI_DIR}/cache"
 
+# ─── Path Helpers ─────────────────────────────────────────────────────────────
+
+# Resolve the physical project root (symlink-free).
+# On macOS, /var is a symlink to /private/var. When bash cd's into a mktemp
+# directory, $PWD may use /var/... while pwd -P returns /private/var/...,
+# causing ${file#$PWD/} to fail silently. Normalizing through pwd -P ensures
+# consistent path comparison.
+_graph_project_root() {
+  pwd -P
+}
+
+# Convert an absolute file path to a project-relative path.
+# Handles both /var/... and /private/var/... forms on macOS.
+_graph_rel_path() {
+  local file="$1"
+  local root
+  root="$(_graph_project_root)"
+  # Try stripping the physical root first
+  local rel="${file#"$root"/}"
+  if [[ "$rel" == "$file" ]]; then
+    # Stripping failed — file path uses a different symlink form.
+    # Resolve the file's directory physically and reconstruct.
+    local dir base
+    dir="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)"
+    base="$(basename "$file")"
+    rel="${dir}/${base}"
+    rel="${rel#"$root"/}"
+  fi
+  printf '%s' "$rel"
+}
+
 # ─── Existence & Freshness ────────────────────────────────────────────────────
 
 # Returns 0 if a usable graph exists (GRAPH_REPORT.md + graph.json both present).
@@ -134,7 +165,7 @@ flowai_graph_context_block() {
   edges="$(_flowai_graph_edge_count)"
   communities="$(_flowai_graph_community_count)"
   age="$(_flowai_graph_age_label)"
-  wiki_dir="${FLOWAI_WIKI_DIR#$PWD/}"  # project-relative path for display
+  wiki_dir="$(_graph_rel_path "$FLOWAI_WIKI_DIR")"  # project-relative path for display
 
   cat <<GRAPH_BLOCK
 

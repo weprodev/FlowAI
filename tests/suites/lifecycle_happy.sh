@@ -5,10 +5,7 @@
 
 # UC-CLI-010 / tests/usecases/010-cli-init-happy.md
 flowai_test_s_cli_010() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-010" "flowai init creates project layout"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-010" "flowai init creates project layout"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -22,10 +19,7 @@ flowai_test_s_cli_010() {
 
 # UC-CLI-016 / tests/usecases/016-cli-init-idempotent.md
 flowai_test_s_cli_016() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-016" "flowai init idempotent"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-016" "flowai init idempotent"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -95,10 +89,7 @@ flowai_test_s_cli_017() {
 
 # UC-CLI-018 / tests/usecases/018-cli-invalid-config-json.md
 flowai_test_s_cli_018() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-018" "invalid config.json rejected"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-018" "invalid config.json rejected"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -124,10 +115,8 @@ flowai_test_s_cli_018() {
 
 # UC-CLI-022 / tests/usecases/022-cli-not-initialized.md
 flowai_test_s_cli_022() {
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq or tmux not installed)\n' "UC-CLI-022" "start/run without init"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-022" "start/run without init"; then return 0; fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-022" "start/run without init"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -146,10 +135,7 @@ flowai_test_s_cli_022() {
 
 # UC-CLI-011 / tests/usecases/011-cli-status-no-session.md
 flowai_test_s_cli_011() {
-  if ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: tmux not installed)\n' "UC-CLI-011" "flowai status when no session"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-011" "flowai status when no session"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -163,10 +149,7 @@ flowai_test_s_cli_011() {
 
 # UC-CLI-012 / tests/usecases/012-cli-kill-no-session.md
 flowai_test_s_cli_012() {
-  if ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: tmux not installed)\n' "UC-CLI-012" "flowai kill when no session"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-012" "flowai kill when no session"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -179,10 +162,7 @@ flowai_test_s_cli_012() {
 
 # UC-CLI-021 / tests/usecases/021-cli-stop-alias.md
 flowai_test_s_cli_021() {
-  if ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: tmux not installed)\n' "UC-CLI-021" "flowai stop when no session"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-021" "flowai stop when no session"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -195,10 +175,7 @@ flowai_test_s_cli_021() {
 
 # UC-CLI-013 / tests/usecases/013-cli-run-plan-contract.md
 flowai_test_s_cli_013() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-013" "flowai run plan contract"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-013" "flowai run plan contract"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -219,10 +196,7 @@ flowai_test_s_cli_013() {
 
 # UC-CLI-020 / tests/usecases/020-cli-run-implement-contract.md
 flowai_test_s_cli_020() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-020" "flowai run implement contract"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-020" "flowai run implement contract"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -245,10 +219,8 @@ flowai_test_s_cli_020() {
 
 # UC-CLI-014 / tests/usecases/014-cli-start-manual.md — headless creates a real tmux session (no attach)
 flowai_test_s_cli_014() {
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq or tmux not installed)\n' "UC-CLI-014" "flowai start --headless creates session"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-014" "flowai start --headless creates session"; then return 0; fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-014" "flowai start --headless creates session"; then return 0; fi
 
   local tmp sess
   tmp="$(mktemp -d)"
@@ -274,10 +246,8 @@ flowai_test_s_cli_014() {
 
 # UC-CLI-015 / tests/usecases/015-cli-session-lifecycle.md — start (headless) → status → kill → status
 flowai_test_s_cli_015() {
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq or tmux not installed)\n' "UC-CLI-015" "session lifecycle start/status/kill"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-015" "session lifecycle start/status/kill"; then return 0; fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-015" "session lifecycle start/status/kill"; then return 0; fi
 
   local tmp sess
   tmp="$(mktemp -d)"
@@ -321,10 +291,8 @@ flowai_test_s_cli_015() {
 
 # UC-CLI-019 / tests/usecases/019-cli-start-session-already-running.md
 flowai_test_s_cli_019() {
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq or tmux not installed)\n' "UC-CLI-019" "start --headless when session exists"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-019" "start --headless when session exists"; then return 0; fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-019" "start --headless when session exists"; then return 0; fi
   local tmp sess
   tmp="$(mktemp -d)"
   tmp="$(cd "$tmp" && pwd)"
@@ -347,10 +315,7 @@ flowai_test_s_cli_019() {
 
 # UC-CLI-023 / tests/usecases/023-cli-skills-phase-to-role.md
 flowai_test_s_cli_023() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-023" "skills phase maps to pipeline role"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-023" "skills phase maps to pipeline role"; then return 0; fi
   local tmp eff match
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -396,10 +361,7 @@ flowai_test_s_cli_023() {
 
 # UC-CLI-024 / tests/usecases/024-cli-mcp-minimal-json.md
 flowai_test_s_cli_024() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-024" "mcp list seeds minimal mcp.json"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-024" "mcp list seeds minimal mcp.json"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -449,10 +411,7 @@ flowai_test_s_cli_026() {
 
 # UC-CLI-028 / tests/usecases/028-cli-config-validate-invalid-model.md
 flowai_test_s_cli_028() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-028" "validate rejects bad model"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-028" "validate rejects bad model"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -473,10 +432,8 @@ flowai_test_s_cli_028() {
 
 # UC-CLI-029 / tests/usecases/029-cli-start-validates-models.md
 flowai_test_s_cli_029() {
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq or tmux not installed)\n' "UC-CLI-029" "start fails when config models invalid"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-029" "start fails when config models invalid"; then return 0; fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-029" "start fails when config models invalid"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   tmp="$(cd "$tmp" && pwd)"
@@ -526,10 +483,7 @@ flowai_test_s_cli_032() {
 # This test would have caught the copilot gap immediately.
 # Adding a new tool and forgetting the plugin will fail here — not at runtime.
 flowai_test_s_cli_033() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-033" "catalog-to-plugin OCP contract"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-033" "catalog-to-plugin OCP contract"; then return 0; fi
 
   local catalog="$FLOWAI_HOME/models-catalog.json"
   if [[ ! -f "$catalog" ]]; then
@@ -580,10 +534,7 @@ flowai_test_s_cli_033() {
 # UC-CLI-034 / tests/usecases/034-cli-run-review-contract.md
 # Guards: review phase SKIP_AI guard (was missing) and approval loop contract.
 flowai_test_s_cli_034() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-034" "flowai run review contract"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-034" "flowai run review contract"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -607,10 +558,7 @@ flowai_test_s_cli_034() {
 # UC-CLI-035 / tests/usecases/035-cli-multi-spec-dir-test-mode.md
 # Guards: multi-spec-dir resolution does NOT prompt/hang in test/CI mode.
 flowai_test_s_cli_035() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-035" "multi-spec-dir test mode auto-select"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-035" "multi-spec-dir test mode auto-select"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -638,10 +586,7 @@ flowai_test_s_cli_035() {
 # UC-CLI-036 — flowai run tasks contract (SKIP_AI)
 # Guards: tasks.sh previously had no FLOWAI_TEST_SKIP_AI guard.
 flowai_test_s_cli_036() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-036" "flowai run tasks contract"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-036" "flowai run tasks contract"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -665,10 +610,7 @@ flowai_test_s_cli_036() {
 # UC-CLI-037 — flowai run spec contract (SKIP_AI)
 # Guards: spec.sh previously had no FLOWAI_TEST_SKIP_AI guard.
 flowai_test_s_cli_037() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-037" "flowai run spec contract"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-037" "flowai run spec contract"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN

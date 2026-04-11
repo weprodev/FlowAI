@@ -162,12 +162,14 @@ flowai_graph_lint_structural() {
 
   # ── Collect findings ──────────────────────────────────────────────────────
 
+  # Use temporary files sequentially to keep memory usage low and pipeline robust
   local tmp_unimpl tmp_unspec tmp_zombie tmp_debt tmp_unverified
-  tmp_unimpl="$(mktemp /tmp/flowai_lint_unimpl.XXXXXX)"
-  tmp_unspec="$(mktemp /tmp/flowai_lint_unspec.XXXXXX)"
-  tmp_zombie="$(mktemp /tmp/flowai_lint_zombie.XXXXXX)"
-  tmp_debt="$(mktemp /tmp/flowai_lint_debt.XXXXXX)"
-  tmp_unverified="$(mktemp /tmp/flowai_lint_unverified.XXXXXX)"
+  tmp_unimpl="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_unimpl_XXXXXX")"
+  tmp_unspec="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_unspec_XXXXXX")"
+  tmp_zombie="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_zomb_XXXXXX")"
+  tmp_debt="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_debt_XXXXXX")"
+  tmp_unverified="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_unv_XXXXXX")"
+  trap 'rm -f "$tmp_unimpl" "$tmp_unspec" "$tmp_zombie" "$tmp_debt" "$tmp_unverified" 2>/dev/null' RETURN
 
   _lint_unimplemented_specs "$graph_file" > "$tmp_unimpl"
   _lint_unspecified_files   "$graph_file" > "$tmp_unspec"
@@ -353,7 +355,7 @@ REPORT_FOOTER
 
   } > "$report_file"
 
-  log_success "Lint report: ${report_file#$PWD/}"
+  log_success "Lint report: $(_graph_rel_path "$report_file")"
 
   # ── Write machine-readable JSON ───────────────────────────────────────────
 
@@ -394,7 +396,6 @@ REPORT_FOOTER
       "unverified_claims":   $unverified
     }' > "$json_file"
 
-  rm -f "$tmp_unimpl" "$tmp_unspec" "$tmp_zombie" "$tmp_debt" "$tmp_unverified"
 
   # Append to operation log
   flowai_graph_log_append "lint" "health=${health} issues=${total_issues}"

@@ -1,4 +1,5 @@
 .DEFAULT_GOAL := help
+SHELL := /bin/bash
 .PHONY: help install lint test verify-usecases verify-ai check build-skills
 
 # Colors
@@ -36,7 +37,23 @@ verify-ai:
 lint:
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		printf "$(CYAN)Running ShellCheck...$(RESET)\n"; \
-		shellcheck -x bin/flowai install.sh src/commands/*.sh src/phases/*.sh src/core/*.sh src/bootstrap/*.sh tests/run.sh tests/lib/*.sh tests/lib/verify-bindings.sh tests/suites/*.sh tests/agent/*.sh tests/agent/run-ai-smoke.sh; \
+		set -e; \
+		shopt -s nullglob; \
+		for f in \
+			bin/flowai \
+			install.sh \
+			src/commands/*.sh \
+			src/phases/*.sh \
+			src/core/*.sh \
+			src/bootstrap/*.sh \
+			tests/run.sh \
+			tests/lib/*.sh \
+			tests/suites/*.sh \
+			tests/agent/*.sh; \
+		do \
+			printf "  $(CYAN)shellcheck$(RESET) %s\n" "$$f"; \
+			shellcheck -x "$$f"; \
+		done; \
 	else \
 		printf "\n$(YELLOW)╭──────────────────────────────────────────────────────╮$(RESET)\n"; \
 		printf "$(YELLOW)│ [!] WARNING: shellcheck not found in PATH            │$(RESET)\n"; \

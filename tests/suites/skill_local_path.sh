@@ -141,10 +141,7 @@ JSON
 
 # UC-SKL-005 — _skill_config_register_path is idempotent
 flowai_test_s_skl_005() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  UC-SKL-005 — _skill_config_register_path idempotent (skipped: jq not installed)\n'
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-SKL-005" "_skill_config_register_path idempotent"; then return 0; fi
 
   local tmp
   tmp="$(mktemp -d)"

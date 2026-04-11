@@ -214,7 +214,7 @@ if [[ "$SKIP_GRAPH" != "true" ]] && flowai_graph_is_enabled; then
     log_warn "Knowledge graph is stale. Agents may use outdated context."
     log_info "Run: flowai graph update"
   else
-    local _nodes _edges _age
+    # (Removed 'local' keyword, assigned directly below)
     _nodes="$(_flowai_graph_node_count)"
     _edges="$(_flowai_graph_edge_count)"
     _age="$(_flowai_graph_age_label)"

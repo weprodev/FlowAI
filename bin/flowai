@@ -165,11 +165,10 @@ case "$cmd" in
       if [ -t 0 ] && [ "${FLOWAI_TESTING:-0}" != "1" ]; then
         log_info "No phase specified. Please choose one:"
         # Build choice list from canonical constant
-        local _choices=("master" "${FLOWAI_PIPELINE_PHASES[@]}" "implement")
+        _choices=("master" "${FLOWAI_PIPELINE_PHASES[@]}" "implement")
         if command -v gum >/dev/null 2>&1; then
           phase="$(gum choose "${_choices[@]}")"
         else
-          local _phase_csv
           _phase_csv="$(IFS=', '; printf '%s' "${_choices[*]}")"
           read -r -p "Select phase (${_phase_csv}): " phase < /dev/tty || true
         fi
@@ -181,7 +180,7 @@ case "$cmd" in
     fi
     shift || true
     case "$phase" in
-      implement) phase_script="implement" ;;
+      implement|impl) phase_script="implement" ;;
       *) phase_script="$phase" ;;
     esac
     if [[ ! -f "$FLOWAI_HOME/src/phases/${phase_script}.sh" ]]; then

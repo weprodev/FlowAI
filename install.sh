@@ -17,10 +17,16 @@ RESET=$'\033[0m'
 
 printf '%b%s%b\n' "${BOLD}${CYAN}" "Installing FlowAI..." "${RESET}"
 
-INSTALL_DIR="/usr/local/flowai"
-BIN_DIR="/usr/local/bin"
+# Allow PREFIX/DESTDIR overrides for package builds and local installs.
+PREFIX="${PREFIX:-${FLOWAI_PREFIX:-/usr/local}}"
+DESTDIR="${DESTDIR:-}"
+INSTALL_DIR="${DESTDIR}${PREFIX}/flowai"
+BIN_DIR="${DESTDIR}${PREFIX}/bin"
 
-if [[ "$EUID" -eq 0 ]]; then
+# Use sudo only when necessary (system prefix without write access).
+if [[ "$EUID" -eq 0 || "${NO_SUDO:-0}" == "1" || -n "$DESTDIR" ]]; then
+  SUDO=""
+elif [[ -w "${DESTDIR}${PREFIX}" ]] || [[ -w "${DESTDIR}${PREFIX}/bin" ]]; then
   SUDO=""
 else
   SUDO="sudo"
@@ -39,6 +45,7 @@ fi
 
 echo "Source: $FLOWAI_SRC"
 echo "Target: $INSTALL_DIR"
+[[ -n "$DESTDIR" ]] && echo "DESTDIR: $DESTDIR (package layout; ensure bin is on PATH when staging)"
 
 $SUDO mkdir -p "$INSTALL_DIR"
 
@@ -58,6 +65,7 @@ $SUDO chmod -R a+rX "$INSTALL_DIR"
 $SUDO chmod +x "$INSTALL_DIR/bin/flowai"
 # Same script as flowai — short name only (symlink, not a second file).
 $SUDO sh -c "cd \"$INSTALL_DIR/bin\" && ln -sf flowai fai"
+$SUDO mkdir -p "$BIN_DIR"
 $SUDO ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/flowai"
 $SUDO ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/fai"
 

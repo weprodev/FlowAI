@@ -116,12 +116,12 @@ _chronicle_extract_adr_sections() {
   # Extract ## Decision section
   local decision
   decision="$(awk '/^## [Dd]ecision/{found=1; next} found && /^## /{found=0} found{print}' \
-    "$file" 2>/dev/null | head -5 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g;s/  */ /g' || true)"
+    "$file" 2>/dev/null | head -5 | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g;s/  */ /g' || true)"
 
   # Extract ## Consequences / ## Context section
   local consequences
   consequences="$(awk '/^## [Cc]onsequences|^## [Cc]ontext/{found=1; next} found && /^## /{found=0} found{print}' \
-    "$file" 2>/dev/null | head -5 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' || true)"
+    "$file" 2>/dev/null | head -5 | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g' || true)"
 
   jq -n \
     --arg decision     "${decision:-}" \
@@ -207,7 +207,8 @@ _chronicle_generate_edges() {
   # Build a lookup: feature_id → spec node id
   # This maps "UC-AUTH-001" → "specs.auth-feature" (the actual graph node id)
   local lookup_tmp
-  lookup_tmp="$(mktemp /tmp/flowai_chron_lookup.XXXXXX.json)"
+  lookup_tmp="$(mktemp "${TMPDIR:-/tmp}/flowai_chron_lookup_XXXXXX")"
+  trap 'rm -f "$lookup_tmp" 2>/dev/null' RETURN
   # First spec node wins when the same feature ID appears in multiple documents
   jq -r '
     .nodes |
@@ -264,7 +265,7 @@ _chronicle_generate_edges() {
 
         local file_node_id
         file_node_id="$(printf '%s' "$touched_file" | \
-          tr '/' '.' | sed 's/\.\(sh\|md\|json\|js\|ts\|go\|py\|rb\)$//')"
+          tr '/' '.' | sed -E 's/\.(sh|md|json|js|ts|go|py|rb)$//')"
 
         jq -cn \
           --arg src  "$file_node_id" \
@@ -285,7 +286,7 @@ _chronicle_generate_edges() {
     done <<< "$spec_ids_raw"
   done < <(_chronicle_mine_git_log)
 
-  rm -f "$lookup_tmp"
+
 }
 
 # ─── Merge Chronicle Enrichments Into Graph ───────────────────────────────────
@@ -371,7 +372,8 @@ _chronicle_enrich_spec_frontmatter() {
 
   while IFS= read -r rel_path; do
     [[ -z "$rel_path" ]] && continue
-    local abs_path="$PWD/$rel_path"
+    local abs_path
+    abs_path="$(_graph_project_root)/$rel_path"
     [[ -f "$abs_path" ]] || continue
 
     local fm
@@ -393,7 +395,7 @@ _chronicle_enrich_spec_frontmatter() {
     # Make node_id from rel_path (same formula as structural pass)
     local node_id
     node_id="$(printf '%s' "$rel_path" | \
-      tr '/' '.' | sed 's/\.\(sh\|md\|json\|js\|ts\)$//')"
+      tr '/' '.' | sed -E 's/\.(sh|md|json|js|ts)$//')"
 
     # Patch the graph node
     # Merge YAML `id:` into feature_ids so git chronicle can resolve IMPLEMENTS edges even when
@@ -461,8 +463,9 @@ flowai_graph_chronicle() {
   log_info "Mining git history for spec-referencing commits..."
 
   local tmp_edges tmp_evolution
-  tmp_edges="$(mktemp /tmp/flowai_chron_edges.XXXXXX.jsonl)"
-  tmp_evolution="$(mktemp /tmp/flowai_chron_evo.XXXXXX.jsonl)"
+  tmp_edges="$(mktemp "${TMPDIR:-/tmp}/flowai_chron_edges_XXXXXX")"
+  tmp_evolution="$(mktemp "${TMPDIR:-/tmp}/flowai_chron_evo_XXXXXX")"
+  trap 'rm -f "$tmp_edges" "$tmp_evolution" 2>/dev/null' RETURN
 
   _chronicle_generate_edges "$tmp_edges" "$tmp_evolution"
 
@@ -481,7 +484,7 @@ flowai_graph_chronicle() {
     log_info "Tip: Reference spec IDs in commit messages, e.g.: 'Implements UC-AUTH-001'"
   fi
 
-  rm -f "$tmp_edges" "$tmp_evolution"
+
 
   # Regenerate report and index with updated data
   source "$FLOWAI_HOME/src/graph/build.sh" 2>/dev/null || true

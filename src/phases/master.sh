@@ -86,7 +86,7 @@ _master_check_for_rejections() {
 
     # Build a context prompt with rejection info and recent events
     local context_prompt
-    context_prompt="$(mktemp /tmp/flowai_master_reenter.XXXXXX.md)"
+    context_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_reenter_XXXXXX")"
     {
       cat "$ROLE_FILE"
       printf '\n\n--- [REJECTION CONTEXT] ---\n'

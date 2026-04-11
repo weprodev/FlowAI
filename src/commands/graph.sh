@@ -41,6 +41,13 @@ _graph_require_flowai_dir() {
   fi
 }
 
+_graph_require_jq() {
+  if ! command -v jq >/dev/null 2>&1; then
+    log_error "jq is required for graph commands. Install jq (e.g. brew install jq or apt-get install jq)."
+    exit 1
+  fi
+}
+
 # ─── Status ───────────────────────────────────────────────────────────────────
 
 cmd_graph_status() {
@@ -50,11 +57,11 @@ cmd_graph_status() {
 
   if flowai_graph_exists; then
     printf '\n'
-    log_info "Wiki directory: ${FLOWAI_WIKI_DIR#$PWD/}"
-    log_info "Report:         ${FLOWAI_GRAPH_REPORT#$PWD/}"
-    log_info "Graph JSON:     ${FLOWAI_GRAPH_JSON#$PWD/}"
-    log_info "Index:          ${FLOWAI_GRAPH_INDEX#$PWD/}"
-    log_info "Log:            ${FLOWAI_GRAPH_LOG#$PWD/}"
+    log_info "Wiki directory: $(_graph_rel_path "$FLOWAI_WIKI_DIR")"
+    log_info "Report:         $(_graph_rel_path "$FLOWAI_GRAPH_REPORT")"
+    log_info "Graph JSON:     $(_graph_rel_path "$FLOWAI_GRAPH_JSON")"
+    log_info "Index:          $(_graph_rel_path "$FLOWAI_GRAPH_INDEX")"
+    log_info "Log:            $(_graph_rel_path "$FLOWAI_GRAPH_LOG")"
     printf '\n'
     log_info "Run 'flowai graph update' to refresh the graph."
     log_info "Run 'flowai graph report' to read the architectural summary."
@@ -330,8 +337,8 @@ cmd_graph_lint() {
     log_info "Running structural lint (coverage analysis, no LLM)..."
     flowai_graph_lint_structural
     printf '\n'
-    log_info "Read full report: ${FLOWAI_WIKI_DIR#$PWD/}/lint-report.md"
-    log_info "Machine-readable: ${FLOWAI_WIKI_DIR#$PWD/}/lint-report.json"
+    log_info "Read full report: $(_graph_rel_path "$FLOWAI_WIKI_DIR")/lint-report.md"
+    log_info "Machine-readable: $(_graph_rel_path "$FLOWAI_WIKI_DIR")/lint-report.json"
     log_info "For wiki health check: flowai graph lint --semantic"
   fi
 }
@@ -389,6 +396,11 @@ EOF
 
 subcmd="${1:-}"
 shift || true
+
+# Help should work without jq; all other graph operations depend on it.
+if [[ "$subcmd" != "-h" && "$subcmd" != "--help" && "$subcmd" != "help" ]]; then
+  _graph_require_jq
+}
 
 case "$subcmd" in
   build)          cmd_graph_build "$@" ;;

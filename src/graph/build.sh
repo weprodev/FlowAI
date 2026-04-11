@@ -67,7 +67,8 @@ _graph_run_semantic_pass() {
   while IFS= read -r file; do
     [[ -f "$file" ]] || continue
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file"; then
-      local rel_path="${file#$PWD/}"
+      local rel_path
+      rel_path="$(_graph_rel_path "$file")"
       local cache_key semantic_file
       cache_key="$(_graph_path_to_key "$rel_path").json"
       semantic_file="${FLOWAI_GRAPH_CACHE_DIR}/semantic/${cache_key}"
@@ -109,7 +110,8 @@ _graph_discover_files() {
   local scan_dir
   while IFS= read -r scan_dir; do
     [[ -z "$scan_dir" ]] && continue
-    local abs_dir="$PWD/$scan_dir"
+    local abs_dir
+    abs_dir="$(_graph_project_root)/$scan_dir"
     [[ -d "$abs_dir" ]] || continue
     find "$abs_dir" -type f "${ignore_args[@]}" 2>/dev/null
   done < <(_graph_scan_paths)
@@ -140,7 +142,8 @@ _graph_path_to_key() {
 # Uses a relative path to ensure the cache is portable across machine clones.
 _graph_cache_key_file() {
   local file="$1"
-  local rel_path="${file#$PWD/}"
+  local rel_path
+  rel_path="$(_graph_rel_path "$file")"
   printf '%s/%s.sha' "$FLOWAI_GRAPH_CACHE_DIR" "$(_graph_path_to_key "$rel_path")"
 }
 
@@ -190,7 +193,8 @@ _graph_edge_json() {
 # requirements*.md, user-story*.md, acceptance*.md, RFC*.md.
 _graph_is_spec_file() {
   local file="$1"
-  local rel="${file#$PWD/}"
+  local rel
+  rel="$(_graph_rel_path "$file")"
 
   # Path-based: lives in a spec directory
   [[ "$rel" == specs/* ]] && return 0
@@ -240,9 +244,10 @@ _graph_extract_spec_meta() {
 # This is language-agnostic and dependency-free. Returns a partial graph fragment (JSON).
 _graph_structural_extract_file() {
   local file="$1"
-  local rel_path="${file#$PWD/}"
+  local rel_path
+  rel_path="$(_graph_rel_path "$file")"
   local file_id
-  file_id="$(printf '%s' "$rel_path" | tr '/' '.' | sed 's/\.\(sh\|md\|json\|js\|ts\|go\|py\|rb\|java\|rs\)$//')"
+  file_id="$(printf '%s' "$rel_path" | tr '/' '.' | sed -E 's/\.(sh|md|json|js|ts|go|py|rb|java|rs)$//')"
 
   local nodes=()
   local edges=()
@@ -269,7 +274,7 @@ _graph_structural_extract_file() {
       [[ -z "$linked" ]] && continue
       [[ "$linked" == http* ]] && continue
       local link_id
-      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed 's/^\.//;s/\.\(sh\|md\|json\|js\|ts\)$//')"
+      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(sh|md|json|js|ts)$//')"
       edges+=("$(_graph_edge_json "$file_id" "$link_id" "SPECIFIES" "EXTRACTED")")
     done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | grep -oE '\(([^)]+)\)' | tr -d '()' | \
                grep -vE '^https?://' || true)
@@ -283,7 +288,7 @@ _graph_structural_extract_file() {
     while IFS= read -r dep; do
       [[ -z "$dep" ]] && continue
       local dep_id
-      dep_id="$(printf '%s' "$dep" | tr '/' '.' | sed 's/\.\(sh\)$//')"
+      dep_id="$(printf '%s' "$dep" | tr '/' '.' | sed -E 's/\.(sh)$//')"
       edges+=("$(_graph_edge_json "$file_id" "$dep_id" "sources" "EXTRACTED")")
     done < <(grep -oE 'source[[:space:]]+"?\$\{?FLOWAI_HOME\}?/([^"[:space:]]+\.sh)' "$file" 2>/dev/null | \
              grep -oE 'src/[^"[:space:]]+\.sh' || true)
@@ -307,8 +312,8 @@ _graph_structural_extract_file() {
       [[ -z "$imp_line" ]] && continue
       local imp_module
       # Extract module path from 'from X.Y import Z' or 'import X.Y'
-      imp_module="$(printf '%s' "$imp_line" | sed -n 's/^from[[:space:]]\+\([a-zA-Z0-9_.]*\).*/\1/p')"
-      [[ -z "$imp_module" ]] && imp_module="$(printf '%s' "$imp_line" | sed -n 's/^import[[:space:]]\+\([a-zA-Z0-9_.]*\).*/\1/p')"
+      imp_module="$(printf '%s' "$imp_line" | sed -nE 's/^from[[:space:]]+([a-zA-Z0-9_.]*).*/\1/p')"
+      [[ -z "$imp_module" ]] && imp_module="$(printf '%s' "$imp_line" | sed -nE 's/^import[[:space:]]+([a-zA-Z0-9_.]*).*/\1/p')"
       [[ -z "$imp_module" ]] && continue
       local imp_id
       imp_id="$(printf '%s' "$imp_module" | tr '.' '.')"
@@ -319,8 +324,8 @@ _graph_structural_extract_file() {
     while IFS= read -r def_line; do
       [[ -z "$def_line" ]] && continue
       local def_name def_type
-      def_name="$(printf '%s' "$def_line" | sed -n 's/^[[:space:]]*\(class\|def\)[[:space:]]\+\([a-zA-Z_][a-zA-Z0-9_]*\).*/\2/p')"
-      def_type="$(printf '%s' "$def_line" | sed -n 's/^[[:space:]]*\(class\|def\).*/\1/p')"
+      def_name="$(printf '%s' "$def_line" | sed -nE 's/^[[:space:]]*(class|def)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*).*/\2/p')"
+      def_type="$(printf '%s' "$def_line" | sed -nE 's/^[[:space:]]*(class|def).*/\1/p')"
       [[ -z "$def_name" ]] && continue
       local def_node_type="function"
       [[ "$def_type" == "class" ]] && def_node_type="class"
@@ -343,7 +348,7 @@ _graph_structural_extract_file() {
       # Skip external modules (node_modules)
       [[ "$ts_module" != .* && "$ts_module" != /* ]] && continue
       local ts_id
-      ts_id="$(printf '%s' "$ts_module" | sed 's|^\./||;s|^/||' | tr '/' '.' | sed 's/\.\(ts\|tsx\|js\|jsx\)$//')"
+      ts_id="$(printf '%s' "$ts_module" | sed -E 's|^\./||;s|^/||' | tr '/' '.' | sed -E 's/\.(ts|tsx|js|jsx)$//')"
       edges+=("$(_graph_edge_json "$file_id" "$ts_id" "imports" "EXTRACTED")")
     done < <(grep -E "^[[:space:]]*(import|const|let|var).*from[[:space:]]*['\"]|require\(" "$file" 2>/dev/null | head -50 || true)
 
@@ -351,7 +356,7 @@ _graph_structural_extract_file() {
     while IFS= read -r exp_line; do
       [[ -z "$exp_line" ]] && continue
       local exp_name
-      exp_name="$(printf '%s' "$exp_line" | sed -n 's/^[[:space:]]*export[[:space:]]\+\(default[[:space:]]\+\)\?\(function\|class\|const\|let\|var\|interface\|type\|enum\)[[:space:]]\+\([a-zA-Z_][a-zA-Z0-9_]*\).*/\3/p')"
+      exp_name="$(printf '%s' "$exp_line" | sed -nE 's/^[[:space:]]*export[[:space:]]+(default[[:space:]]+)?(function|class|const|let|var|interface|type|enum)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*).*/\3/p')"
       [[ -z "$exp_name" ]] && continue
       local exp_id="${file_id}.${exp_name}"
       nodes+=("$(_graph_node_json "$exp_id" "$exp_name" "function" "$rel_path")")
@@ -376,7 +381,7 @@ _graph_structural_extract_file() {
     while IFS= read -r def_line; do
       [[ -z "$def_line" ]] && continue
       local go_name go_type
-      go_name="$(printf '%s' "$def_line" | sed -n 's/^func[[:space:]]\+\(([^)]*)[[:space:]]\+\)\?\([A-Za-z_][A-Za-z0-9_]*\).*/\2/p')"
+      go_name="$(printf '%s' "$def_line" | sed -nE 's/^func[[:space:]]+(\([^)]*\)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*).*/\2/p')"
       if [[ -n "$go_name" ]]; then
         local go_fn_id="${file_id}.${go_name}"
         nodes+=("$(_graph_node_json "$go_fn_id" "$go_name" "function" "$rel_path")")
@@ -387,7 +392,7 @@ _graph_structural_extract_file() {
     while IFS= read -r type_line; do
       [[ -z "$type_line" ]] && continue
       local go_type_name
-      go_type_name="$(printf '%s' "$type_line" | sed -n 's/^type[[:space:]]\+\([A-Za-z_][A-Za-z0-9_]*\).*/\1/p')"
+      go_type_name="$(printf '%s' "$type_line" | sed -nE 's/^type[[:space:]]+([A-Za-z_][A-Za-z0-9_]*).*/\1/p')"
       [[ -z "$go_type_name" ]] && continue
       local go_type_id="${file_id}.${go_type_name}"
       nodes+=("$(_graph_node_json "$go_type_id" "$go_type_name" "class" "$rel_path")")
@@ -401,7 +406,7 @@ _graph_structural_extract_file() {
       [[ -z "$linked" ]] && continue
       [[ "$linked" == http* ]] && continue
       local link_id
-      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed 's/^\.//;s/\.\(md\)$//')"
+      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(md)$//')"
       edges+=("$(_graph_edge_json "$file_id" "$link_id" "references" "EXTRACTED")")
     done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | grep -oE '\(([^)]+)\)' | tr -d '()' || true)
   fi
@@ -419,21 +424,14 @@ _graph_structural_extract_file() {
 
   # Output partial graph fragment — collect nodes and edges into temp JSONL files
   # and then build the final JSON fragment
-  local tmp_n tmp_e
-  tmp_n="$(mktemp /tmp/flowai_frag_nodes.XXXXXX.jsonl)"
-  tmp_e="$(mktemp /tmp/flowai_frag_edges.XXXXXX.jsonl)"
+  local nodes_arr="[]" edges_arr="[]"
+  if (( ${#nodes[@]} > 0 )); then
+    nodes_arr="$(printf '%s\n' "${nodes[@]}" | jq -sc '.' 2>/dev/null || echo '[]')"
+  fi
+  if (( ${#edges[@]} > 0 )); then
+    edges_arr="$(printf '%s\n' "${edges[@]}" | jq -sc '.' 2>/dev/null || echo '[]')"
+  fi
 
-  for n in "${nodes[@]:-}"; do
-    [[ -n "$n" ]] && printf '%s\n' "$n" >> "$tmp_n" || true
-  done
-  for e in "${edges[@]:-}"; do
-    [[ -n "$e" ]] && printf '%s\n' "$e" >> "$tmp_e" || true
-  done
-
-  local nodes_arr edges_arr
-  nodes_arr="$(jq -sc '.' "$tmp_n" 2>/dev/null || echo '[]')"
-  edges_arr="$(jq -sc '.' "$tmp_e" 2>/dev/null || echo '[]')"
-  rm -f "$tmp_n" "$tmp_e"
 
   jq -n \
     --argjson nodes "$nodes_arr" \
@@ -452,15 +450,17 @@ _graph_run_structural_pass() {
 
   # Use temp files for incremental JSON accumulation (avoids bash array/string issues)
   local tmp_nodes tmp_edges
-  tmp_nodes="$(mktemp /tmp/flowai_struct_nodes.XXXXXX.jsonl)"
-  tmp_edges="$(mktemp /tmp/flowai_struct_edges.XXXXXX.jsonl)"
+  tmp_nodes="$(mktemp "${TMPDIR:-/tmp}/flowai_struct_n_XXXXXX")"
+  tmp_edges="$(mktemp "${TMPDIR:-/tmp}/flowai_struct_e_XXXXXX")"
+  trap 'rm -f "$tmp_nodes" "$tmp_edges"' RETURN
 
   log_info "Pass 1: Structural extraction..." >&2
 
   while IFS= read -r file; do
     [[ -f "$file" ]] || continue
     total=$(( total + 1 ))
-    local rel="${file#$PWD/}"
+    local rel
+    rel="$(_graph_rel_path "$file")"
     local fragment_cache="$cache_dir/$(_graph_path_to_key "$rel").json"
 
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file" && [[ -f "$fragment_cache" ]]; then
@@ -505,7 +505,7 @@ _graph_run_structural_pass() {
     --argjson edges "$edges_array" \
     '{"nodes":$nodes,"edges":$edges}' > "$structural_file"
 
-  rm -f "$tmp_nodes" "$tmp_edges"
+
   # NOTE: output path printed to stdout for caller; log output goes to stderr
 }
 
@@ -514,7 +514,8 @@ _graph_run_structural_pass() {
 # Generate the LLM prompt for semantic extraction from a single file.
 _graph_semantic_prompt() {
   local file="$1"
-  local rel_path="${file#$PWD/}"
+  local rel_path
+  rel_path="$(_graph_rel_path "$file")"
   local content
   content="$(head -200 "$file" 2>/dev/null)"  # First 200 lines — enough for concept extraction
 
@@ -552,7 +553,8 @@ PROMPT
 # Returns the semantic fragment JSON path.
 _graph_semantic_extract_file() {
   local file="$1"
-  local rel_path="${file#$PWD/}"
+  local rel_path
+  rel_path="$(_graph_rel_path "$file")"
   local cache_dir="$FLOWAI_GRAPH_CACHE_DIR/semantic"
   mkdir -p "$cache_dir"
 
@@ -568,7 +570,7 @@ _graph_semantic_extract_file() {
 
   # Write prompt to temp file for flowai_ai_run
   local prompt_file
-  prompt_file="$(mktemp /tmp/flowai_graph_prompt.XXXXXX)"
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_graph_prompt.XXXXXX")"
   _graph_semantic_prompt "$file" > "$prompt_file"
 
   # Use the master agent's tool/model (graph extraction doesn't need full pipeline agents)
@@ -698,7 +700,8 @@ _graph_detect_communities() {
 
   # Write jq program to a temp file to avoid shell quoting issues
   local jq_prog_file
-  jq_prog_file="$(mktemp /tmp/flowai_community.XXXXXX.jq)"
+  jq_prog_file="$(mktemp "${TMPDIR:-/tmp}/flowai_community_XXXXXX")"
+  trap 'rm -f "$jq_prog_file" 2>/dev/null' RETURN
   cat > "$jq_prog_file" <<'JQ_PROG'
 # Step 1: Compute degree for each node
 ([ .edges[] | .source, .target ] | group_by(.) | map({key: .[0], value: length}) | from_entries) as $deg |
@@ -744,7 +747,7 @@ JQ_PROG
 
   local updated
   updated="$(jq -f "$jq_prog_file" "$graph_file" 2>/dev/null || true)"
-  rm -f "$jq_prog_file"
+
 
   # Fallback: simpler degree-only annotation if label propagation fails
   if [[ -z "$updated" ]]; then
@@ -1125,7 +1128,7 @@ flowai_graph_build() {
   flowai_graph_log_append "build" "nodes=${node_count} edges=${edge_count} communities=${community_count}"
 
   log_success "Knowledge graph built: ${node_count} nodes · ${edge_count} edges · ${community_count} communities"
-  log_info "Report: ${FLOWAI_GRAPH_REPORT#$PWD/}"
+  log_info "Report: $(_graph_rel_path "$FLOWAI_GRAPH_REPORT")"
   log_info "To enrich with git history run: flowai graph chronicle"
 }
 

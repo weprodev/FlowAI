@@ -435,17 +435,8 @@ flowai_test_s_graph_013() {
   local cache_count
   cache_count="$(find "$cache_dir" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
 
-  # Second build — incremental; structural.json mtime should be preserved (file not newer)
-  local struct_before struct_after
-  struct_before="$(stat -f '%m' "$tmp/.flowai/wiki/cache/structural.json" 2>/dev/null || \
-                   stat -c '%Y' "$tmp/.flowai/wiki/cache/structural.json" 2>/dev/null || echo 0)"
-
-  sleep 1  # ensure at least 1s gap
-
+  # Second build — incremental (exercises merge path; fragment cache should remain populated)
   _graph_build_in "$tmp/.flowai" "$tmp" 'flowai_graph_build "false"' >/dev/null 2>&1
-
-  struct_after="$(stat -f '%m' "$tmp/.flowai/wiki/cache/structural.json" 2>/dev/null || \
-                  stat -c '%Y' "$tmp/.flowai/wiki/cache/structural.json" 2>/dev/null || echo 0)"
 
   # Prove cache is working: fragment count didn't explode, and structural.json was regenerated
   # (We can't check mtime reliably since structural.json is always rewritten as the merge output)

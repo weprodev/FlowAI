@@ -9,8 +9,8 @@ source "$FLOWAI_HOME/src/core/log.sh"
 flowai_test_s_tpl_001() {
   local id="TPL-001"
   local all_ok=true
-  for tool in claude gemini cursor copilot; do
-    local plugin="$FLOWAI_HOME/src/tools/${tool}.sh"
+  for tool_name in claude gemini cursor copilot; do
+    local plugin="$FLOWAI_HOME/src/tools/${tool_name}.sh"
     if [[ ! -f "$plugin" ]]; then
       printf 'FAIL %s: plugin file missing: %s\n' "$id" "$plugin" >&2
       FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
@@ -18,15 +18,15 @@ flowai_test_s_tpl_001() {
       continue
     fi
     # Source in subshell to avoid polluting environment
-    (
+    if ! (
       source "$FLOWAI_HOME/src/core/log.sh"
       source "$FLOWAI_HOME/src/core/config.sh"
+      # shellcheck source=/dev/null
       source "$plugin"
-      declare -F "flowai_tool_${tool}_run" >/dev/null 2>&1 || { echo "MISSING:run"; exit 1; }
-      declare -F "flowai_tool_${tool}_print_models" >/dev/null 2>&1 || { echo "MISSING:print_models"; exit 1; }
-    )
-    if [[ $? -ne 0 ]]; then
-      printf 'FAIL %s: plugin %s missing required functions\n' "$id" "$tool" >&2
+      declare -F "flowai_tool_${tool_name}_run" >/dev/null 2>&1 || { echo "MISSING:run"; exit 1; }
+      declare -F "flowai_tool_${tool_name}_print_models" >/dev/null 2>&1 || { echo "MISSING:print_models"; exit 1; }
+    ); then
+      printf 'FAIL %s: plugin %s missing required functions\n' "$id" "$tool_name" >&2
       FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
       all_ok=false
     fi
@@ -38,16 +38,16 @@ flowai_test_s_tpl_001() {
 flowai_test_s_tpl_002() {
   local id="TPL-002"
   local all_ok=true
-  for tool in claude gemini cursor copilot; do
-    local plugin="$FLOWAI_HOME/src/tools/${tool}.sh"
-    (
+  for tool_name in claude gemini cursor copilot; do
+    local plugin="$FLOWAI_HOME/src/tools/${tool_name}.sh"
+    if ! (
       source "$FLOWAI_HOME/src/core/log.sh"
       source "$FLOWAI_HOME/src/core/config.sh"
+      # shellcheck source=/dev/null
       source "$plugin"
-      declare -F "flowai_tool_${tool}_run_oneshot" >/dev/null 2>&1 || exit 1
-    )
-    if [[ $? -ne 0 ]]; then
-      printf 'FAIL %s: plugin %s missing _run_oneshot\n' "$id" "$tool" >&2
+      declare -F "flowai_tool_${tool_name}_run_oneshot" >/dev/null 2>&1 || exit 1
+    ); then
+      printf 'FAIL %s: plugin %s missing _run_oneshot\n' "$id" "$tool_name" >&2
       FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
       all_ok=false
     fi
@@ -59,16 +59,17 @@ flowai_test_s_tpl_002() {
 flowai_test_s_tpl_003() {
   local id="TPL-003"
   local all_ok=true
-  for tool in cursor copilot; do
+  for tool_name in cursor copilot; do
     local output
     output="$(
       source "$FLOWAI_HOME/src/core/log.sh"
       source "$FLOWAI_HOME/src/core/config.sh"
-      source "$FLOWAI_HOME/src/tools/${tool}.sh"
-      flowai_tool_${tool}_run_oneshot "model" "/dev/null" 2>/dev/null
+      # shellcheck source=/dev/null
+      source "$FLOWAI_HOME/src/tools/${tool_name}.sh"
+      flowai_tool_${tool_name}_run_oneshot "model" "/dev/null" 2>/dev/null
     )"
     if ! printf '%s' "$output" | jq -e '.nodes != null and .edges != null' >/dev/null 2>&1; then
-      printf 'FAIL %s: %s oneshot did not return valid JSON: %s\n' "$id" "$tool" "$output" >&2
+      printf 'FAIL %s: %s oneshot did not return valid JSON: %s\n' "$id" "$tool_name" "$output" >&2
       FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
       all_ok=false
     fi

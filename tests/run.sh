@@ -13,6 +13,30 @@ REPO_ROOT="$(CDPATH="" cd "$TESTS_ROOT/.." && pwd)"
 export FLOWAI_HOME="$REPO_ROOT"
 export FLOWAI_TESTING=1
 
+# Explicit dependency gate: jq is required for almost every suite. Fail fast with
+# a clear message instead of silently skipping jq-dependent cases.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "FlowAI tests require jq (install: brew install jq or apt-get install jq)" >&2
+  echo "Set FLOWAI_TEST_ALLOW_MISSING_JQ=1 to force a run (will skip jq-bound cases)." >&2
+  if [[ "${FLOWAI_TEST_ALLOW_MISSING_JQ:-0}" != "1" ]]; then
+    exit 1
+  fi
+  export FLOWAI_TEST_SKIP_JQ=1
+else
+  export FLOWAI_TEST_SKIP_JQ=0
+fi
+
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "FlowAI tests exercise tmux-backed commands. Install tmux (brew install tmux / apt-get install tmux)." >&2
+  echo "Set FLOWAI_TEST_ALLOW_MISSING_TMUX=1 to force a run (will skip tmux-bound cases)." >&2
+  if [[ "${FLOWAI_TEST_ALLOW_MISSING_TMUX:-0}" != "1" ]]; then
+    exit 1
+  fi
+  export FLOWAI_TEST_SKIP_TMUX=1
+else
+  export FLOWAI_TEST_SKIP_TMUX=0
+fi
+
 # shellcheck source=tests/lib/verify-bindings.sh
 source "$TESTS_ROOT/lib/verify-bindings.sh"
 if ! flowai_verify_usecase_bindings "$TESTS_ROOT"; then

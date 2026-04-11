@@ -92,10 +92,7 @@ flowai_test_s_cli_006() {
 
 # UC-CLI-027 / tests/usecases/027-cli-config-validate-ok.md
 flowai_test_s_cli_027() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  %s — %s (skipped: jq not installed)\n' "UC-CLI-027" "flowai validate happy path"
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-CLI-027" "flowai validate happy path"; then return 0; fi
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN

@@ -31,7 +31,7 @@ Run individually with `flowai run <phase>` or all together via `flowai start`:
 | Spec | `flowai run spec` | _(none — first phase)_ |
 | Plan | `flowai run plan` | `spec.ready` |
 | Tasks | `flowai run tasks` | `plan.ready` |
-| Implement | `flowai run impl` | `tasks.ready` |
+| Implement | `flowai run implement` (alias: `impl`) | `tasks.ready` |
 | Review | `flowai run review` | `impl.ready` |
 
 Each phase runs the AI, then prompts for human approval before emitting its `.ready` signal. Rejecting returns to the AI loop after a revision signal.

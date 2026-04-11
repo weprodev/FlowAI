@@ -8,6 +8,27 @@ FLOWAI_BIN="${FLOWAI_TESTS_ROOT}/bin/flowai"
 
 FLOWAI_TEST_FAILURES=0
 
+# Centralized skip helpers for optional dependencies (set via tests/run gating).
+flowai_test_skip_if_missing_jq() {
+  local id="$1"
+  local msg="$2"
+  if [[ "${FLOWAI_TEST_SKIP_JQ:-0}" == "1" ]]; then
+    printf 'ok  %s — %s (skipped: jq not installed)\n' "$id" "$msg"
+    return 0
+  fi
+  return 1
+}
+
+flowai_test_skip_if_missing_tmux() {
+  local id="$1"
+  local msg="$2"
+  if [[ "${FLOWAI_TEST_SKIP_TMUX:-0}" == "1" ]]; then
+    printf 'ok  %s — %s (skipped: tmux not installed)\n' "$id" "$msg"
+    return 0
+  fi
+  return 1
+}
+
 # Run flowai with args; capture stdout/stderr/rc. Does not use set -e around the invoke.
 flowai_test_invoke() {
   local out err

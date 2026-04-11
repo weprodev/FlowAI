@@ -42,14 +42,16 @@ flowai_wiki_ingest() {
     return 1
   fi
 
-  local rel_path="${source#$PWD/}"
+  local rel_path
+  rel_path="$(_graph_rel_path "$source")"
   log_header "Knowledge Graph — Ingest: $rel_path"
 
   mkdir -p "$FLOWAI_WIKI_DIR"
 
   # Build the ingest prompt
   local prompt_file
-  prompt_file="$(mktemp /tmp/flowai_ingest.XXXXXX.md)"
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_ingest_XXXXXX")"
+  trap 'rm -f "$prompt_file" 2>/dev/null' RETURN
 
   cat > "$prompt_file" <<INGEST_PROMPT
 # Knowledge Wiki — Ingest Operation
@@ -81,7 +83,6 @@ $(cat "$source")
 INGEST_PROMPT
 
   flowai_ai_run "master" "$prompt_file" "true"
-  rm -f "$prompt_file"
 
   # Append to operation log
   flowai_graph_log_append "ingest" "$rel_path"
@@ -110,7 +111,8 @@ flowai_wiki_query() {
 
   # Build the query prompt
   local prompt_file
-  prompt_file="$(mktemp /tmp/flowai_query.XXXXXX.md)"
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_query_XXXXXX")"
+  trap 'rm -f "$prompt_file" 2>/dev/null' RETURN
 
   # Generate a filesystem-safe slug for the answer page
   local slug
@@ -140,7 +142,7 @@ ${question}
 ## Output
 
 After answering the question in our conversation, save your answer as a wiki
-page at: ${answer_page#$PWD/}
+page at: $(_graph_rel_path "$answer_page")
 
 The page should follow this format:
 \`\`\`markdown
@@ -162,14 +164,13 @@ the same topic will find this page and won't require re-derivation.
 QUERY_PROMPT
 
   flowai_ai_run "master" "$prompt_file" "true"
-  rm -f "$prompt_file"
 
   # Append to operation log
   flowai_graph_log_append "query" "$question"
 
   log_success "Query complete."
   if [[ -f "$answer_page" ]]; then
-    log_info "Answer filed: ${answer_page#$PWD/}"
+    log_info "Answer filed: $(_graph_rel_path "$answer_page")"
   fi
 }
 
@@ -191,7 +192,8 @@ flowai_wiki_lint() {
   mkdir -p "$FLOWAI_WIKI_DIR"
 
   local prompt_file
-  prompt_file="$(mktemp /tmp/flowai_lint.XXXXXX.md)"
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_XXXXXX")"
+  trap 'rm -f "$prompt_file" 2>/dev/null' RETURN
 
   cat > "$prompt_file" <<LINT_PROMPT
 # Knowledge Wiki — Lint Operation

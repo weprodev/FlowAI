@@ -92,10 +92,7 @@ JSON
 
 # UC-ROLE-004 — Tier 3: prompt_file in config.json used (when no file drops)
 flowai_test_s_role_004() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  UC-ROLE-004 — Tier 3 prompt_file (skipped: jq not installed)\n'
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-ROLE-004" "Tier 3 prompt_file"; then return 0; fi
 
   local tmp
   tmp="$(mktemp -d)"
@@ -122,10 +119,7 @@ JSON
 
 # UC-ROLE-005 — Tier 1 wins over Tier 3 (file drop beats config key)
 flowai_test_s_role_005() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  UC-ROLE-005 — Tier 1 beats Tier 3 (skipped: jq not installed)\n'
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-ROLE-005" "Tier 1 beats Tier 3"; then return 0; fi
 
   local tmp
   tmp="$(mktemp -d)"
@@ -175,10 +169,7 @@ JSON
 
 # UC-ROLE-007 — Tier 3 skipped gracefully when prompt_file points to non-existent file
 flowai_test_s_role_007() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  UC-ROLE-007 — Tier 3 skip missing file (skipped: jq not installed)\n'
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-ROLE-007" "Tier 3 skip missing file"; then return 0; fi
 
   local tmp
   tmp="$(mktemp -d)"
@@ -204,10 +195,7 @@ JSON
 
 # UC-ROLE-008 — _role_config_set_prompt_file does not create orphan role entries
 flowai_test_s_role_008() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  UC-ROLE-008 — set-prompt orphan guard (skipped: jq not installed)\n'
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-ROLE-008" "set-prompt orphan guard"; then return 0; fi
 
   local tmp
   tmp="$(mktemp -d)"
@@ -252,10 +240,7 @@ JSON
 
 # UC-ROLE-009 — Tier 3 skipped when prompt_file is unsafe (.. / absolute)
 flowai_test_s_role_009() {
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ok  UC-ROLE-009 — unsafe prompt_file skipped (skipped: jq not installed)\n'
-    return 0
-  fi
+  if flowai_test_skip_if_missing_jq "UC-ROLE-009" "unsafe prompt_file skipped"; then return 0; fi
 
   local tmp
   tmp="$(mktemp -d)"

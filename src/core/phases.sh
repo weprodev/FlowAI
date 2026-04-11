@@ -16,6 +16,8 @@
 
 # Include guard — phases.sh may be sourced transitively from multiple files.
 if [[ -z "${_FLOWAI_PHASES_LOADED:-}" ]]; then
+  # shellcheck disable=SC2034
   readonly _FLOWAI_PHASES_LOADED=1
+  # shellcheck disable=SC2034
   readonly FLOWAI_PIPELINE_PHASES=(spec plan tasks impl review)
 fi
