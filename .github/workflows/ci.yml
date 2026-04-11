@@ -41,7 +41,7 @@ jobs:
         run: |
           errors=0
           for f in bin/flowai install.sh src/commands/*.sh src/phases/*.sh \
-                   src/core/*.sh src/bootstrap/*.sh src/graph/*.sh src/os/*.sh src/os/lib/*.sh; do
+                   src/core/*.sh src/bootstrap/*.sh src/graph/*.sh src/os/*.sh src/os/lib/*.sh scripts/*.sh; do
             if ! bash -n "$f" 2>&1; then
               echo "::error file=$f::Syntax error"
               errors=$((errors + 1))

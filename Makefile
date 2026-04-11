@@ -45,31 +45,7 @@ verify-ai:
 	@bash tests/agent/run-ai-smoke.sh
 
 lint:
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		printf "$(CYAN)Running ShellCheck...$(RESET)\n"; \
-		set -e; \
-		shopt -s nullglob; \
-		for f in \
-			bin/flowai \
-			install.sh \
-			src/commands/*.sh \
-			src/phases/*.sh \
-			src/core/*.sh \
-			src/bootstrap/*.sh \
-			tests/run.sh \
-			tests/lib/*.sh \
-			tests/suites/*.sh \
-			tests/agent/*.sh; \
-		do \
-			printf "  $(CYAN)shellcheck$(RESET) %s\n" "$$f"; \
-			shellcheck -x "$$f"; \
-		done; \
-	else \
-		printf "\n$(YELLOW)╭──────────────────────────────────────────────────────╮$(RESET)\n"; \
-		printf "$(YELLOW)│ [!] WARNING: shellcheck not found in PATH            │$(RESET)\n"; \
-		printf "$(YELLOW)│     Skipping linting! Run: brew install shellcheck   │$(RESET)\n"; \
-		printf "$(YELLOW)╰──────────────────────────────────────────────────────╯$(RESET)\n\n"; \
-	fi
+	@bash scripts/lint.sh
 
 # Sequential gate: lint, then tests/run.sh, then optional LLM smoke (verify-ai).
 audit:
@@ -80,15 +56,7 @@ audit:
 # Fetch/refresh bundled skills from their upstream sources.
 # Run this when upstream skills are updated; commit the result.
 build-skills:
-	@printf "$(CYAN)Fetching bundled skills from obra/superpowers...$(RESET)\n"
-	@for skill in systematic-debugging test-driven-development requesting-code-review \
-	             executing-plans verification-before-completion writing-plans \
-	             subagent-driven-development finishing-a-development-branch; do \
-	  mkdir -p "src/skills/$$skill"; \
-	  curl -fsSL "https://raw.githubusercontent.com/obra/superpowers/main/skills/$$skill/SKILL.md" \
-	    -o "src/skills/$$skill/SKILL.md" && printf "  ✓ $$skill\n" || printf "  ✗ $$skill (failed)\n"; \
-	done
-	@printf "$(CYAN)Done.$(RESET)\n"
+	@bash scripts/build-skills.sh
 
 # Cut a new release interactively (bumps version, commits, tags, and pushes)
 release:
