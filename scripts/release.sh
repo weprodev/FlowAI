@@ -75,7 +75,7 @@ if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
   fi
 
   printf "%s\n" "$NEW_VERSION" > VERSION
-  git commit -am "chore(release): bump version to v${NEW_VERSION}"
+  git commit -am "chore(release): bump version to v${NEW_VERSION} [skip branch ci]"
   CURRENT_VERSION="$NEW_VERSION"
 
 else

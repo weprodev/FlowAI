@@ -33,9 +33,6 @@ uninstall:
 test:
 	@bash tests/run.sh
 
-# Convenience alias (CI / habit): same as `make test` here.
-check: test
-
 # Only binding check (verbose); does not run the harness
 verify-usecases:
 	@bash tests/agent/verify-usecases.sh
