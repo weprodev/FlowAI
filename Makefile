@@ -17,7 +17,8 @@ help:
 	@printf "  $(CYAN)make uninstall$(RESET)      Remove FlowAI from system\n"
 	@printf "  $(CYAN)make test$(RESET)           Run the full test suite\n"
 	@printf "  $(CYAN)make audit$(RESET)          Lint → tests → optional AI review\n"
-	@printf "  $(CYAN)make build-skills$(RESET)   Fetch/refresh bundled skills from skills.sh sources\n\n"
+	@printf "  $(CYAN)make build-skills$(RESET)   Fetch/refresh bundled skills from skills.sh sources\n"
+	@printf "  $(CYAN)make release$(RESET)        Cut a new release interactively (bump, commit, tag, push)\n\n"
 
 link:
 	@bash ./install.sh --link
@@ -88,3 +89,7 @@ build-skills:
 	    -o "src/skills/$$skill/SKILL.md" && printf "  ✓ $$skill\n" || printf "  ✗ $$skill (failed)\n"; \
 	done
 	@printf "$(CYAN)Done.$(RESET)\n"
+
+# Cut a new release interactively (bumps version, commits, tags, and pushes)
+release:
+	@bash scripts/release.sh
