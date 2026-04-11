@@ -201,11 +201,13 @@ _cleanup_stale
 _sudo mkdir -p "$INSTALL_DIR"
 
 if command -v rsync >/dev/null 2>&1; then
-  _sudo rsync -a --delete --exclude '.git' --exclude '.flowai' --exclude 'node_modules' "$FLOWAI_SRC/" "$INSTALL_DIR/"
+  _sudo rsync -a --delete --exclude '.git' --exclude '.flowai' --exclude 'node_modules' --exclude 'bin/fai' "$FLOWAI_SRC/" "$INSTALL_DIR/"
 else
   _sudo rm -rf "$INSTALL_DIR"
   _sudo mkdir -p "$INSTALL_DIR"
-  for item in bin src models-catalog.json VERSION LICENSE README.md install.sh Makefile; do
+  _sudo mkdir -p "$INSTALL_DIR/bin"
+  _sudo cp "$FLOWAI_SRC/bin/flowai" "$INSTALL_DIR/bin/"
+  for item in src models-catalog.json VERSION LICENSE README.md install.sh Makefile; do
     if [[ -e "$FLOWAI_SRC/$item" ]]; then
       _sudo cp -R "$FLOWAI_SRC/$item" "$INSTALL_DIR/"
     fi
