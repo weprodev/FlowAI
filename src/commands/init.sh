@@ -79,7 +79,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
     if [[ -f "$_mc" ]]; then
       while IFS= read -r t_name; do
         [[ -n "$t_name" ]] && tool_names+=("$t_name")
-      done < <(jq -r '.tools | keys[]' "$_mc")
+      done < <(jq -r '.tools | keys[]' "$_mc" | tr -d '\r')
       
       _gdef="$(jq -r '.tools.gemini.default_id // "gemini-2.5-pro"' "$_mc" | tr -d '\r')"
       _cdef="$(jq -r '.tools.claude.default_id // "sonnet"' "$_mc" | tr -d '\r')"

@@ -78,7 +78,7 @@ cmd_mcp_list() {
     else
       log_success "  $id   $pkg"
     fi
-  done < <(jq -r '.mcpServers | keys[]' "$MCP_CONFIG" 2>/dev/null)
+  done < <(jq -r '.mcpServers | keys[]' "$MCP_CONFIG" 2>/dev/null | tr -d '\r')
   [[ $configured_count -eq 0 ]] && printf '  %s\n' "— none configured"
 
   printf '\n %s\n' "Available to add"
@@ -197,7 +197,7 @@ cmd_mcp_remove() {
   _mcp_init_file
 
   local ids
-  mapfile -t ids < <(jq -r '.mcpServers | keys[]' "$MCP_CONFIG" 2>/dev/null)
+  mapfile -t ids < <(jq -r '.mcpServers | keys[]' "$MCP_CONFIG" 2>/dev/null | tr -d '\r')
 
   if [[ ${#ids[@]} -eq 0 ]]; then
     log_info "No MCP servers configured."

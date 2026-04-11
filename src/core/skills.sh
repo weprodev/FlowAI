@@ -35,7 +35,7 @@ _flowai_cfg_skill_paths() {
       continue
     fi
     printf '%s\n' "$rel_dir"
-  done < <(jq -r '.skills.paths // [] | .[]' "$FLOWAI_DIR/config.json" 2>/dev/null)
+  done < <(jq -r '.skills.paths // [] | .[]' "$FLOWAI_DIR/config.json" 2>/dev/null | tr -d '\r')
 }
 
 # Map pipeline phase name → role id used in skills.role_assignments.
