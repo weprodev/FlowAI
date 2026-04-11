@@ -15,9 +15,11 @@ source "$FLOWAI_HOME/src/core/phases.sh"
 source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 # shellcheck source=src/bootstrap/editor-scaffold.sh
 source "$FLOWAI_HOME/src/bootstrap/editor-scaffold.sh"
+# shellcheck source=src/os/platform.sh
+source "$FLOWAI_HOME/src/os/platform.sh"
 
 if ! command -v jq >/dev/null 2>&1; then
-  log_error "jq is required. Install jq (e.g. brew install jq) and re-run flowai init."
+  log_error "jq is required. Install: $(flowai_os_install_hint jq)"
   exit 1
 fi
 

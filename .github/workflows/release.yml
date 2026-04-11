@@ -9,15 +9,18 @@ permissions:
   contents: write
 
 jobs:
-  # ── Stage 1: Test on both macOS and Linux ──────────────────────────────────
-  # Both must pass before we create a release.
+  # ── Stage 1: Test on macOS, Linux, and Windows ─────────────────────────────
+  # All three must pass before the release is created.
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,12 +29,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq jq
+          sudo apt-get install -y -qq jq tmux
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install jq || true
+          brew install jq tmux || true
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install jq -y --no-progress
 
       - name: Validate VERSION matches tag
         run: |
@@ -46,7 +54,7 @@ jobs:
         run: |
           errors=0
           for f in bin/flowai install.sh src/commands/*.sh src/phases/*.sh \
-                   src/core/*.sh src/bootstrap/*.sh src/graph/*.sh; do
+                   src/core/*.sh src/bootstrap/*.sh src/graph/*.sh src/os/*.sh src/os/lib/*.sh; do
             if ! bash -n "$f" 2>&1; then
               echo "::error file=$f::Syntax error"
               errors=$((errors + 1))
@@ -59,9 +67,16 @@ jobs:
         run: |
           FLOWAI_TEST_ALLOW_MISSING_TMUX=1 bash tests/run.sh
 
-      - name: Install FlowAI
+      - name: Install FlowAI (Unix)
+        if: runner.os != 'Windows'
         run: |
           sudo bash install.sh
+
+      - name: Install FlowAI (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          NO_SUDO=1 PREFIX="$HOME/.local" bash install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Verify installed commands
         run: |
@@ -72,7 +87,7 @@ jobs:
           fai --help
 
   # ── Stage 2: Create GitHub Release ─────────────────────────────────────────
-  # Only runs after BOTH macOS and Linux tests pass.
+  # Only runs after ALL OS tests pass.
   release:
     name: Create GitHub Release
     needs: test
@@ -105,12 +120,19 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "## Install"
+            echo "### Install"
+            echo ""
+            echo "**macOS / Linux:**"
             echo '```bash'
             echo 'curl -fsSL https://raw.githubusercontent.com/weprodev/FlowAI/main/install.sh | bash'
             echo '```'
             echo ""
-            echo "## Upgrade"
+            echo "**Windows (Git Bash):**"
+            echo '```bash'
+            echo 'curl -fsSL https://raw.githubusercontent.com/weprodev/FlowAI/main/install.sh | PREFIX="$HOME/.local" bash'
+            echo '```'
+            echo ""
+            echo "### Upgrade"
             echo '```bash'
             echo 'flowai update'
             echo '```'

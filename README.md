@@ -8,20 +8,33 @@
 </p>
 
 <p align="center">
-  <code>bash</code> + <code>jq</code> + <code>tmux</code> &mdash; no Python, no Docker, no external runtime.
+  <code>bash</code> + <code>jq</code> + <code>tmux</code> — no Python, no Docker, no external runtime.<br />
+  Works on <strong>macOS</strong>, <strong>Linux</strong>, and <strong>Windows</strong> (Git Bash).
 </p>
+
+
+AI coding assistants are powerful, but using them effectively across a full feature lifecycle is hard. You end up copy-pasting context between tools, re-explaining your codebase to every agent, burning tokens on redundant context, and hoping the implementation matches the spec.
+
+**FlowAI solves this by turning your terminal into a structured, multi-agent pipeline:**
+
+- **One spec, many agents** — Write the spec once. FlowAI routes it through plan, tasks, implementation, and review automatically.
+- **Right agent for the job** — Assign Gemini for planning, Claude for implementation, any tool for review. Each phase gets the best model for the task.
+- **Knowledge graph = less tokens, better code** — Your codebase is pre-analyzed into a compiled graph. Agents get precise, relevant context instead of scanning thousands of files. Less noise, fewer tokens, higher quality output.
+- **Skills make agents smarter** — Attach behavioral skills (TDD, systematic debugging, code review) that constrain how agents work, not just what they produce.
+- **MCP servers extend reach** — Connect agents to GitHub PRs, databases, documentation, and file systems through the Model Context Protocol.
+- **Human in the loop** — Every phase waits for your approval. You stay in control while agents do the heavy lifting.
 
 ---
 
 ## What It Does
 
-FlowAI orchestrates multiple AI agent CLIs (Gemini, Claude, Cursor, Copilot) through a **five-phase pipeline**:
+FlowAI orchestrates multiple AI agent CLIs through a **five-phase pipeline**:
 
 ```
 Spec  →  Plan  →  Tasks  →  Implement  →  Review
 ```
 
-Each phase runs in its own tmux pane with a dedicated role, waits for human approval before handing off, and shares context through a **compiled knowledge graph** and **real-time event log**. The master agent monitors the entire pipeline and intervenes on failures.
+Each phase runs in its own tmux pane with a dedicated **role**, attached **skills**, and pre-loaded **knowledge graph context**. The master agent monitors the entire pipeline, tracks progress via the event log, and intervenes on failures.
 
 **You bring the AI tools. FlowAI wires them together.**
 
@@ -29,72 +42,256 @@ Each phase runs in its own tmux pane with a dedicated role, waits for human appr
 
 ## Quick Start
 
+### Install
+
+**macOS / Linux:**
 ```bash
-# Install
 curl -fsSL https://raw.githubusercontent.com/WeProDev/FlowAI/main/install.sh | bash
-
-# Init a project
-cd /path/to/your/repo
-flowai init
-
-# Launch the pipeline
-flowai start
 ```
 
-Or clone and `make install`. Alias: `fai` = `flowai`.
+**Windows (Git Bash):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/WeProDev/FlowAI/main/install.sh | PREFIX="$HOME/.local" bash
+```
+
+### Set up a project
+
+```bash
+cd /path/to/your/repo
+flowai init       # interactive wizard: pick AI provider, configure roles, scaffold editor configs
+flowai start      # builds knowledge graph → launches the tmux pipeline
+```
+
+> **Tip:** `fai` is a shortcut for `flowai` — same commands, faster to type.
+
+### Update
+
+```bash
+flowai update             # self-update to latest release
+flowai update --check     # check without installing
+```
 
 ---
 
 ## Requirements
 
-| Dependency | Purpose |
-|------------|---------|
-| `bash`, `jq`, `tmux`, `gum` | Runtime |
-| `uv` | Bootstraps [GitHub Spec Kit](https://github.github.io/spec-kit/) during `flowai init` |
-| At least one AI CLI | `gemini`, `claude`, `cursor`, or `copilot` — install separately |
+| Dependency | Purpose | Install |
+|------------|---------|---------|
+| `bash` | Runtime | Pre-installed on macOS/Linux |
+| `jq` | JSON processing (graph, config) | `brew install jq` / `apt install jq` |
+| `tmux` | Multi-pane session management | `brew install tmux` / `apt install tmux` |
+| `gum` | Interactive menus & approval prompts | `brew install gum` |
+| At least one AI CLI | The agents that do the work | [Gemini CLI](https://github.com/google-gemini/gemini-cli) · [Claude Code](https://docs.anthropic.com/en/docs/claude-code) · [Cursor](https://cursor.com) · [GitHub Copilot](https://github.com/features/copilot) |
+
+`flowai init` validates all dependencies and exits with platform-specific install instructions if anything is missing.
 
 ---
 
-## Key Capabilities
+## Features
 
-### Master Orchestration
-The master agent creates the spec interactively, then enters a **monitoring loop** — polling the event log, displaying progress, and re-engaging on review rejections. All downstream agents receive pipeline context automatically.
+### 🤖 Multi-Agent Orchestration
 
-### Knowledge Graph
-A persistent, compiled graph of your codebase (`.flowai/wiki/`) that every agent reads before touching files. Structural extraction for **Bash, Python, TypeScript/JS, and Go** — no LLM required. Optional semantic pass for deeper analysis. Includes community detection via label propagation, graph versioning with rollback, and structural lint.
-
-```bash
-flowai graph build          # full build
-flowai graph update         # incremental (changed files only)
-flowai graph lint           # health check
-flowai graph rollback       # restore previous version
-```
-
-### Event Log (Message Bus)
-Append-only JSONL at `.flowai/events.jsonl` gives every agent visibility into pipeline activity. Configurable prompt injection format (`compact`, `minimal`, `full`) to control token usage.
-
-### Roles & Skills
-12 specialist roles (backend, frontend, security, DevOps, etc.) with a **5-tier resolution chain**. 9 bundled skills (TDD, debugging, planning, etc.) with a **4-tier resolution chain**. Both are fully customizable per-project.
-
-### Review Rejection Loop
-When review fails, the review agent writes structured rejection context. On re-run, the implement agent focuses only on failed items — no full re-implementation.
-
----
-
-## Configuration
-
-All config lives in `.flowai/config.json`:
+Assign different AI tools and models to each pipeline phase. FlowAI manages the handoff, context sharing, and approval gates between them.
 
 ```json
 {
-  "master": { "tool": "gemini", "model": "gemini-2.5-pro" },
-  "pipeline": { "plan": "team-lead", "impl": "backend-engineer", "review": "reviewer" },
-  "graph": { "scan_paths": ["src", "docs", "specs"], "versions_to_keep": 5 },
-  "event_log": { "prompt_format": "compact" }
+  "master":   { "tool": "gemini", "model": "gemini-2.5-pro" },
+  "pipeline": {
+    "plan":   { "role": "team-lead",        "tool": "gemini" },
+    "impl":   { "role": "backend-engineer", "tool": "claude" },
+    "review": { "role": "reviewer",         "tool": "gemini" }
+  }
 }
 ```
 
-Validate anytime: `flowai validate`. Model IDs are checked against the bundled `models-catalog.json`.
+Use Gemini for planning (fast, large context), Claude for implementation (precise, code-heavy), and rotate reviewers — all in the same session.
+
+---
+
+### 🧠 Knowledge Graph — Better Code, Fewer Tokens
+
+Traditional AI workflows dump your entire codebase into the context window. FlowAI pre-compiles a **structural knowledge graph** of your project — functions, classes, imports, specs, and their relationships — so agents get targeted, relevant context instead of raw file listings.
+
+**The result:** agents produce higher-quality output because they understand your architecture, and you burn fewer tokens because irrelevant files are excluded.
+
+```bash
+flowai graph build          # full build (Bash, Python, TS/JS, Go, Markdown, JSON)
+flowai graph update         # incremental — only re-processes changed files
+flowai graph lint           # health check: orphaned specs, zombie code, coverage gaps
+flowai graph query "..."    # ask questions about your codebase structure
+flowai graph rollback       # restore a previous graph version
+```
+
+Features:
+- **Structural extraction** for Bash, Python, TypeScript/JS, and Go — no LLM required
+- **Community detection** via label propagation — identifies clusters and god-objects
+- **Structural lint** — detects unimplemented specs, zombie code, and test gaps
+- **Spec traceability** — links specs to implementations via `SPECIFIES` / `IMPLEMENTS` edges
+- **Incremental builds** with SHA-based caching — sub-second updates on large codebases
+- **Graph versioning** with configurable rollback depth
+
+---
+
+### 🎭 Roles — Specialized Agent Personas
+
+Each pipeline phase is assigned a **role** — a markdown prompt that defines the agent's expertise, constraints, and quality standards. FlowAI ships with 12 specialist roles:
+
+| Role | Focus |
+|------|-------|
+| `master` | Pipeline orchestration, monitoring, failure recovery |
+| `team-lead` | Architecture decisions, planning, technical direction |
+| `backend-engineer` | Go/Python/Node backend, DDD, API design |
+| `frontend-engineer` | React, TypeScript, UI components, accessibility |
+| `api-engineer` | REST/GraphQL contracts, versioning, documentation |
+| `security-engineer` | Auth, encryption, vulnerability assessment |
+| `devops-engineer` | CI/CD, Docker, Kubernetes, infrastructure |
+| `qa-engineer` | Test strategy, coverage, edge cases |
+| `data-engineer` | Databases, migrations, query optimization |
+| `performance-engineer` | Profiling, caching, load testing |
+| `docs-writer` | Technical writing, API docs, tutorials |
+| `reviewer` | Code review, standards enforcement, approval |
+
+**Fully customizable:** Drop a `.flowai/roles/plan.md` or `.flowai/roles/backend-engineer.md` into your project and it overrides the bundled role. A 5-tier resolution chain ensures the most specific prompt always wins.
+
+```bash
+flowai role list                           # see all available roles
+flowai role edit backend-engineer          # customize a role for this project
+flowai role set-prompt plan ./my-plan.md   # use a custom prompt file
+flowai role reset plan                     # revert to bundled default
+```
+
+---
+
+### ⚡ Skills — Behavioral Constraints for Agents
+
+Skills are reusable markdown documents that teach agents **how to work**, not just what to build. They enforce patterns like test-driven development, systematic debugging, and structured code review.
+
+**9 bundled skills** from [obra/superpowers](https://github.com/obra/superpowers):
+
+| Skill | What it enforces |
+|-------|-----------------|
+| `test-driven-development` | Write tests first, implement second, verify always |
+| `systematic-debugging` | Root cause analysis before any fix attempt |
+| `writing-plans` | Structured planning before implementation |
+| `executing-plans` | Follow plans step-by-step, no skipping |
+| `requesting-code-review` | Structured review requests with context |
+| `verification-before-completion` | Verify all changes before marking done |
+| `subagent-driven-development` | Decompose work into focused sub-tasks |
+| `finishing-a-development-branch` | Clean up, squash, document before merge |
+| `graph-aware-navigation` | Use the knowledge graph for codebase navigation |
+
+```bash
+flowai skill add obra/superpowers/systematic-debugging     # install from GitHub
+flowai skill add context7 obra/superpowers/writing-plans   # install with MCP context
+flowai skill list                                          # see installed skills
+flowai skill remove systematic-debugging                   # remove a skill
+```
+
+Skills are resolved through a **4-tier chain**: installed → project-relative → bundled → skip. Project-local skills in `.flowai/skills/` always win.
+
+---
+
+### 🔌 MCP Servers — Extend Agent Capabilities
+
+Connect your agents to external tools and data sources through the [Model Context Protocol](https://modelcontextprotocol.io/). FlowAI manages the MCP configuration so every agent in the pipeline has access.
+
+**Built-in catalog:**
+
+| Server | What it provides |
+|--------|-----------------|
+| `context7` | Real-time library documentation (npm, PyPI, Go) |
+| `github` | GitHub API — PRs, issues, branches, code search |
+| `gitlab` | GitLab API — MRs, issues, pipelines |
+| `filesystem` | Local file system operations |
+| `postgres` | PostgreSQL database introspection |
+
+```bash
+flowai mcp add github          # add from built-in catalog
+flowai mcp add context7        # add library docs server
+flowai mcp list                # see configured servers
+flowai mcp remove github       # remove a server
+```
+
+The MCP config is written to `.flowai/mcp.json` and automatically loaded by supported AI CLIs.
+
+---
+
+### 🔄 Review Rejection Loop
+
+When the review phase rejects an implementation, the review agent writes structured rejection context — what failed, why, and what to fix. On re-run, the implement agent focuses **only on failed items**, not a full re-implementation. This dramatically reduces iteration time and token usage.
+
+---
+
+### 📝 Editor Integration
+
+`flowai init` scaffolds project-level context files for your AI editor, ensuring agents understand your project from the start:
+
+| Editor | Config file | Created by |
+|--------|------------|------------|
+| Claude Code | `.claude/CLAUDE.md` | `flowai init` |
+| Gemini | `.gemini/GEMINI.md` | `flowai init` |
+| Cursor | `.cursor/rules/flowai.mdc` | `flowai init` |
+| GitHub Copilot | `.github/copilot-instructions.md` | `flowai init` |
+
+Files are created once and never overwritten — safe to customize.
+
+---
+
+### 📊 Event Log — Pipeline Visibility
+
+An append-only JSONL log at `.flowai/events.jsonl` gives every agent real-time visibility into what's happening across the pipeline. Configurable prompt injection format controls token usage:
+
+| Format | Tokens | Best for |
+|--------|--------|----------|
+| `compact` | Low | Standard development |
+| `minimal` | Very low | Large codebases, cost-sensitive |
+| `full` | High | Debugging pipeline issues |
+
+---
+
+## Commands
+
+| Command | Description |
+|---------|------------|
+| `flowai init` | Interactive wizard: pick AI provider, configure roles, scaffold editor configs |
+| `flowai start` | Build knowledge graph → launch tmux pipeline (interactive by default) |
+| `flowai start --headless` | Background mode for CI (no interactive prompts) |
+| `flowai kill` | Stop the session |
+| `flowai status` | Show session, config, skills, MCP health |
+| `flowai run <phase>` | Run a single phase (`spec`, `plan`, `tasks`, `impl`, `review`) |
+| `flowai graph build\|update\|lint\|query\|rollback` | Knowledge graph operations |
+| `flowai skill add\|list\|remove` | Manage agent skills |
+| `flowai role list\|edit\|set-prompt\|reset` | Manage role prompts |
+| `flowai mcp add\|list\|remove` | Manage MCP servers |
+| `flowai models list` | Show valid model IDs per tool |
+| `flowai validate` | Check config against models catalog |
+| `flowai update` | Self-update to latest version |
+| `flowai version` | Print version |
+
+---
+
+## For Developers
+
+Contributing to FlowAI:
+
+```bash
+git clone https://github.com/weprodev/FlowAI.git
+cd FlowAI
+make link         # symlinks fai/flowai to this workspace — edits are live
+make test         # run the full test suite
+make audit        # shellcheck + tests
+make install      # production install (copy to /usr/local/flowai)
+make uninstall    # remove from system
+```
+
+### Releasing
+
+```bash
+echo "0.2.0" > VERSION
+git add VERSION && git commit -m "Bump to 0.2.0"
+git tag v0.2.0 && git push origin main --tags
+# → GitHub Actions: test on macOS + Linux + Windows → create Release
+```
 
 ---
 
@@ -102,23 +299,17 @@ Validate anytime: `flowai validate`. Model IDs are checked against the bundled `
 
 | Guide | What It Covers |
 |-------|----------------|
-| **[Architecture](docs/ARCHITECTURE.md)** | Pipeline, signals, plugins, event log, master monitoring, skills/roles resolution, source layout |
-| **[Commands](docs/COMMANDS.md)** | Every CLI command, environment variables, event log config |
-| **[Knowledge Graph](docs/GRAPH.md)** | Build passes, community detection, versioning, chronicle, SDD integration, configuration |
-| **[Supported Tools](docs/TOOLS.md)** | Tool plugin API, model catalog, config keys, vendor references |
-
----
-
-## Testing
-
-```bash
-make audit    # shellcheck + 103 tests (unit, integration, plugin compliance, signals)
-```
-
-103 tests across 8 suites: CLI entrypoint, lifecycle, skills, roles, knowledge graph, event log, tool plugins, and phase signals. All bash-native — no test framework dependencies.
+| [Architecture](docs/ARCHITECTURE.md) | Pipeline, signals, plugins, event log, master monitoring, resolution chains |
+| [Commands](docs/COMMANDS.md) | Every CLI command, environment variables, event log config |
+| [Knowledge Graph](docs/GRAPH.md) | Build passes, community detection, versioning, chronicle, configuration |
+| [Supported Tools](docs/TOOLS.md) | Tool plugin API, model catalog, config keys, vendor references |
 
 ---
 
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
+
+<p align="center">
+  Built with ❤️ by <a href="https://github.com/weprodev">WeProDev</a>
+</p>

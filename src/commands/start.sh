@@ -13,6 +13,7 @@ source "$FLOWAI_HOME/src/core/graph.sh"
 source "$FLOWAI_HOME/src/graph/build.sh"
 source "$FLOWAI_HOME/src/core/phases.sh"
 source "$FLOWAI_HOME/src/core/version-check.sh"
+source "$FLOWAI_HOME/src/os/platform.sh"
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
@@ -28,12 +29,12 @@ for _fa in "$@"; do
 done
 
 if ! command -v tmux >/dev/null 2>&1; then
-  log_error "tmux is not installed. Install it (e.g. brew install tmux) and retry."
+  log_error "tmux is not installed. Install: $(flowai_os_install_hint tmux)"
   exit 1
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-  log_error "jq is required for configuration. Install jq (e.g. brew install jq) and retry."
+  log_error "jq is required for configuration. Install: $(flowai_os_install_hint jq)"
   exit 1
 fi
 
@@ -55,7 +56,7 @@ if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
 fi
 
 if [[ "$HEADLESS" != true ]] && ! command -v gum >/dev/null 2>&1; then
-  log_error "gum is required for phase approval menus. Install gum (e.g. brew install gum)."
+  log_error "gum is required for phase approval menus. Install: $(flowai_os_install_hint gum)"
   exit 1
 fi
 
