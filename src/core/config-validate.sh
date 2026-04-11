@@ -82,6 +82,16 @@ flowai_config_validate_models() {
     return 1
   fi
 
+  # Normalize CRLF → LF on Windows (Git Bash / MSYS write CRLF).
+  # jq parses JSON fine but -r output inherits the OS text mode, so
+  # extracted values like "claude" become "claude\r" which breaks lookups.
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      local _norm
+      _norm="$(tr -d '\r' < "$cfg")" && printf '%s\n' "$_norm" > "$cfg" 2>/dev/null || true
+      ;;
+  esac
+
   if [[ ! -f "$(flowai_models_catalog_path)" ]]; then
     log_error "Model catalog not found: $(flowai_models_catalog_path)"
     return 1
