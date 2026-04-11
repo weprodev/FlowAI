@@ -312,4 +312,6 @@ MIT — see [`LICENSE`](LICENSE).
 
 <p align="center">
   Built with ❤️ by <a href="https://github.com/weprodev">WeProDev</a>
+  <br /><br />
+  <em>We build for growth, with growth in mind.<br />Join our community, contribute to the project, and let's shape the future of AI orchestration together!</em>
 </p>
