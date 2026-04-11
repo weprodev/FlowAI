@@ -179,9 +179,19 @@ if [[ "$MODE" == "link" ]]; then
   _cleanup_stale
   _sudo mkdir -p "$BIN_DIR"
 
-  # Create symlinks directly to the workspace binary
-  _sudo ln -sf "$FLOWAI_SRC/bin/flowai" "$BIN_DIR/flowai"
-  _sudo ln -sf "$FLOWAI_SRC/bin/flowai" "$BIN_DIR/fai"
+  # Create wrapper scripts to cleanly bypass Windows symlink emulation
+  _write_wrapper() {
+    local target="$1" wrapper="$2"
+    _sudo sh -c "cat << 'EOF' > \"$wrapper\"
+#!/usr/bin/env bash
+export _FLOWAI_WRAPPER_INVOKED_AS=\"\${0##*/}\"
+exec \"$target\" \"\$@\"
+EOF"
+    _sudo chmod +x "$wrapper"
+  }
+
+  _write_wrapper "$FLOWAI_SRC/bin/flowai" "$BIN_DIR/flowai"
+  _write_wrapper "$FLOWAI_SRC/bin/flowai" "$BIN_DIR/fai"
 
   printf '\n%b%s✅ FlowAI linked (dev mode).%b\n' "$BOLD" "$GREEN" "$RESET"
   printf '  flowai → %s\n' "$FLOWAI_SRC/bin/flowai"
@@ -216,12 +226,20 @@ fi
 
 _sudo chmod -R a+rX "$INSTALL_DIR"
 _sudo chmod +x "$INSTALL_DIR/bin/flowai"
-# fai symlink inside the install dir (both names, same script)
-_sudo sh -c "cd \"$INSTALL_DIR/bin\" && ln -sf flowai fai"
 
 _sudo mkdir -p "$BIN_DIR"
-_sudo ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/flowai"
-_sudo ln -sf "$INSTALL_DIR/bin/flowai" "$BIN_DIR/fai"
+_write_wrapper() {
+  local target="$1" wrapper="$2"
+  _sudo sh -c "cat << 'EOF' > \"$wrapper\"
+#!/usr/bin/env bash
+export _FLOWAI_WRAPPER_INVOKED_AS=\"\${0##*/}\"
+exec \"$target\" \"\$@\"
+EOF"
+  _sudo chmod +x "$wrapper"
+}
+
+_write_wrapper "$INSTALL_DIR/bin/flowai" "$BIN_DIR/flowai"
+_write_wrapper "$INSTALL_DIR/bin/flowai" "$BIN_DIR/fai"
 
 printf '\n%b%s✅ FlowAI installed.%b\n' "$BOLD" "$GREEN" "$RESET"
 printf '  flowai → %s/bin/flowai\n' "$INSTALL_DIR"
