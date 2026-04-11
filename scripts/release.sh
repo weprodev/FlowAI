@@ -73,11 +73,6 @@ if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
     printf "Release aborted.\n"
     exit 0
   fi
-
-  printf "%s\n" "$NEW_VERSION" > VERSION
-  git commit -am "chore(release): bump version to v${NEW_VERSION} [skip branch ci]"
-  CURRENT_VERSION="$NEW_VERSION"
-
 else
   printf "\n%bCurrent VERSION (v%s) is not tagged yet.%b\n" "$GREEN" "$CURRENT_VERSION" "$RESET"
   printf "We will target this version for the release.\n\n"
@@ -88,13 +83,35 @@ else
     printf "Release aborted.\n"
     exit 0
   fi
+  NEW_VERSION="$CURRENT_VERSION"
 fi
+
+# Generate changelog for this release
+PREV_TAG="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+CHANGELOG_CONTENT="Release v${NEW_VERSION}\n\n"
+
+if [[ -n "$PREV_TAG" ]]; then
+  # Grab commits since previous tag
+  CHANGELOG_CONTENT+=$(git log "${PREV_TAG}..HEAD" --oneline --no-merges --pretty=format:"- %s" || echo "- Released v${NEW_VERSION}")
+else
+  CHANGELOG_CONTENT+="- Initial Release"
+fi
+
+printf "%s\n" "$NEW_VERSION" > VERSION
+git add VERSION
+
+# Commit if there's anything modified (VERSION)
+if [[ -n "$(git status --porcelain)" ]]; then
+  git commit -m "chore(release): bump version to v${NEW_VERSION} [skip-ci]"
+fi
+
+CURRENT_VERSION="$NEW_VERSION"
 
 printf "\n%bPushing commits to master...%b\n" "$CYAN" "$RESET"
 git push origin master
 
 printf "\n%bCreating and pushing tag v%s...%b\n" "$CYAN" "$CURRENT_VERSION" "$RESET"
-git tag "v${CURRENT_VERSION}"
+git tag -a "v${CURRENT_VERSION}" -m "$(printf "%b" "$CHANGELOG_CONTENT")"
 git push origin "v${CURRENT_VERSION}"
 
 printf "\n%b✅ Successfully released v%s!%b\n" "$GREEN" "$CURRENT_VERSION" "$RESET"
