@@ -43,7 +43,7 @@ flowai_prefer_jq_path() {
     esac
     [[ "${FLOWAI_NO_JQ_PATH_HINT:-0}" == "1" ]] && return 0
     if command -v log_info >/dev/null 2>&1; then
-      log_info "Using jq from /usr/bin (conda jq 1.6 is incompatible; PATH adjusted). Install: brew install jq"
+      log_info "Using jq from /usr/bin (conda jq 1.6 is incompatible; PATH adjusted). Install: brew install jq" >&2
     else
       printf '%s\n' "FlowAI: using /usr/bin/jq — conda jq 1.6 is incompatible with graph tools." >&2
     fi

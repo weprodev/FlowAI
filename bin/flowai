@@ -90,6 +90,7 @@ Commands:
   ${CYAN}mcp${RESET}         Manage MCP servers   (${CYAN}flowai mcp add / remove${RESET})
   ${CYAN}models${RESET}      List valid model ids per tool (from bundled catalog)
   ${CYAN}validate${RESET}    Check project config vs models-catalog.json (alias: ${CYAN}flowai config validate${RESET})
+  ${CYAN}update${RESET}      Update FlowAI to latest version (${CYAN}flowai update --check${RESET} to preview)
   ${CYAN}version${RESET}     Print FlowAI version (for bug reports)
 
 Help:  flowai help | flowai -h | flowai --help   ·   ${CYAN}flowai --version${RESET}
@@ -106,6 +107,7 @@ Examples:
   flowai mcp add github
   flowai models list
   flowai validate
+  flowai update            # self-update to latest version
   flowai run plan
 EOF
 }
@@ -155,6 +157,9 @@ case "$cmd" in
     ;;
   config)
     bash "$FLOWAI_HOME/src/commands/config.sh" "$@"
+    ;;
+  update|self-update)
+    bash "$FLOWAI_HOME/src/commands/update.sh" "$@"
     ;;
   run)
     phase="${1:-}"

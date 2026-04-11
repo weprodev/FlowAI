@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
-.PHONY: help install lint test verify-usecases verify-ai check build-skills
+.PHONY: help install link uninstall lint test verify-usecases verify-ai check build-skills
 
 # Colors
 YELLOW := \033[33m
@@ -12,12 +12,21 @@ RESET  := \033[0m
 
 help:
 	@printf "$(BOLD)FlowAI Makefile commands:$(RESET)\n\n"
-	@printf "  $(CYAN)make install$(RESET)        Install FlowAI globally (/usr/local/bin; creates flowai + fai symlinks)\n"
-	@printf "  $(CYAN)make audit$(RESET)          Lint → deterministic CLI harness → optional AI review (verify-ai)\n"
+	@printf "  $(CYAN)make link$(RESET)           Developer install — symlink to this workspace (edits are live)\n"
+	@printf "  $(CYAN)make install$(RESET)        Production install — copy to /usr/local/flowai\n"
+	@printf "  $(CYAN)make uninstall$(RESET)      Remove FlowAI from system\n"
+	@printf "  $(CYAN)make test$(RESET)           Run the full test suite\n"
+	@printf "  $(CYAN)make audit$(RESET)          Lint → tests → optional AI review\n"
 	@printf "  $(CYAN)make build-skills$(RESET)   Fetch/refresh bundled skills from skills.sh sources\n\n"
+
+link:
+	@bash ./install.sh --link
 
 install:
 	@bash ./install.sh
+
+uninstall:
+	@bash ./install.sh --uninstall
 
 # Application use cases: specs in tests/usecases/ — see tests/usecases/README.md
 test:

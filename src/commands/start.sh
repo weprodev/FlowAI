@@ -12,6 +12,7 @@ source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 source "$FLOWAI_HOME/src/core/graph.sh"
 source "$FLOWAI_HOME/src/graph/build.sh"
 source "$FLOWAI_HOME/src/core/phases.sh"
+source "$FLOWAI_HOME/src/core/version-check.sh"
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
@@ -88,6 +89,9 @@ fi
 # ── Self-healing dependency check ────────────────────────────────────────────
 if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
   log_header "FlowAI Setup Check"
+
+  # Non-blocking update check (cached 24h, 3s timeout)
+  flowai_version_check_notify || true
 
   _dep_ok()   { printf '  %-14s %s\n' "$1" "${GREEN}✓${RESET} ok"; }
   _dep_warn() { printf '  %-14s %s\n' "$1" "${YELLOW}⚠${RESET}  $2"; }
