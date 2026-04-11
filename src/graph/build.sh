@@ -34,7 +34,7 @@ _graph_scan_paths() {
   local cfg="${FLOWAI_DIR}/config.json"
   if [[ -f "$cfg" ]]; then
     local paths
-    paths="$(jq -r '.graph.scan_paths // ["src","docs","specs"] | .[]' "$cfg" 2>/dev/null)"
+    paths="$(jq -r '.graph.scan_paths // ["src","docs","specs"] | .[]' "$cfg" 2>/dev/null | tr -d '\r')"
     if [[ -n "$paths" ]]; then
       echo "$paths"
       return
@@ -58,7 +58,7 @@ _graph_semantic_enabled() {
     return 1
   fi
   local v
-  v="$(jq -r 'if .graph.semantic_enabled == null then "false" else (.graph.semantic_enabled | tostring) end' "$cfg" 2>/dev/null)"
+  v="$(jq -r 'if .graph.semantic_enabled == null then "false" else (.graph.semantic_enabled | tostring) end' "$cfg" 2>/dev/null | tr -d '\r')"
   [[ "$v" == "true" ]]
 }
 
@@ -251,7 +251,7 @@ _graph_structural_extract_file() {
   local rel_path
   rel_path="$(_graph_rel_path "$file")"
   local file_id
-  file_id="$(printf '%s' "$rel_path" | tr '/' '.' | sed -E 's/\.(sh|md|json|js|ts|go|py|rb|java|rs)$//')"
+  file_id="$(printf '%s' "$rel_path" | tr '/' '.' | sed -E 's/\.(sh|md|json|js|ts|go|py|rb|java|rs)$//' | tr -d '\r')"
 
   local nodes=()
   local edges=()
@@ -261,7 +261,7 @@ _graph_structural_extract_file() {
     local spec_meta
     spec_meta="$(_graph_extract_spec_meta "$file")"
     local spec_title
-    spec_title="$(printf '%s' "$spec_meta" | jq -r '.title' 2>/dev/null || basename "$file")"
+    spec_title="$(printf '%s' "$spec_meta" | jq -r '.title' 2>/dev/null || basename "$file" | tr -d '\r')"
 
     # Spec node carries richer metadata
     nodes+=("$(jq -n \
@@ -278,7 +278,7 @@ _graph_structural_extract_file() {
       [[ -z "$linked" ]] && continue
       [[ "$linked" == http* ]] && continue
       local link_id
-      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(sh|md|json|js|ts)$//')"
+      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(sh|md|json|js|ts)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$link_id" "SPECIFIES" "EXTRACTED")")
     done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | grep -oE '\(([^)]+)\)' | tr -d '()' | \
                grep -vE '^https?://' || true)
@@ -292,7 +292,7 @@ _graph_structural_extract_file() {
     while IFS= read -r dep; do
       [[ -z "$dep" ]] && continue
       local dep_id
-      dep_id="$(printf '%s' "$dep" | tr '/' '.' | sed -E 's/\.(sh)$//')"
+      dep_id="$(printf '%s' "$dep" | tr '/' '.' | sed -E 's/\.(sh)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$dep_id" "sources" "EXTRACTED")")
     done < <(grep -oE 'source[[:space:]]+"?\$\{?FLOWAI_HOME\}?/([^"[:space:]]+\.sh)' "$file" 2>/dev/null | \
              grep -oE 'src/[^"[:space:]]+\.sh' || true)
@@ -301,7 +301,7 @@ _graph_structural_extract_file() {
     while IFS= read -r fn_line; do
       [[ -z "$fn_line" ]] && continue
       local fn
-      fn="$(printf '%s' "$fn_line" | sed 's/^[[:space:]]*//;s/().*$//')"
+      fn="$(printf '%s' "$fn_line" | sed 's/^[[:space:]]*//;s/().*$//' | tr -d '\r')"
       [[ -z "$fn" ]] && continue
       local fn_id="${file_id}.${fn}"
       nodes+=("$(_graph_node_json "$fn_id" "$fn" "function" "$rel_path")")
@@ -316,11 +316,11 @@ _graph_structural_extract_file() {
       [[ -z "$imp_line" ]] && continue
       local imp_module
       # Extract module path from 'from X.Y import Z' or 'import X.Y'
-      imp_module="$(printf '%s' "$imp_line" | sed -nE 's/^from[[:space:]]+([a-zA-Z0-9_.]*).*/\1/p')"
-      [[ -z "$imp_module" ]] && imp_module="$(printf '%s' "$imp_line" | sed -nE 's/^import[[:space:]]+([a-zA-Z0-9_.]*).*/\1/p')"
+      imp_module="$(printf '%s' "$imp_line" | sed -nE 's/^from[[:space:]]+([a-zA-Z0-9_.]*).*/\1/p' | tr -d '\r')"
+      [[ -z "$imp_module" ]] && imp_module="$(printf '%s' "$imp_line" | sed -nE 's/^import[[:space:]]+([a-zA-Z0-9_.]*).*/\1/p' | tr -d '\r')"
       [[ -z "$imp_module" ]] && continue
       local imp_id
-      imp_id="$(printf '%s' "$imp_module" | tr '.' '.')"
+      imp_id="$(printf '%s' "$imp_module" | tr '.' '.' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$imp_id" "imports" "EXTRACTED")")
     done < <(grep -E '^(from|import)\s+[a-zA-Z]' "$file" 2>/dev/null | head -50 || true)
 
@@ -328,8 +328,8 @@ _graph_structural_extract_file() {
     while IFS= read -r def_line; do
       [[ -z "$def_line" ]] && continue
       local def_name def_type
-      def_name="$(printf '%s' "$def_line" | sed -nE 's/^[[:space:]]*(class|def)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*).*/\2/p')"
-      def_type="$(printf '%s' "$def_line" | sed -nE 's/^[[:space:]]*(class|def).*/\1/p')"
+      def_name="$(printf '%s' "$def_line" | sed -nE 's/^[[:space:]]*(class|def)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*).*/\2/p' | tr -d '\r')"
+      def_type="$(printf '%s' "$def_line" | sed -nE 's/^[[:space:]]*(class|def).*/\1/p' | tr -d '\r')"
       [[ -z "$def_name" ]] && continue
       local def_node_type="function"
       [[ "$def_type" == "class" ]] && def_node_type="class"
@@ -346,13 +346,13 @@ _graph_structural_extract_file() {
       [[ -z "$imp_line" ]] && continue
       local ts_module
       # Extract module from: from 'module' or from "module" or require('module')
-      ts_module="$(printf '%s' "$imp_line" | grep -oE "(from|require\()[[:space:]]*['\"]([^'\"]+)['\"]" | \
+      ts_module="$(printf '%s' "$imp_line" | grep -oE "(from|require\()[[:space:]]*['\"]([^'\"]+ | tr -d '\r')['\"]" | \
         grep -oE "['\"][^'\"]+['\"]" | tr -d "'\""  | head -1)"
       [[ -z "$ts_module" ]] && continue
       # Skip external modules (node_modules)
       [[ "$ts_module" != .* && "$ts_module" != /* ]] && continue
       local ts_id
-      ts_id="$(printf '%s' "$ts_module" | sed -E 's|^\./||;s|^/||' | tr '/' '.' | sed -E 's/\.(ts|tsx|js|jsx)$//')"
+      ts_id="$(printf '%s' "$ts_module" | sed -E 's|^\./||;s|^/||' | tr '/' '.' | sed -E 's/\.(ts|tsx|js|jsx)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$ts_id" "imports" "EXTRACTED")")
     done < <(grep -E "^[[:space:]]*(import|const|let|var).*from[[:space:]]*['\"]|require\(" "$file" 2>/dev/null | head -50 || true)
 
@@ -360,7 +360,7 @@ _graph_structural_extract_file() {
     while IFS= read -r exp_line; do
       [[ -z "$exp_line" ]] && continue
       local exp_name
-      exp_name="$(printf '%s' "$exp_line" | sed -nE 's/^[[:space:]]*export[[:space:]]+(default[[:space:]]+)?(function|class|const|let|var|interface|type|enum)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*).*/\3/p')"
+      exp_name="$(printf '%s' "$exp_line" | sed -nE 's/^[[:space:]]*export[[:space:]]+(default[[:space:]]+)?(function|class|const|let|var|interface|type|enum)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*).*/\3/p' | tr -d '\r')"
       [[ -z "$exp_name" ]] && continue
       local exp_id="${file_id}.${exp_name}"
       nodes+=("$(_graph_node_json "$exp_id" "$exp_name" "function" "$rel_path")")
@@ -377,7 +377,7 @@ _graph_structural_extract_file() {
       go_module="$(printf '%s' "$imp_line" | grep -oE '"[^"]+"' | tr -d '"' | head -1)"
       [[ -z "$go_module" ]] && continue
       local go_id
-      go_id="$(printf '%s' "$go_module" | tr '/' '.')"
+      go_id="$(printf '%s' "$go_module" | tr '/' '.' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$go_id" "imports" "EXTRACTED")")
     done < <(grep -E '^\s*"[a-zA-Z]' "$file" 2>/dev/null | head -50 || true)
 
@@ -385,7 +385,7 @@ _graph_structural_extract_file() {
     while IFS= read -r def_line; do
       [[ -z "$def_line" ]] && continue
       local go_name go_type
-      go_name="$(printf '%s' "$def_line" | sed -nE 's/^func[[:space:]]+(\([^)]*\)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*).*/\2/p')"
+      go_name="$(printf '%s' "$def_line" | sed -nE 's/^func[[:space:]]+(\([^)]*\)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*).*/\2/p' | tr -d '\r')"
       if [[ -n "$go_name" ]]; then
         local go_fn_id="${file_id}.${go_name}"
         nodes+=("$(_graph_node_json "$go_fn_id" "$go_name" "function" "$rel_path")")
@@ -396,7 +396,7 @@ _graph_structural_extract_file() {
     while IFS= read -r type_line; do
       [[ -z "$type_line" ]] && continue
       local go_type_name
-      go_type_name="$(printf '%s' "$type_line" | sed -nE 's/^type[[:space:]]+([A-Za-z_][A-Za-z0-9_]*).*/\1/p')"
+      go_type_name="$(printf '%s' "$type_line" | sed -nE 's/^type[[:space:]]+([A-Za-z_][A-Za-z0-9_]*).*/\1/p' | tr -d '\r')"
       [[ -z "$go_type_name" ]] && continue
       local go_type_id="${file_id}.${go_type_name}"
       nodes+=("$(_graph_node_json "$go_type_id" "$go_type_name" "class" "$rel_path")")
@@ -410,7 +410,7 @@ _graph_structural_extract_file() {
       [[ -z "$linked" ]] && continue
       [[ "$linked" == http* ]] && continue
       local link_id
-      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(md)$//')"
+      link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(md)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$link_id" "references" "EXTRACTED")")
     done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | grep -oE '\(([^)]+)\)' | tr -d '()' || true)
   fi
@@ -423,7 +423,7 @@ _graph_structural_extract_file() {
       local key_id="${file_id}.${key}"
       nodes+=("$(_graph_node_json "$key_id" "$key" "config_key" "$rel_path")")
       edges+=("$(_graph_edge_json "$file_id" "$key_id" "contains" "EXTRACTED")")
-    done < <(jq -r 'keys[]' "$file" 2>/dev/null | head -20 || true)
+    done < <(jq -r 'keys[]' "$file" 2>/dev/null | head -20 || true | tr -d '\r')
   fi
 
   # Output partial graph fragment — collect nodes and edges into temp JSONL files
@@ -800,10 +800,10 @@ _graph_generate_report() {
   log_info "Generating GRAPH_REPORT.md..."
 
   local built_at node_count edge_count community_count
-  built_at="$(jq -r '.metadata.built_at' "$graph_file")"
-  node_count="$(jq -r '.metadata.node_count' "$graph_file")"
-  edge_count="$(jq -r '.metadata.edge_count' "$graph_file")"
-  community_count="$(jq -r '.metadata.community_count // 0' "$graph_file")"
+  built_at="$(jq -r '.metadata.built_at' "$graph_file" | tr -d '\r')"
+  node_count="$(jq -r '.metadata.node_count' "$graph_file" | tr -d '\r')"
+  edge_count="$(jq -r '.metadata.edge_count' "$graph_file" | tr -d '\r')"
+  community_count="$(jq -r '.metadata.community_count // 0' "$graph_file" | tr -d '\r')"
 
   # Top god nodes by degree (descending)
   local god_nodes
@@ -833,9 +833,9 @@ _graph_generate_report() {
 
   # Spec coverage — specs with SPECIFIES edges pointing to real code
   local spec_count specifies_count implements_count spec_nodes_list
-  spec_count="$(jq -r '.metadata.spec_count // 0' "$graph_file")"
-  specifies_count="$(jq -r '.metadata.specifies_edge_count // 0' "$graph_file")"
-  implements_count="$(jq -r '.metadata.implements_edge_count // 0' "$graph_file")"
+  spec_count="$(jq -r '.metadata.spec_count // 0' "$graph_file" | tr -d '\r')"
+  specifies_count="$(jq -r '.metadata.specifies_edge_count // 0' "$graph_file" | tr -d '\r')"
+  implements_count="$(jq -r '.metadata.implements_edge_count // 0' "$graph_file" | tr -d '\r')"
 
   # Spec status counts for the dashboard (YAML/frontmatter — not the same as git chronicle)
   local cnt_planned cnt_inprogress cnt_implemented cnt_deprecated
@@ -846,8 +846,8 @@ _graph_generate_report() {
 
   # Git-derived evolution (Karpathy wiki: compiled, incremental history — not re-parsing git each time)
   local evo_event_total specs_with_git_trail
-  evo_event_total="$(jq -r '.metadata.evolution_event_count // 0' "$graph_file")"
-  specs_with_git_trail="$(jq -r '.metadata.specs_with_git_activity // 0' "$graph_file")"
+  evo_event_total="$(jq -r '.metadata.evolution_event_count // 0' "$graph_file" | tr -d '\r')"
+  specs_with_git_trail="$(jq -r '.metadata.specs_with_git_activity // 0' "$graph_file" | tr -d '\r')"
 
   spec_nodes_list="$(jq -r '
     .nodes |
@@ -1010,7 +1010,7 @@ _graph_generate_index() {
   [[ -f "$graph_file" ]] || return 1
 
   local built_at
-  built_at="$(jq -r '.metadata.built_at' "$graph_file")"
+  built_at="$(jq -r '.metadata.built_at' "$graph_file" | tr -d '\r')"
 
   cat > "$index_file" <<INDEX
 # Knowledge Graph — Content Index
@@ -1096,7 +1096,7 @@ INDEX
 flowai_graph_build() {
   local force="${1:-false}"
   local scan_paths
-  scan_paths="$(printf '%s' "$(_graph_scan_paths)" | tr '\n' ' ')"
+  scan_paths="$(printf '%s' "$(_graph_scan_paths)" | tr '\n' ' ' | tr -d '\r')"
 
   log_header "FlowAI Knowledge Graph — Build"
   log_info "Scan paths: ${scan_paths}"

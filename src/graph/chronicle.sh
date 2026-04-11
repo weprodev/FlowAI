@@ -69,13 +69,13 @@ _chronicle_parse_frontmatter() {
   local spec_id status since author affects adr_status superseded_by verified_by
 
   spec_id="$(printf '%s' "$fm" | grep -m1 '^id:' | sed 's/^id:[[:space:]]*//' | tr -d '[:space:]' || true)"
-  status="$(printf '%s' "$fm" | grep -m1 '^status:' | sed 's/^status:[[:space:]]*//' | awk '{print $1}' || true)"
-  since="$(printf '%s' "$fm" | grep -m1 '^since:' | sed 's/^since:[[:space:]]*//' | awk '{print $1}' || true)"
-  author="$(printf '%s' "$fm" | grep -m1 '^author:' | sed 's/^author:[[:space:]]*//' | sed 's/[[:space:]]*#.*//' || true)"
-  affects="$(printf '%s' "$fm" | grep -m1 '^affects:' | sed 's/^affects:[[:space:]]*//' | sed 's/[[:space:]]*#.*//' || true)"
-  adr_status="$(printf '%s' "$fm" | grep -m1 '^adr_status:' | sed 's/^adr_status:[[:space:]]*//' | awk '{print $1}' || true)"
-  superseded_by="$(printf '%s' "$fm" | grep -m1 '^superseded_by:' | sed 's/^superseded_by:[[:space:]]*//' | awk '{print $1}' || true)"
-  verified_by="$(printf '%s' "$fm" | grep -m1 '^verified_by:' | sed 's/^verified_by:[[:space:]]*//' | awk '{print $1}' || true)"
+  status="$(printf '%s' "$fm" | grep -m1 '^status:' | sed 's/^status:[[:space:]]*//' | awk '{print $1}' || true | tr -d '\r')"
+  since="$(printf '%s' "$fm" | grep -m1 '^since:' | sed 's/^since:[[:space:]]*//' | awk '{print $1}' || true | tr -d '\r')"
+  author="$(printf '%s' "$fm" | grep -m1 '^author:' | sed 's/^author:[[:space:]]*//' | sed 's/[[:space:]]*#.*//' || true | tr -d '\r')"
+  affects="$(printf '%s' "$fm" | grep -m1 '^affects:' | sed 's/^affects:[[:space:]]*//' | sed 's/[[:space:]]*#.*//' || true | tr -d '\r')"
+  adr_status="$(printf '%s' "$fm" | grep -m1 '^adr_status:' | sed 's/^adr_status:[[:space:]]*//' | awk '{print $1}' || true | tr -d '\r')"
+  superseded_by="$(printf '%s' "$fm" | grep -m1 '^superseded_by:' | sed 's/^superseded_by:[[:space:]]*//' | awk '{print $1}' || true | tr -d '\r')"
+  verified_by="$(printf '%s' "$fm" | grep -m1 '^verified_by:' | sed 's/^verified_by:[[:space:]]*//' | awk '{print $1}' || true | tr -d '\r')"
 
   # Parse affects into JSON array (comma-separated paths)
   local affects_arr='[]'
@@ -226,7 +226,7 @@ _chronicle_generate_edges() {
 
     # Extract spec IDs from this commit message
     local spec_ids_raw
-    spec_ids_raw="$(printf '%s' "$message" | grep -oE "$_SPEC_ID_PATTERN" | sort -u || true)"
+    spec_ids_raw="$(printf '%s' "$message" | grep -oE "$_SPEC_ID_PATTERN" | sort -u || true | tr -d '\r')"
     [[ -z "$spec_ids_raw" ]] && continue
 
     # For each spec ID referenced in this commit:
@@ -235,7 +235,7 @@ _chronicle_generate_edges() {
 
       # Resolve spec ID to graph node ID
       local spec_node_id
-      spec_node_id="$(jq -r --arg sid "$spec_id" '.[$sid] // empty' "$lookup_tmp" 2>/dev/null)"
+      spec_node_id="$(jq -r --arg sid "$spec_id" '.[$sid] // empty' "$lookup_tmp" 2>/dev/null | tr -d '\r')"
       [[ -z "$spec_node_id" ]] && continue
 
       # Record evolution event on the spec node
@@ -368,7 +368,7 @@ _chronicle_enrich_spec_frontmatter() {
 
   # For each spec node in the graph, find the source file and parse frontmatter
   local spec_paths
-  spec_paths="$(printf '%s' "$tmp_graph" | jq -r '.nodes[] | select(.type == "spec") | .path // empty' 2>/dev/null)"
+  spec_paths="$(printf '%s' "$tmp_graph" | jq -r '.nodes[] | select(.type == "spec") | .path // empty' 2>/dev/null | tr -d '\r')"
 
   while IFS= read -r rel_path; do
     [[ -z "$rel_path" ]] && continue
