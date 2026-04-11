@@ -88,10 +88,10 @@ flowai_config_validate_models() {
   fi
 
   local dm cm mt mm rkey rtool rmodel
-  dm="$(jq -r '.default_model // empty' "$cfg")"
-  cm="$(jq -r '.claude_default_model // empty' "$cfg")"
-  mt="$(jq -r '.master.tool // empty' "$cfg")"
-  mm="$(jq -r '.master.model // empty' "$cfg")"
+  dm="$(jq -r '.default_model // empty' "$cfg" | tr -d '\r')"
+  cm="$(jq -r '.claude_default_model // empty' "$cfg" | tr -d '\r')"
+  mt="$(jq -r '.master.tool // empty' "$cfg" | tr -d '\r')"
+  mm="$(jq -r '.master.model // empty' "$cfg" | tr -d '\r')"
 
   flowai_config_check_model_pair "default_model (tool=gemini)" "gemini" "$dm" || err=1
   flowai_config_check_model_pair "claude_default_model (tool=claude)" "claude" "$cm" || err=1
@@ -99,6 +99,8 @@ flowai_config_validate_models() {
 
   while IFS=$'\t' read -r rkey rtool rmodel; do
     [[ -z "$rkey" ]] && continue
+    # Strip \r for Windows CRLF compatibility
+    rkey="${rkey%$'\r'}"; rtool="${rtool%$'\r'}"; rmodel="${rmodel%$'\r'}"
     flowai_config_check_model_pair "roles.${rkey}" "$rtool" "$rmodel" || err=1
   done < <(jq -r '.roles // {} | to_entries[] | [.key, (.value.tool // ""), (.value.model // "")] | @tsv' "$cfg")
 

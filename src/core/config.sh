@@ -5,6 +5,14 @@
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export FLOWAI_CONFIG="${FLOWAI_DIR}/config.json"
 
+# Normalize CRLF → LF in config.json (Windows Git Bash may write CRLF).
+# Safe no-op on Unix (sed produces identical output when no \r exists).
+if [[ -f "$FLOWAI_CONFIG" ]]; then
+  sed 's/\r$//' "$FLOWAI_CONFIG" > "${FLOWAI_CONFIG}.tmp" 2>/dev/null \
+    && mv -f "${FLOWAI_CONFIG}.tmp" "$FLOWAI_CONFIG" 2>/dev/null \
+    || rm -f "${FLOWAI_CONFIG}.tmp" 2>/dev/null
+fi
+
 # shellcheck disable=SC1091
 [[ -n "${FLOWAI_HOME:-}" ]] && source "$FLOWAI_HOME/src/core/models-catalog.sh"
 
@@ -45,7 +53,7 @@ flowai_cfg_read() {
     return
   fi
   local val
-  val="$(jq -r "$jq_path" "$FLOWAI_CONFIG" 2>/dev/null)" || val=""
+  val="$(jq -r "$jq_path" "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r')" || val=""
   if [[ -z "$val" || "$val" == "null" ]]; then
     printf '%s' "$default_val"
   else
@@ -64,7 +72,7 @@ flowai_cfg_pipeline_role() {
     printf '%s' "$def"
     return
   fi
-  jq -r --arg p "$phase" --arg d "$def" '.pipeline[$p] // $d' "$FLOWAI_CONFIG" 2>/dev/null || printf '%s' "$def"
+  jq -r --arg p "$phase" --arg d "$def" '.pipeline[$p] // $d' "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r' || printf '%s' "$def"
 }
 
 flowai_cfg_role_tool() {
@@ -74,7 +82,7 @@ flowai_cfg_role_tool() {
     printf '%s' "$def"
     return
   fi
-  jq -r --arg r "$role" --arg d "$def" '.roles[$r].tool // $d' "$FLOWAI_CONFIG" 2>/dev/null || printf '%s' "$def"
+  jq -r --arg r "$role" --arg d "$def" '.roles[$r].tool // $d' "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r' || printf '%s' "$def"
 }
 
 flowai_cfg_role_model() {
@@ -84,7 +92,7 @@ flowai_cfg_role_model() {
     printf '%s' "$def"
     return
   fi
-  jq -r --arg r "$role" --arg d "$def" '.roles[$r].model // $d' "$FLOWAI_CONFIG" 2>/dev/null || printf '%s' "$def"
+  jq -r --arg r "$role" --arg d "$def" '.roles[$r].model // $d' "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r' || printf '%s' "$def"
 }
 
 # Resolve the default model for a tool.
@@ -104,7 +112,7 @@ flowai_cfg_default_model_for_tool() {
   # 1. Generic per-tool override in project config
   local override=""
   if [[ -f "$FLOWAI_CONFIG" ]]; then
-    override="$(jq -r --arg t "$tool" '.tool_defaults[$t].model // empty' "$FLOWAI_CONFIG" 2>/dev/null)"
+    override="$(jq -r --arg t "$tool" '.tool_defaults[$t].model // empty' "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r')"
   fi
   if [[ -n "$override" && "$override" != "null" ]]; then
     printf '%s' "$override"
