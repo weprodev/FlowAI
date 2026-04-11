@@ -526,7 +526,7 @@ flowai_test_s_cli_033() {
       err=$((err + 1))
     fi
 
-  done < <(jq -r '.tools | keys[]' "$catalog" 2>/dev/null)
+  done < <(jq -r '.tools | keys[]' "$catalog" 2>/dev/null | tr -d '\r')
 
   if [[ "$err" -gt 0 ]]; then
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
