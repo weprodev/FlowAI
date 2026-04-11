@@ -824,9 +824,9 @@ FM
 
   local graph="$tmp/.flowai/wiki/graph.json"
   local status since author
-  status="$(jq -r '.nodes[] | select(.type=="spec") | .status // "none"' "$graph" 2>/dev/null | head -1)"
-  since="$(jq -r '.nodes[] | select(.type=="spec") | .since // "none"' "$graph" 2>/dev/null | head -1)"
-  author="$(jq -r '.nodes[] | select(.type=="spec") | .author // "none"' "$graph" 2>/dev/null | head -1)"
+  status="$(jq -r '.nodes[] | select(.type=="spec") | .status // "none"' "$graph" 2>/dev/null | head -1 | tr -d '\r')"
+  since="$(jq -r '.nodes[] | select(.type=="spec") | .since // "none"' "$graph" 2>/dev/null | head -1 | tr -d '\r')"
+  author="$(jq -r '.nodes[] | select(.type=="spec") | .author // "none"' "$graph" 2>/dev/null | head -1 | tr -d '\r')"
 
   if [[ "$status" == "in-progress" && "$since" == "2026-04-01" && "$author" == "alice" ]]; then
     flowai_test_pass "UC-GRAPH-024" "Chronicle enriches spec nodes with frontmatter (status, since, author)"
@@ -1054,7 +1054,7 @@ flowai_test_s_graph_029() {
   )
 
   local health
-  health="$(jq -r '.health' "$tmp/.flowai/wiki/lint-report.json" 2>/dev/null)"
+  health="$(jq -r '.health' "$tmp/.flowai/wiki/lint-report.json" 2>/dev/null | tr -d '\r')"
 
   if [[ "$health" == "HEALTHY" ]]; then
     flowai_test_pass "UC-GRAPH-029" "Lint health=HEALTHY when graph has no structural issues"
@@ -1125,7 +1125,7 @@ SPEC
   _graph_build_in "$tmp/.flowai" "$tmp" 'flowai_graph_build "true"' >/dev/null 2>&1
 
   local ids
-  ids="$(jq -r '.nodes[] | select(.type=="spec") | .feature_ids[]?' "$tmp/.flowai/wiki/graph.json" 2>/dev/null | tr '\n' ' ')"
+  ids="$(jq -r '.nodes[] | select(.type=="spec") | .feature_ids[]?' "$tmp/.flowai/wiki/graph.json" 2>/dev/null | tr '\n' ' ' | tr -d '\r')"
 
   if [[ "$ids" == *"UC-YAML-ONLY-999"* ]]; then
     flowai_test_pass "UC-GRAPH-031" "YAML id merged into feature_ids for chronicle lookup"

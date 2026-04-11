@@ -98,7 +98,7 @@ EOS
   count="$(wc -l < "$scratch/.flowai/events.jsonl" | tr -d ' ')"
   if [[ "$count" -eq 1 ]]; then
     local event
-    event="$(jq -r '.event' "$scratch/.flowai/events.jsonl" 2>/dev/null)"
+    event="$(jq -r '.event' "$scratch/.flowai/events.jsonl" 2>/dev/null | tr -d '\r')"
     if [[ "$event" == "pipeline_initialized" ]]; then
       flowai_test_pass "$id" "Event reset clears log and writes init event"
     else

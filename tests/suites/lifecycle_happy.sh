@@ -35,7 +35,7 @@ flowai_test_s_cli_016() {
   flowai_test_assert_combined_contains "already exists" "UC-CLI-016" || return
   flowai_test_assert_combined_contains "leaving config" "UC-CLI-016" || return
 
-  if [[ "$(jq -r '._flowai_test_idempotency // empty' "$tmp/.flowai/config.json")" != "preserve" ]]; then
+  if [[ "$(jq -r '._flowai_test_idempotency // empty' "$tmp/.flowai/config.json" | tr -d '\r')" != "preserve" ]]; then
     printf 'FAIL UC-CLI-016: sentinel key missing from config after second init\n' >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
     return 1

@@ -215,7 +215,7 @@ JSON
     _role_config_set_prompt_file() {
       local role="$1" rel_path="$2"
       local role_exists
-      role_exists="$(jq -r --arg r "$role" '"'"'.roles[$r] // empty'"'"' "$FLOWAI_DIR/config.json" 2>/dev/null)"
+      role_exists="$(jq -r --arg r "$role" '"'"'.roles[$r] // empty'"'"' "$FLOWAI_DIR/config.json" 2>/dev/null | tr -d '\r')"
       if [[ -z "$role_exists" ]]; then
         return 1
       fi
@@ -228,7 +228,7 @@ JSON
   ' >/dev/null 2>&1
 
   local has_unknown
-  has_unknown="$(jq -r '.roles["unknown-role"] // empty' "$tmp/.flowai/config.json" 2>/dev/null)"
+  has_unknown="$(jq -r '.roles["unknown-role"] // empty' "$tmp/.flowai/config.json" 2>/dev/null | tr -d '\r')"
 
   if [[ -z "$has_unknown" ]]; then
     flowai_test_pass "UC-ROLE-008" "_role_config_set_prompt_file does not create orphan role entries"
