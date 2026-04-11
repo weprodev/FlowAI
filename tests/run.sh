@@ -67,9 +67,16 @@ source "$TESTS_ROOT/suites/tool_plugins.sh"
 source "$TESTS_ROOT/suites/phase_signals.sh"
 
 echo "FlowAI test run — FLOWAI_HOME=$FLOWAI_HOME"
-echo ""
+
+_test_banner() {
+  printf '\n\033[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n'
+  printf '\033[1;36m %s\033[0m\n' "$1"
+  printf '\033[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n\n'
+}
 
 set +e
+
+_test_banner "CLI Overview & Entrypoints"
 flowai_test_s_cli_001
 flowai_test_s_cli_002
 flowai_test_s_cli_003
@@ -108,6 +115,7 @@ flowai_test_s_cli_035
 flowai_test_s_cli_036
 flowai_test_s_cli_037
 # skill local path
+_test_banner "Skills Path Resolution"
 flowai_test_s_skl_001
 flowai_test_s_skl_002
 flowai_test_s_skl_003
@@ -117,6 +125,7 @@ flowai_test_s_skl_006
 flowai_test_s_skl_007
 flowai_test_s_skl_008
 # role override resolution
+_test_banner "Role Overrides & Resolution"
 flowai_test_s_role_001
 flowai_test_s_role_002
 flowai_test_s_role_003
@@ -127,6 +136,7 @@ flowai_test_s_role_007
 flowai_test_s_role_008
 flowai_test_s_role_009
 # knowledge graph & wiki
+_test_banner "Knowledge Graph & Semantic Extraction"
 flowai_test_s_graph_001
 flowai_test_s_graph_002
 flowai_test_s_graph_003
@@ -148,6 +158,7 @@ flowai_test_s_graph_018
 flowai_test_s_graph_019
 flowai_test_s_graph_020
 # phase 1+2: chronicle, frontmatter, lint
+_test_banner "Graph Chronicle & Structural Lint"
 flowai_test_s_graph_021
 flowai_test_s_graph_022
 flowai_test_s_graph_023
@@ -161,6 +172,7 @@ flowai_test_s_graph_030
 flowai_test_s_graph_031
 flowai_test_s_graph_032
 # event log
+_test_banner "Pipeline Event Logs & Progress"
 flowai_test_s_evt_001
 flowai_test_s_evt_002
 flowai_test_s_evt_003
@@ -168,6 +180,7 @@ flowai_test_s_evt_004
 flowai_test_s_evt_005
 flowai_test_s_evt_006
 # token compression formats
+_test_banner "Event Log Token Compression"
 flowai_test_s_evt_007
 flowai_test_s_evt_008
 flowai_test_s_evt_009
@@ -175,12 +188,14 @@ flowai_test_s_evt_010
 flowai_test_s_evt_011
 flowai_test_s_evt_012
 # tool plugins
+_test_banner "Agent Tool Plugins (Claude/Gemini/Cursor)"
 flowai_test_s_tpl_001
 flowai_test_s_tpl_002
 flowai_test_s_tpl_003
 flowai_test_s_tpl_004
 flowai_test_s_tpl_005
 # phase signals
+_test_banner "Phase Signal Coordination"
 flowai_test_s_sig_001
 flowai_test_s_sig_002
 flowai_test_s_sig_003

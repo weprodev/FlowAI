@@ -224,8 +224,8 @@ flowai_phase_resolve_role_prompt() {
   # Resolve the role name for this phase
   local role_name=""
   case "$phase" in
-    master|spec) role_name="master" ;;
-    *)           role_name="$(flowai_cfg_pipeline_role "$phase" "backend-engineer")" ;;
+    master) role_name="master" ;;
+    *)      role_name="$(flowai_cfg_pipeline_role "$phase" "backend-engineer")" ;;
   esac
 
   # Tier 1 — phase-level override (e.g. .flowai/roles/plan.md)

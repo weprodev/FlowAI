@@ -215,13 +215,13 @@ JSON
     _role_config_set_prompt_file() {
       local role="$1" rel_path="$2"
       local role_exists
-      role_exists="$(jq -r --arg r "$role" '"'"'.roles[$r] // empty'"'"' "$FLOWAI_DIR/config.json" 2>/dev/null | tr -d '\r')"
+      role_exists="$(jq -r --arg r "$role" '\''.roles[$r] // empty'\'' "$FLOWAI_DIR/config.json" 2>/dev/null | tr -d $(printf '\''\r'\''))"
       if [[ -z "$role_exists" ]]; then
         return 1
       fi
       local tmp
       tmp="$(mktemp)"
-      jq --arg r "$role" --arg p "$rel_path" '"'"'.roles[$r].prompt_file = $p'"'"' \
+      jq --arg r "$role" --arg p "$rel_path" '\''.roles[$r].prompt_file = $p'\'' \
         "$FLOWAI_DIR/config.json" > "$tmp" && mv "$tmp" "$FLOWAI_DIR/config.json" || rm -f "$tmp"
     }
     _role_config_set_prompt_file "unknown-role" "docs/roles/foo.md" || true

@@ -19,7 +19,7 @@ if [[ "${FLOWAI_TEST_SKIP_AI:-}" == "1" ]]; then
   exit 0
 fi
 
-ROLE_FILE="$(flowai_phase_resolve_role_prompt "master")"
+ROLE_FILE="$(flowai_phase_resolve_role_prompt "spec")"
 DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Specification.
 Your WORKING DIRECTORY is: $PWD
@@ -33,4 +33,4 @@ INJECTED_PROMPT="$(flowai_phase_write_prompt "spec" "$ROLE_FILE" "$DIRECTIVE")"
 export INJECTED_PROMPT
 
 log_info "Booting Spec phase..."
-flowai_phase_run_loop "master" "$INJECTED_PROMPT" "$FEATURE_DIR/spec.md" "Specification" "spec"
+flowai_phase_run_loop "spec" "$INJECTED_PROMPT" "$FEATURE_DIR/spec.md" "Specification" "spec"

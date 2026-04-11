@@ -183,6 +183,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
       if [[ "$_configure_phases" == "yes" ]]; then
         for phase in "${FLOWAI_PIPELINE_PHASES[@]}"; do
           # Read current defaults for this phase
+          _cur_role=""
           eval "_cur_role=\"\${_def_role_${phase}}\""
           _cur_tool="$wizard_tool"
 
@@ -269,6 +270,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
     pipeline_json="{}"
     roles_json="{}"
     for phase in "${FLOWAI_PIPELINE_PHASES[@]}"; do
+      _pr="" _pt="" _pm=""
       eval "_pr=\"\${_cfg_role_${phase}}\""
       eval "_pt=\"\${_cfg_tool_${phase}}\""
       eval "_pm=\"\${_cfg_model_${phase}}\""

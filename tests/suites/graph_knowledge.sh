@@ -110,7 +110,7 @@ flowai_test_s_graph_002() {
 
   _graph_write_config "$tmp"
   mkdir -p "$tmp/.flowai/wiki"
-  echo "# Report" > "$tmp/.flowai/wiki/GRAPH_REPORT.md"
+  echo "# Report" > "$tmp/GRAPH_REPORT.md"
   printf '{"metadata":{"node_count":1},"nodes":[],"edges":[]}' > "$tmp/.flowai/wiki/graph.json"
 
   local result
@@ -182,7 +182,7 @@ flowai_test_s_graph_005() {
 
   _graph_write_config "$tmp"
   mkdir -p "$tmp/.flowai/wiki"
-  echo "# Report" > "$tmp/.flowai/wiki/GRAPH_REPORT.md"
+  echo "# Report" > "$tmp/GRAPH_REPORT.md"
   printf '{"metadata":{"node_count":42,"edge_count":88,"community_count":3},"nodes":[],"edges":[]}' \
     > "$tmp/.flowai/wiki/graph.json"
 
@@ -514,7 +514,7 @@ flowai_test_s_graph_016() {
 
   _graph_build_in "$tmp/.flowai" "$tmp" 'flowai_graph_build "true"' >/dev/null 2>&1
 
-  local report="$tmp/.flowai/wiki/GRAPH_REPORT.md"
+  local report="$tmp/GRAPH_REPORT.md"
   if [[ -f "$report" ]] && grep -q "Spec Coverage" "$report"; then
     flowai_test_pass "UC-GRAPH-016" "GRAPH_REPORT.md contains Spec Coverage section"
   else
@@ -596,7 +596,7 @@ flowai_test_s_graph_019() {
 
   _graph_write_config "$tmp"
   mkdir -p "$tmp/.flowai/wiki"
-  echo "# Report" > "$tmp/.flowai/wiki/GRAPH_REPORT.md"
+  echo "# Report" > "$tmp/GRAPH_REPORT.md"
   # graph.json with current timestamp
   printf '{"metadata":{"built_at":"%s","node_count":1},"nodes":[],"edges":[]}' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp/.flowai/wiki/graph.json"
@@ -1002,7 +1002,7 @@ flowai_test_s_graph_028() {
       source "$FLOWAI_HOME/src/core/graph.sh"
       source "$FLOWAI_HOME/src/graph/lint.sh"
       flowai_graph_lint_structural
-    ' 2>/dev/null
+    ' >/dev/null 2>&1
   )
 
   local report="$tmp/.flowai/wiki/lint-report.md"
@@ -1050,7 +1050,7 @@ flowai_test_s_graph_029() {
       source "$FLOWAI_HOME/src/core/graph.sh"
       source "$FLOWAI_HOME/src/graph/lint.sh"
       flowai_graph_lint_structural
-    ' 2>/dev/null
+    ' >/dev/null 2>&1
   )
 
   local health
@@ -1090,7 +1090,7 @@ flowai_test_s_graph_030() {
       source "$FLOWAI_HOME/src/graph/build.sh"
       source "$FLOWAI_HOME/src/graph/chronicle.sh"
       flowai_graph_chronicle
-    ' 2>/dev/null
+    ' >/dev/null 2>&1
   ) || rc=$?
 
   if [[ "$rc" -eq 0 ]]; then

@@ -287,10 +287,16 @@ See [GRAPH.md](GRAPH.md) for full knowledge graph documentation.
 
 ---
 
-## Roadmap
+## Integrations
 
-### MCP Integration
-Phase agents will query MCP servers for live project context (e.g., TypeScript AST, API schemas) instead of relying on injected text prompts. Configured via `.flowai/config.json` → `mcp.servers`.
+### Model Context Protocol (MCP)
+FlowAI provides native, cross-agent integration with the [Model Context Protocol](https://modelcontextprotocol.io). MCP servers provide live, operational context to phase agents directly avoiding text-prompt inflation.
+
+The orchestration plane abstracts MCP server configurations into `.flowai/mcp.json`. Supported IDEs (like Cursor and Claude Code) and FlowAI's native tools directly consume this shared configuration, ensuring that both human devs and terminal agents share the exact same contextual capabilities (e.g., querying GitHub, interacting with Postgres, or reading dynamic API documentation via Context7).
+
+---
+
+## Roadmap
 
 ### VCS Integration
 `flowai run review` will optionally pull CI logs from GitHub Actions / GitLab CI into the Review pane, allowing the agent to iterate on broken commits without human copy-paste.
