@@ -99,10 +99,8 @@ flowai_config_validate_models() {
 
   while IFS=$'\t' read -r rkey rtool rmodel; do
     [[ -z "$rkey" ]] && continue
-    # Strip \r for Windows CRLF compatibility
-    rkey="${rkey%$'\r'}"; rtool="${rtool%$'\r'}"; rmodel="${rmodel%$'\r'}"
     flowai_config_check_model_pair "roles.${rkey}" "$rtool" "$rmodel" || err=1
-  done < <(jq -r '.roles // {} | to_entries[] | [.key, (.value.tool // ""), (.value.model // "")] | @tsv' "$cfg")
+  done < <(jq -r '.roles // {} | to_entries[] | [.key, (.value.tool // ""), (.value.model // "")] | @tsv' "$cfg" | tr -d '\r')
 
   [[ "$err" -eq 0 ]] && return 0
   return 1

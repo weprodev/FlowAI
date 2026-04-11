@@ -5,13 +5,17 @@
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export FLOWAI_CONFIG="${FLOWAI_DIR}/config.json"
 
-# Normalize CRLF → LF in config.json (Windows Git Bash may write CRLF).
-# Safe no-op on Unix (sed produces identical output when no \r exists).
-if [[ -f "$FLOWAI_CONFIG" ]]; then
-  sed 's/\r$//' "$FLOWAI_CONFIG" > "${FLOWAI_CONFIG}.tmp" 2>/dev/null \
-    && mv -f "${FLOWAI_CONFIG}.tmp" "$FLOWAI_CONFIG" 2>/dev/null \
-    || rm -f "${FLOWAI_CONFIG}.tmp" 2>/dev/null
-fi
+# Normalize CRLF → LF in config.json (Windows-only).
+# Git Bash / MSYS write CRLF which breaks jq value extraction.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if [[ -f "$FLOWAI_CONFIG" ]]; then
+      sed 's/\r$//' "$FLOWAI_CONFIG" > "${FLOWAI_CONFIG}.tmp" 2>/dev/null \
+        && mv -f "${FLOWAI_CONFIG}.tmp" "$FLOWAI_CONFIG" 2>/dev/null \
+        || rm -f "${FLOWAI_CONFIG}.tmp" 2>/dev/null
+    fi
+    ;;
+esac
 
 # shellcheck disable=SC1091
 [[ -n "${FLOWAI_HOME:-}" ]] && source "$FLOWAI_HOME/src/core/models-catalog.sh"
