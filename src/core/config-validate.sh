@@ -9,7 +9,7 @@ source "$FLOWAI_HOME/src/core/log.sh"
 
 # Check one (tool, model) pair. Returns 0 if ok or empty; 1 if invalid (strict).
 flowai_config_check_model_pair() {
-  local label="$1" tool="$2" model="$3"
+  local label="$1" tool="${2//$'\r'/}" model="${3//$'\r'/}"
   local loose=0
   [[ "${FLOWAI_ALLOW_UNKNOWN_MODEL:-0}" == "1" ]] && loose=1
 
