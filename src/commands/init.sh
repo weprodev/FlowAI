@@ -190,7 +190,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
           
           # Role selection
           if command -v gum >/dev/null 2>&1; then
-            _sel_role="$(gum choose --header "    Role for '$phase' (default: $_cur_role):" "${_role_names[@]}" 2>/dev/null)" || _sel_role=""
+            _sel_role="$(gum choose --header "    Role for '$phase' (default: $_cur_role):" "${_role_names[@]}")" || _sel_role=""
             [[ -z "$_sel_role" ]] && _sel_role="$_cur_role"
           else
             printf "    Available roles: %s\n" "${_role_names[*]}"
@@ -201,7 +201,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
 
           # Tool selection
           if command -v gum >/dev/null 2>&1; then
-            _sel_tool="$(gum choose --header "    Tool for '$phase' (default: $_cur_tool):" "${tool_names[@]}" 2>/dev/null)" || _sel_tool=""
+            _sel_tool="$(gum choose --header "    Tool for '$phase' (default: $_cur_tool):" "${tool_names[@]}")" || _sel_tool=""
             [[ -z "$_sel_tool" ]] && _sel_tool="$_cur_tool"
           else
             printf "    Available tools: %s\n" "${tool_names[*]}"
@@ -220,7 +220,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
               [[ -n "$mid" ]] && _model_choices+=("$mid")
             done < <(jq -r --arg t "$_ptool" '.tools[$t].models[].id' "$_mc" 2>/dev/null | tr -d '\r')
             if [[ ${#_model_choices[@]} -gt 0 ]]; then
-              _sel_model="$(gum choose --header "    Model for '$phase' (default: $_pmodel_default):" "${_model_choices[@]}" 2>/dev/null)" || _sel_model=""
+              _sel_model="$(gum choose --header "    Model for '$phase' (default: $_pmodel_default):" "${_model_choices[@]}")" || _sel_model=""
               [[ -z "$_sel_model" ]] && _sel_model="$_pmodel_default"
             else
               _sel_model="$_pmodel_default"
