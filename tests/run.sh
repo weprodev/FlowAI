@@ -214,6 +214,14 @@ flowai_test_s_sig_007
 flowai_test_s_sig_008
 flowai_test_s_sig_009
 flowai_test_s_sig_010
+flowai_test_s_sig_011
+flowai_test_s_sig_012
+flowai_test_s_sig_013
+flowai_test_s_sig_014
+flowai_test_s_sig_015
+flowai_test_s_sig_016
+flowai_test_s_sig_017
+flowai_test_s_sig_018
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

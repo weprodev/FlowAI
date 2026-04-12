@@ -273,7 +273,11 @@ log_header "Spinning up FlowAI: $SESSION"
 
 mkdir -p "$FLOWAI_DIR/signals"
 mkdir -p "$FLOWAI_DIR/launch"
+# Clean ALL signal files from previous runs to prevent stale state
 rm -f "$FLOWAI_DIR/signals"/*.ready 2>/dev/null || true
+rm -f "$FLOWAI_DIR/signals"/*.reject 2>/dev/null || true
+rm -f "$FLOWAI_DIR/signals"/*.rejection_context 2>/dev/null || true
+rm -f "$FLOWAI_DIR/signals"/*.user_approved 2>/dev/null || true
 
 # Initialize the shared event log for cross-agent visibility
 source "$FLOWAI_HOME/src/core/eventlog.sh"

@@ -53,7 +53,7 @@ flowchart LR
 | ---------- | ----------- | --------------------------- | ------------------------------------------------- |
 | **Spec**   | `spec.md`   | 👤 **User**                 | Conversational — user says "approved" in the REPL |
 | **Plan**   | `plan.md`   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
-| **Tasks**  | `tasks.md`  | 👑 **Master Agent**         | Automatic — Master validates against spec + plan  |
+| **Tasks**  | `tasks.md`  | 👑 **Master Agent**         | One-shot AI review — validates coverage + alignment |
 | **Impl**   | source code | 👑 **Master** → 👤 **User** | Master reviews first, then asks user for sign-off |
 | **Review** | QA report   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
 
@@ -201,21 +201,25 @@ flowchart TD
 **What happens on ✅ Approve (3.1):**
 
 1. Master detects `tasks_produced` event in the event log
-2. Master validates that `tasks.md` aligns with the approved spec and plan
-3. Master creates `tasks.master_approved` signal → Tasks Agent creates `tasks.ready`
+2. Master runs a **one-shot AI review** — sends spec.md, plan.md, and tasks.md to the
+   LLM and asks: _"Do all acceptance criteria have corresponding tasks? Does the task
+   decomposition align with the plan architecture?"_
+3. If the AI responds `APPROVED`: Master creates `tasks.master_approved.ready` signal
+   → Tasks Agent creates `tasks.ready`
 4. Tasks Agent shuts down
 5. Master notifies user: _"We are building… wait until it's done."_
 6. Focus stays on Master pane (user can interact with Master if needed)
 
 **What happens on ❌ Reject (3.2):**
 
-1. Master determines tasks don't properly decompose the plan
-2. Master writes revision context explaining what needs to change
+1. Master AI determines tasks don't properly decompose the plan
+2. Master writes rejection reason to `tasks.rejection_context`
 3. Tasks Agent re-runs, produces a revised `tasks.md`
 4. Master reviews again — loops until satisfied
 
-> **Why no human gate?** The user already approved the spec and plan.
-> Master validates alignment — this is a mechanical decomposition step.
+> **Why no human gate?** The user already approved the spec and plan, and Master
+> performs a genuine AI semantic review — not just an existence check. This keeps
+> velocity high while ensuring alignment.
 
 ---
 
@@ -351,17 +355,18 @@ phase blocks on its upstream signal before starting.
 | ----------------------------- | ------------------------------------------------------------ | ----------------------------------------- |
 | `spec.ready`                  | Master (after user approves spec in REPL)                    | Plan phase                                |
 | `plan.ready`                  | Plan phase (after user approves `plan.md` via gum gate)      | Tasks phase                               |
-| `tasks.ready`                 | Tasks phase (after **Master Agent** auto-approves)           | Implement phase                           |
-| `tasks.master_approved.ready` | Master Agent (validates tasks against spec+plan)             | Tasks phase (via `flowai_phase_wait_for`) |
+| `tasks.ready`                 | Tasks phase (after **Master Agent** AI review approves)      | Implement phase                           |
+| `tasks.master_approved.ready` | Master Agent (one-shot AI review against spec+plan)          | Tasks phase (via `flowai_phase_wait_for`) |
 | `impl.ready`                  | Master (after Master reviews + user approves through Master) | Review phase                              |
 | `spec.user_approved`          | AI agent (when user says "approved" in REPL)                 | Master watcher                            |
 
 **Rejection & revision signals:**
 
-| Signal File              | Created By                              | Consumed By                            |
-| ------------------------ | --------------------------------------- | -------------------------------------- |
-| `<phase>.reject`         | `verify_artifact` on reject             | Informational (cleaned up on revision) |
-| `<phase>.revision.ready` | **Master Agent** (auto, after guidance) | The rejected phase (unblocks retry)    |
+| Signal File                   | Created By                              | Consumed By                            |
+| ----------------------------- | --------------------------------------- | -------------------------------------- |
+| `tasks.rejection_context`     | **Master Agent** (on tasks AI review rejection) | Tasks phase (triggers retry loop)      |
+| `<phase>.reject`              | `verify_artifact` on reject             | Informational (cleaned up on revision) |
+| `<phase>.revision.ready`      | **Master Agent** (auto, after guidance) | The rejected phase (unblocks retry)    |
 
 > **Automatic revision signalling:** After a downstream phase is rejected,
 > `flowai_phase_run_loop` waits for `<phase>.revision.ready` before retrying.
@@ -576,19 +581,25 @@ Plan and Review follow the standard lifecycle via `flowai_phase_run_loop()`:
 └─────────────────────────────────────────────────────┘
 ```
 
-### Tasks Phase (Master-approved)
+### Tasks Phase (Master AI-reviewed, retry loop)
 
-Tasks follows a different pattern — Master Agent approves instead of human:
+Tasks follows a different pattern — Master Agent reviews via one-shot AI call:
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │ 1. Wait for plan.ready                              │
 │ 2. AI produces tasks.md                             │
 │ 3. Emit "tasks_produced" event                      │
-│ 4. Wait for tasks.master_approved (from Master)     │
-│ 5. Emit tasks.ready + phase_complete                │
+│ 4. Poll for Master decision:                        │
+│    → tasks.master_approved.ready → approve + exit   │
+│    → tasks.rejection_context → read context,        │
+│      re-run AI with revision instructions, goto 3   │
+│ 5. On approve: emit tasks.ready + phase_complete    │
 └─────────────────────────────────────────────────────┘
 ```
+
+> **Fail-closed design:** If Master's one-shot AI review fails (tool error,
+> timeout), it defaults to `REJECTED` — never silently auto-approves.
 
 ### Implement Phase (stays alive)
 
@@ -625,7 +636,7 @@ Implement runs once then waits for Master's lifecycle signals:
 │ Phase 2: Active Orchestration (after spec approved)     │
 │ 5. Monitor event log every 5 seconds                    │
 │    → plan.phase_complete → focus to Tasks pane          │
-│    → tasks_produced → Master reviews → auto-approve     │
+│    → tasks_produced → Master one-shot AI review       │
 │    → impl_produced → Master reviews → user gate         │
 │    → rejection → re-engage AI with context              │
 │    → review.phase_complete → show next steps → goodbye  │

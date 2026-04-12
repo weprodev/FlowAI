@@ -18,8 +18,6 @@ source "$FLOWAI_HOME/src/core/config.sh"
 source "$FLOWAI_HOME/src/core/graph.sh"
 # shellcheck source=src/core/eventlog.sh
 source "$FLOWAI_HOME/src/core/eventlog.sh"
-# shellcheck source=src/bootstrap/specify.sh
-source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
 _FLOWAI_DEFAULT_SKILLS_JSON="$FLOWAI_HOME/src/core/defaults/skills-role-assignments.json"
 

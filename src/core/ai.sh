@@ -99,3 +99,36 @@ flowai_ai_run() {
 
   "$run_fn" "$model" "$auto_approve" "$run_interactive" "$sys_prompt"
 }
+
+# Non-interactive single-shot AI invocation.
+# Runs the prompt through the configured tool and prints the LLM response to stdout.
+# Usage: output="$(flowai_ai_run_oneshot <phase> <prompt_file>)"
+flowai_ai_run_oneshot() {
+  local phase="$1"
+  local prompt_file="$2"
+
+  local tool="" model=""
+  if [[ "$phase" == "master" ]]; then
+    tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+    model="$(flowai_cfg_read '.master.model' '')"
+  else
+    local role
+    role="$(flowai_cfg_pipeline_role "$phase" "backend-engineer")"
+    tool="$(flowai_cfg_role_tool "$role" "")"
+    model="$(flowai_cfg_role_model "$role" "")"
+    if [[ -z "$tool" || "$tool" == "null" ]]; then
+      tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+    fi
+  fi
+  model="$(flowai_ai_resolve_model_for_tool "$tool" "$model")"
+
+  local run_fn="flowai_tool_${tool}_run_oneshot"
+  if ! declare -F "$run_fn" >/dev/null 2>&1; then
+    # Fail closed: if tool has no _run_oneshot, reject rather than silently approve
+    log_warn "Tool '$tool' has no oneshot function — cannot perform AI validation."
+    echo "VERDICT: REJECTED — tool '$tool' does not support one-shot review"
+    return 1
+  fi
+
+  "$run_fn" "$model" "$prompt_file"
+}

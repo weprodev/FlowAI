@@ -255,3 +255,204 @@ flowai_test_s_sig_010() {
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
+
+# SIG-011 — Tasks has retry loop for Master rejection
+# tasks.sh must poll for tasks.rejection_context and re-run AI on rejection,
+# preventing pipeline deadlock when Master AI rejects the task breakdown.
+flowai_test_s_sig_011() {
+  local id="SIG-011"
+  local plugin="$FLOWAI_HOME/src/phases/tasks.sh"
+
+  local has_rejection_poll has_retry_loop has_approved_poll
+  has_rejection_poll=false
+  has_retry_loop=false
+  has_approved_poll=false
+
+  grep -q 'tasks.rejection_context' "$plugin" 2>/dev/null && has_rejection_poll=true
+  grep -q 'while true' "$plugin" 2>/dev/null && has_retry_loop=true
+  grep -q 'tasks.master_approved.ready' "$plugin" 2>/dev/null && has_approved_poll=true
+
+  if $has_rejection_poll && $has_retry_loop && $has_approved_poll; then
+    flowai_test_pass "$id" "Tasks has retry loop for Master rejection"
+  else
+    printf 'FAIL %s: tasks.sh missing retry loop (rejection=%s loop=%s approved=%s)\n' \
+      "$id" "$has_rejection_poll" "$has_retry_loop" "$has_approved_poll" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-012 — Master tasks review uses VERDICT format and fails closed
+# master.sh must use machine-parsable VERDICT format and default to REJECTED on error.
+flowai_test_s_sig_012() {
+  local id="SIG-012"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+
+  local has_verdict_format has_fail_closed
+  has_verdict_format=false
+  has_fail_closed=false
+
+  # Check that master uses verdict_line parsing (last line) with VERDICT: APPROVED
+  grep -q 'verdict_line' "$master" 2>/dev/null \
+    && grep -q 'VERDICT:.*APPROVED' "$master" 2>/dev/null \
+    && has_verdict_format=true
+  # Check fail-closed: AI error defaults to REJECTED
+  grep -q 'REJECTED.*AI review failed' "$master" 2>/dev/null && has_fail_closed=true
+
+  if $has_verdict_format && $has_fail_closed; then
+    flowai_test_pass "$id" "Master tasks review uses VERDICT format and fails closed"
+  else
+    printf 'FAIL %s: master.sh review contract broken (verdict=%s fail_closed=%s)\n' \
+      "$id" "$has_verdict_format" "$has_fail_closed" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-013 — Memory file resolves to constitution + constitution injected in prompts
+# Docs §6: Master resolves MEMORY_FILE to .specify/memory/constitution.md
+# Docs §5: skills.sh injects [PROJECT CONSTITUTION] block into every agent's prompt
+flowai_test_s_sig_013() {
+  local id="SIG-013"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+  local skills="$FLOWAI_HOME/src/core/skills.sh"
+
+  local has_path_resolution has_fallback has_constitution_inject
+  has_path_resolution=false
+  has_fallback=false
+  has_constitution_inject=false
+
+  grep -q 'flowai_specify_constitution_path' "$master" 2>/dev/null && has_path_resolution=true
+  grep -q '.specify/memory/constitution.md' "$master" 2>/dev/null && has_fallback=true
+  grep -q 'PROJECT CONSTITUTION' "$skills" 2>/dev/null && has_constitution_inject=true
+
+  if $has_path_resolution && $has_fallback && $has_constitution_inject; then
+    flowai_test_pass "$id" "Memory file resolves to constitution + injected in prompts"
+  else
+    printf 'FAIL %s: memory path broken (resolve=%s fallback=%s inject=%s)\n' \
+      "$id" "$has_path_resolution" "$has_fallback" "$has_constitution_inject" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-014 — Implement phase stays alive: polls impl.ready + rejection_context
+# Docs §4: After impl_produced, Impl polls for Master signals (no flowai_phase_run_loop)
+flowai_test_s_sig_014() {
+  local id="SIG-014"
+  local impl="$FLOWAI_HOME/src/phases/implement.sh"
+
+  local has_stay_alive has_ready_poll has_rejection_poll has_no_run_loop has_impl_produced
+  has_stay_alive=false
+  has_ready_poll=false
+  has_rejection_poll=false
+  has_no_run_loop=true
+  has_impl_produced=false
+
+  grep -q 'while true' "$impl" 2>/dev/null && has_stay_alive=true
+  grep -q 'impl.ready' "$impl" 2>/dev/null && has_ready_poll=true
+  grep -q 'impl.rejection_context\|REJECTION_CONTEXT_FILE' "$impl" 2>/dev/null && has_rejection_poll=true
+  grep -q 'flowai_phase_run_loop' "$impl" 2>/dev/null && has_no_run_loop=false
+  grep -q 'impl_produced' "$impl" 2>/dev/null && has_impl_produced=true
+
+  if $has_stay_alive && $has_ready_poll && $has_rejection_poll && $has_no_run_loop && $has_impl_produced; then
+    flowai_test_pass "$id" "Implement stays alive: polls impl.ready + rejection_context"
+  else
+    printf 'FAIL %s: implement.sh contract broken (alive=%s ready=%s reject=%s no_loop=%s produced=%s)\n' \
+      "$id" "$has_stay_alive" "$has_ready_poll" "$has_rejection_poll" "$has_no_run_loop" "$has_impl_produced" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-015 — Review phase uses gum gate + writes impl.rejection_context
+# Docs §5: Review writes rejection context to impl.rejection_context for Impl re-runs
+flowai_test_s_sig_015() {
+  local id="SIG-015"
+  local review="$FLOWAI_HOME/src/phases/review.sh"
+
+  local has_run_loop has_rejection_path
+  has_run_loop=false
+  has_rejection_path=false
+
+  grep -q 'flowai_phase_run_loop' "$review" 2>/dev/null && has_run_loop=true
+  grep -q 'impl.rejection_context' "$review" 2>/dev/null && has_rejection_path=true
+
+  if $has_run_loop && $has_rejection_path; then
+    flowai_test_pass "$id" "Review uses gum gate + writes impl.rejection_context"
+  else
+    printf 'FAIL %s: review.sh contract broken (run_loop=%s rejection=%s)\n' \
+      "$id" "$has_run_loop" "$has_rejection_path" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-016 — Start cleans ALL signal file types (not just .ready)
+# Prevents stale rejection_context, reject, or user_approved from previous runs
+flowai_test_s_sig_016() {
+  local id="SIG-016"
+  local start="$FLOWAI_HOME/src/commands/start.sh"
+
+  local cleans_ready cleans_reject cleans_rejection_ctx cleans_user_approved
+  cleans_ready=false
+  cleans_reject=false
+  cleans_rejection_ctx=false
+  cleans_user_approved=false
+
+  grep -q '\.ready' "$start" 2>/dev/null && grep -q 'rm -f.*signals.*\.ready' "$start" 2>/dev/null && cleans_ready=true
+  grep -q 'rm -f.*signals.*\.reject' "$start" 2>/dev/null && cleans_reject=true
+  grep -q 'rm -f.*signals.*\.rejection_context' "$start" 2>/dev/null && cleans_rejection_ctx=true
+  grep -q 'rm -f.*signals.*\.user_approved' "$start" 2>/dev/null && cleans_user_approved=true
+
+  if $cleans_ready && $cleans_reject && $cleans_rejection_ctx && $cleans_user_approved; then
+    flowai_test_pass "$id" "Start cleans all signal types (ready, reject, rejection_context, user_approved)"
+  else
+    printf 'FAIL %s: start.sh missing signal cleanup (ready=%s reject=%s ctx=%s approved=%s)\n' \
+      "$id" "$cleans_ready" "$cleans_reject" "$cleans_rejection_ctx" "$cleans_user_approved" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-017 — flowai_ai_run_oneshot exists in ai.sh and fails closed
+# Docs: Master uses one-shot AI for tasks review — function must exist and fail closed
+flowai_test_s_sig_017() {
+  local id="SIG-017"
+  local ai="$FLOWAI_HOME/src/core/ai.sh"
+
+  local has_function has_fail_closed
+  has_function=false
+  has_fail_closed=false
+
+  grep -q 'flowai_ai_run_oneshot()' "$ai" 2>/dev/null && has_function=true
+  grep -q 'VERDICT: REJECTED' "$ai" 2>/dev/null && has_fail_closed=true
+
+  if $has_function && $has_fail_closed; then
+    flowai_test_pass "$id" "flowai_ai_run_oneshot exists in ai.sh and fails closed"
+  else
+    printf 'FAIL %s: ai.sh oneshot broken (function=%s fail_closed=%s)\n' \
+      "$id" "$has_function" "$has_fail_closed" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-018 — Memory learning protocol covers approve AND reject paths
+# Docs §6: Master must instruct AI to persist on approve AND skip on reject
+flowai_test_s_sig_018() {
+  local id="SIG-018"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+
+  local has_append_rule has_user_consent has_ephemeral has_memory_path
+  has_append_rule=false
+  has_user_consent=false
+  has_ephemeral=false
+  has_memory_path=false
+
+  grep -q 'Append the rule' "$master" 2>/dev/null && has_append_rule=true
+  grep -q 'user.*approv\|explicit.*approv\|permission' "$master" 2>/dev/null && has_user_consent=true
+  grep -q 'ephemeral\|this task only\|temporary' "$master" 2>/dev/null && has_ephemeral=true
+  grep -q 'MEMORY_FILE' "$master" 2>/dev/null && has_memory_path=true
+
+  if $has_append_rule && $has_user_consent && $has_ephemeral && $has_memory_path; then
+    flowai_test_pass "$id" "Memory protocol covers approve (persist) and reject (ephemeral) paths"
+  else
+    printf 'FAIL %s: memory protocol incomplete (append=%s consent=%s ephemeral=%s path=%s)\n' \
+      "$id" "$has_append_rule" "$has_user_consent" "$has_ephemeral" "$has_memory_path" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

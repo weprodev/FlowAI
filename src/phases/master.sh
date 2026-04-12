@@ -16,7 +16,6 @@ set -euo pipefail
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
 source "$FLOWAI_HOME/src/core/phase.sh"
-source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
 # Role resolution — uses the same 5-tier chain as every other phase.
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "master")"
@@ -159,7 +158,7 @@ rm -f "$APPROVAL_MARKER" 2>/dev/null || true
 
 # ─── Phase 2: Active Pipeline Orchestration ─────────────────────────────────
 # The Master is now the central brain. It actively monitors phase transitions,
-# reviews downstream artifacts, auto-approves tasks, and mediates between
+# reviews downstream artifacts, AI-reviews tasks (one-shot), and mediates between
 # the implementation agent and the user for final sign-off.
 
 log_header "Master Agent — Pipeline Orchestrator"
@@ -168,6 +167,7 @@ log_info "Press Ctrl+C to exit monitoring."
 
 _master_last_processed_line=0
 _master_interrupted=0
+_master_impl_reviewing=0
 trap '_master_interrupted=1' INT TERM
 
 _master_display_status() {
@@ -205,18 +205,67 @@ _master_check_events() {
     flowai_phase_focus "tasks" 2>/dev/null || true
   fi
 
-  # ── Tasks produced → Master AI auto-approves ──
+  # ── Tasks produced → Master AI validates then approves ──
   local tasks_ready
   tasks_ready="$(printf '%s' "$new_events" | grep '"phase":"tasks"' | grep '"event":"tasks_produced"' || true)"
   if [[ -n "$tasks_ready" ]] && [[ ! -f "${FLOWAI_DIR}/signals/tasks.ready" ]]; then
     printf '\n'
     log_info "Tasks breakdown produced. Master reviewing..."
-    # Master auto-approves tasks (user approved spec+plan, Master validates alignment)
     if [[ -f "$FEATURE_DIR/tasks.md" ]] && [[ -s "$FEATURE_DIR/tasks.md" ]]; then
-      touch "${FLOWAI_DIR}/signals/tasks.master_approved.ready"
-      flowai_event_emit "master" "tasks_reviewed" "Master approved tasks breakdown"
-      log_success "Tasks approved by Master. Starting implementation..."
-      flowai_phase_focus "impl" 2>/dev/null || true
+      # One-shot AI review: validate tasks against spec + plan
+      local tasks_review_prompt
+      tasks_review_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_tasks_review_XXXXXX")"
+      {
+        printf 'You are the Master Agent reviewing a task breakdown.\n'
+        printf 'Validate that tasks.md correctly decomposes the approved spec and plan.\n\n'
+        printf '--- spec.md ---\n'
+        cat "$FEATURE_DIR/spec.md" 2>/dev/null || printf '(not found)\n'
+        printf '\n--- plan.md ---\n'
+        cat "$FEATURE_DIR/plan.md" 2>/dev/null || printf '(not found)\n'
+        printf '\n--- tasks.md ---\n'
+        cat "$FEATURE_DIR/tasks.md"
+        printf '\n---\n\n'
+        printf 'Check:\n'
+        printf '1. Every acceptance criterion in spec.md has at least one corresponding task.\n'
+        printf '2. Tasks align with the architecture decisions in plan.md.\n'
+        printf '3. Tasks are atomic and actionable.\n\n'
+        printf 'Your LAST LINE must be exactly one of:\n'
+        printf '  VERDICT: APPROVED\n'
+        printf '  VERDICT: REJECTED — <one-line reason>\n'
+        printf 'Do not add anything after the verdict line.\n'
+      } > "$tasks_review_prompt"
+
+      local tasks_verdict
+      # Fail closed: if the AI call fails, default to REJECTED (never auto-approve on error)
+      tasks_verdict="$(flowai_ai_run_oneshot "master" "$tasks_review_prompt" 2>/dev/null || echo 'VERDICT: REJECTED — AI review failed (tool error)')"
+      rm -f "$tasks_review_prompt"
+
+      # Parse verdict: check last line first (strict), then scan full output (lenient)
+      local verdict_line
+      verdict_line="$(printf '%s' "$tasks_verdict" | tail -1 | sed 's/^[[:space:]]*//')"
+
+      # Strict match only: "VERDICT: NOT APPROVED" must NOT match (grep 'VERDICT:.*APPROVED' wrongly did).
+      local is_approved=false
+      if [[ "$verdict_line" =~ ^[[:space:]]*VERDICT:[[:space:]]*APPROVED[[:space:]]*$ ]]; then
+        is_approved=true
+      elif printf '%s\n' "$tasks_verdict" | grep -qiE '^[[:space:]]*VERDICT:[[:space:]]*APPROVED[[:space:]]*$'; then
+        # Lenient fallback: any line is exactly an APPROVED verdict (not "NOT APPROVED")
+        is_approved=true
+      fi
+
+      if $is_approved; then
+        touch "${FLOWAI_DIR}/signals/tasks.master_approved.ready"
+        flowai_event_emit "master" "tasks_reviewed" "Master AI approved tasks breakdown"
+        log_success "Tasks approved by Master. Starting implementation..."
+        # Focus stays on Master — user can interact while impl builds
+      else
+        local reject_reason
+        reject_reason="$(printf '%s' "$tasks_verdict" | grep -i 'VERDICT:.*REJECTED' | head -1 || printf '%s' "$tasks_verdict" | tail -3)"
+        log_warn "Master AI rejected tasks: $reject_reason"
+        flowai_event_emit "master" "tasks_revision_needed" "$reject_reason"
+        # Write rejection context for tasks agent retry loop
+        printf '%s\n' "$reject_reason" > "${FLOWAI_DIR}/signals/tasks.rejection_context" 2>/dev/null || true
+      fi
     else
       log_warn "tasks.md not found or empty — waiting for Tasks agent to produce it."
     fi
@@ -225,7 +274,8 @@ _master_check_events() {
   # ── Implementation complete → Master reviews + asks user ──
   local impl_complete
   impl_complete="$(printf '%s' "$new_events" | grep '"phase":"impl"' | grep '"event":"impl_produced"' || true)"
-  if [[ -n "$impl_complete" ]] && [[ ! -f "${FLOWAI_DIR}/signals/impl.ready" ]]; then
+  if [[ -n "$impl_complete" ]] && [[ ! -f "${FLOWAI_DIR}/signals/impl.ready" ]] && [[ "$_master_impl_reviewing" -eq 0 ]]; then
+    _master_impl_reviewing=1
     printf '\n'
     log_header "Implementation Complete — Master Review"
     log_info "The implementation agent has finished. Reviewing changes..."
@@ -253,6 +303,7 @@ _master_check_events() {
     flowai_event_emit "master" "reviewing_impl" "Master reviewing implementation"
     flowai_ai_run "master" "$review_prompt" "true"
     rm -f "$review_prompt"
+    _master_impl_reviewing=0
 
     # Check if user approved through the REPL
     if [[ -f "${FLOWAI_DIR}/signals/impl.user_approved" ]]; then
@@ -262,9 +313,13 @@ _master_check_events() {
       rm -f "${FLOWAI_DIR}/signals/impl.user_approved" 2>/dev/null || true
       flowai_phase_focus "review" 2>/dev/null || true
     else
-      # User exited without approving — use manual gate
+      # User exited without approving — use manual fallback
+      # Show git diff summary so the user reviews actual code changes
       log_warn "No approval marker detected. Using manual approval gate..."
-      flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation" "impl"
+      log_info "Code changes summary:"
+      git diff --stat 2>/dev/null || log_warn "(git diff unavailable)"
+      printf '\n'
+      flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation (task completion)" "impl"
       local impl_rc=$?
       if [[ "$impl_rc" -eq 0 ]]; then
         flowai_event_emit "master" "impl_approved" "Implementation approved manually"
