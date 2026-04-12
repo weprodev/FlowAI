@@ -117,6 +117,7 @@ flowai_test_s_cli_037
 flowai_test_s_cli_038
 flowai_test_s_cli_039
 flowai_test_s_cli_040
+flowai_test_s_cli_041
 # skill local path
 _test_banner "Skills Path Resolution"
 flowai_test_s_skl_001

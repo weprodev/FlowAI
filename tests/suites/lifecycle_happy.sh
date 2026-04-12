@@ -393,6 +393,7 @@ flowai_test_s_cli_024() {
   flowai_test_pass "UC-CLI-024" "flowai mcp list creates minimal mcp.json from config"
 }
 
+
 # UC-CLI-026 / tests/usecases/026-cli-models-catalog-validation.md
 flowai_test_s_cli_026() {
   local tmp out
@@ -630,4 +631,78 @@ flowai_test_s_cli_037() {
   flowai_test_assert_combined_contains "contract test" "UC-CLI-037" || return
 
   flowai_test_pass "UC-CLI-037" "flowai run spec contract (SKIP_AI) exits 0 after fixture"
+}
+
+# UC-CLI-038 / tests/usecases/038-cli-mcp-preserves-existing.md
+flowai_test_s_cli_038() {
+  if flowai_test_skip_if_missing_jq "UC-CLI-038" "mcp list preserves existing mcp.json"; then return 0; fi
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-038" || return
+
+  printf '{"mcpServers":{"mycustom":{"command":"npx","args":["foo"]}}}\n' > "$tmp/.flowai/mcp.json"
+
+  flowai_test_invoke_in_dir "$tmp" mcp list
+  flowai_test_assert_rc 0 "UC-CLI-038" || return
+
+  if ! jq -e '.mcpServers | has("mycustom")' "$tmp/.flowai/mcp.json" >/dev/null 2>&1; then
+    printf 'FAIL UC-CLI-038: mcp.json was overwritten\n' >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  if jq -e '.mcpServers | has("context7")' "$tmp/.flowai/mcp.json" >/dev/null 2>&1; then
+    printf 'FAIL UC-CLI-038: mcp.json was merged when it should only be preserved\n' >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return 1
+  fi
+
+  flowai_test_pass "UC-CLI-038" "flowai mcp list preserves existing user mcp.json without overwriting/merging"
+}
+
+# UC-CLI-041 / tests/usecases/041-cli-logs.md
+# Verifies the CLI entrypoint for flowai logs (headless check)
+flowai_test_s_cli_041() {
+  if flowai_test_skip_if_missing_jq "UC-CLI-041" "flowai logs"; then return 0; fi
+  if flowai_test_skip_if_missing_tmux "UC-CLI-041" "flowai logs"; then return 0; fi
+  local tmp sess
+  tmp="$(mktemp -d)"
+  tmp="$(cd "$tmp" && pwd)"
+  sess="$(FLOWAI_HOME="$FLOWAI_HOME" bash -c 'source "$FLOWAI_HOME/src/core/session.sh"; flowai_session_name "$1"' _ "$tmp")"
+  trap 'tmux kill-session -t "$sess" 2>/dev/null || true; rm -rf "$tmp"' RETURN
+
+  flowai_test_invoke_in_dir "$tmp" init
+  flowai_test_assert_rc 0 "UC-CLI-041" || return
+
+  # Should fail when no session exists
+  flowai_test_invoke_in_dir "$tmp" logs
+  flowai_test_assert_rc 1 "UC-CLI-041" || return
+  flowai_test_assert_combined_contains "is not running" "UC-CLI-041" || return
+
+  flowai_test_invoke_in_dir "$tmp" start --headless
+  flowai_test_assert_rc 0 "UC-CLI-041" || return
+
+  # Start pane is just outputting the master loop, let's inject a line
+  tmux send-keys -t "${sess}:master" "echo 'UC_CLI_041_DETERMINISTIC_LOG'" C-m
+  sleep 1
+
+  # Test default logs (should be master)
+  flowai_test_invoke_in_dir "$tmp" logs
+  flowai_test_assert_rc 0 "UC-CLI-041" || return
+  flowai_test_assert_combined_contains "UC_CLI_041_DETERMINISTIC_LOG" "UC-CLI-041" || return
+
+  # Test specific phase
+  flowai_test_invoke_in_dir "$tmp" logs master
+  flowai_test_assert_rc 0 "UC-CLI-041" || return
+  flowai_test_assert_combined_contains "UC_CLI_041_DETERMINISTIC_LOG" "UC-CLI-041" || return
+
+  # Test invalid phase
+  flowai_test_invoke_in_dir "$tmp" logs nonexistent
+  flowai_test_assert_rc 1 "UC-CLI-041" || return
+  flowai_test_assert_combined_contains "not currently running" "UC-CLI-041" || return
+
+  flowai_test_pass "UC-CLI-041" "flowai logs entrypoint correctly fetches TMUX buffers and handles errors"
 }

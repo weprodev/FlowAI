@@ -301,6 +301,7 @@ git tag v0.2.0 && git push origin main --tags
 |-------|----------------|
 | [Architecture](docs/ARCHITECTURE.md) | Pipeline, signals, plugins, event log, master monitoring, resolution chains |
 | [Commands](docs/COMMANDS.md) | Every CLI command, environment variables, event log config |
+| [Agent Communication](docs/AGENT-COMMUNICATION.md) | FlowAI pipeline orchestration, approval matrix, adaptive memory protocol, failure handling |
 | [Knowledge Graph](docs/GRAPH.md) | Build passes, community detection, versioning, chronicle, configuration |
 | [Supported Tools](docs/TOOLS.md) | Tool plugin API, model catalog, config keys, vendor references |
 ---

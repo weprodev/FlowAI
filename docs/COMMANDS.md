@@ -14,7 +14,7 @@
 | `flowai graph <subcommand>` | Knowledge graph management — see [Knowledge Graph](#knowledge-graph) below. |
 | `flowai models list [<tool>\|all]` | Print valid model ids from `models-catalog.json`. Tools: `gemini`, `claude`, `cursor`, `copilot`, `all`. |
 | `flowai validate` | Check `.flowai/config.json` model fields against `models-catalog.json`. Alias: `flowai config validate`. |
-| `flowai mcp list` | Emit `.flowai/mcp.json` from configured MCP servers. |
+| `flowai mcp list` | Show configured MCP servers. If `.flowai/mcp.json` is missing, creates a minimal one from defaults. Preserves existing files without modifying or merging. |
 | `flowai skill add \| apply \| remove \| list` | Manage skills assigned to pipeline roles. Interactive menu includes GitHub (skills.sh), Context7, Local directory, or manual path. |
 | `flowai role list \| edit \| set-prompt \| reset` | Manage role prompt overrides. `edit` copies a bundled role for local editing; `set-prompt` points a role at a project file. |
 | `flowai help` | Global usage overview. |
