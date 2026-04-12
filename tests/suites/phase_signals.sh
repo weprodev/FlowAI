@@ -230,3 +230,28 @@ flowai_test_s_sig_009() {
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
+
+# SIG-010 — Master DIRECTIVE includes MEMORY LEARNING PROTOCOL
+# The Master Agent must have memory learning instructions in its DIRECTIVE
+# and in the rejection-handling prompt, referencing the constitution file.
+flowai_test_s_sig_010() {
+  local id="SIG-010"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+
+  local has_protocol has_memory_file has_rejection_memory
+  has_protocol=false
+  has_memory_file=false
+  has_rejection_memory=false
+
+  grep -q 'MEMORY LEARNING PROTOCOL' "$master" 2>/dev/null && has_protocol=true
+  grep -q 'MEMORY_FILE' "$master" 2>/dev/null && has_memory_file=true
+  grep -q 'MEMORY LEARNING.*analyze.*user.*feedback' "$master" 2>/dev/null && has_rejection_memory=true
+
+  if $has_protocol && $has_memory_file && $has_rejection_memory; then
+    flowai_test_pass "$id" "Master includes adaptive memory learning protocol"
+  else
+    printf 'FAIL %s: master.sh memory protocol missing (protocol=%s memory_file=%s rejection=%s)\n' \
+      "$id" "$has_protocol" "$has_memory_file" "$has_rejection_memory" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

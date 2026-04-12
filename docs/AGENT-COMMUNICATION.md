@@ -494,6 +494,64 @@ committed, intentional code. Run `flowai graph update` after `git commit`.
 
 ---
 
+### 6. Adaptive Memory Learning
+
+The Master Agent can learn from user feedback and persist reusable rules to
+the project's memory (constitution file). This is **user-gated** — the Master
+never writes to memory without explicit approval.
+
+**Where memory lives:**
+
+```
+.specify/memory/constitution.md    ← Layer 3 of every agent's prompt
+```
+
+Any rule added here is automatically injected into every agent's prompt on
+the next pipeline run — no code changes needed.
+
+**How it works:**
+
+```mermaid
+flowchart TD
+    Feedback["User provides feedback<br/>(rejection, change request, or instruction)"]
+    Analyze["Master analyzes: is this a<br/>REUSABLE project rule?"]
+
+    TaskOnly["Task-specific<br/>(e.g., 'fix line 42')"]
+    Rule["Permanent rule<br/>(e.g., 'never skip tests')"]
+
+    Apply["Apply for this task only<br/>(ephemeral — not stored)"]
+    Ask["Master asks: 'Should I add this<br/>to project memory for all future tasks?'"]
+
+    Yes["✅ User approves"]
+    No["❌ User declines"]
+
+    Write["Master appends rule to<br/>.specify/memory/constitution.md"]
+    Confirm["'✅ Added to project memory.<br/>All future agents will follow this.'"]
+    Skip["'Got it — applying for this task only.'"]
+
+    Feedback --> Analyze
+    Analyze --> TaskOnly --> Apply
+    Analyze --> Rule --> Ask
+    Ask --> Yes --> Write --> Confirm
+    Ask --> No --> Skip
+```
+
+**Examples:**
+
+| User says | Type | Master action |
+|-----------|------|---------------|
+| "Never skip creating tests" | ✅ Permanent rule | Ask to persist |
+| "Always use dependency injection" | ✅ Permanent rule | Ask to persist |
+| "Use PostgreSQL, not SQLite" | ✅ Permanent rule | Ask to persist |
+| "Add more details about auth" | ❌ Task-specific | Apply now only |
+| "Fix the typo on line 42" | ❌ Task-specific | Apply now only |
+
+> **Safety:** Memory is **append-only** and **user-gated**. The Master Agent
+> NEVER modifies the constitution without explicit user approval. This prevents
+> hallucinated rules from polluting the project memory.
+
+---
+
 ## Phase Lifecycle (How Each Phase Runs)
 
 ### Downstream Phases (plan, review)

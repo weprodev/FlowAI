@@ -16,6 +16,7 @@ set -euo pipefail
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
 source "$FLOWAI_HOME/src/core/phase.sh"
+source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
 # Role resolution — uses the same 5-tier chain as every other phase.
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "master")"
@@ -39,6 +40,15 @@ fi
 SPEC_FILE="$FEATURE_DIR/spec.md"
 APPROVAL_MARKER="${FLOWAI_DIR}/signals/spec.user_approved"
 
+# Resolve constitution file for memory learning
+MEMORY_FILE=""
+if declare -F flowai_specify_constitution_path >/dev/null 2>&1; then
+  MEMORY_FILE="$(flowai_specify_constitution_path "$PWD")"
+fi
+if [[ -z "$MEMORY_FILE" ]]; then
+  MEMORY_FILE="$PWD/.specify/memory/constitution.md"
+fi
+
 DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Specification (Master Agent).
 Your task is to comprehensively define the specification for this feature.
@@ -56,7 +66,33 @@ APPROVAL PROTOCOL:
   2. Create this marker file: $APPROVAL_MARKER
      Write the single word 'approved' to that file.
 - If the user requests changes, revise spec.md and ask for approval again.
-- Do NOT create the marker file until the user explicitly approves."
+- Do NOT create the marker file until the user explicitly approves.
+
+MEMORY LEARNING PROTOCOL:
+When the user provides feedback (rejections, change requests, or any instructions),
+analyze whether the feedback contains a REUSABLE BEHAVIORAL RULE — something that
+should apply to ALL future features in this project, not just this task.
+
+Examples of permanent rules:
+  - 'Never skip creating tests' → project rule
+  - 'Always use dependency injection' → project rule
+  - 'Use PostgreSQL, not SQLite' → project rule
+Examples of task-specific instructions (NOT rules):
+  - 'Add more details about authentication' → this task only
+  - 'Fix the typo on line 42' → this task only
+
+If you detect a permanent rule:
+  1. Ask the user: 'This seems like a rule we should follow in all future tasks.
+     Should I add it to project memory so all agents follow this going forward?'
+  2. If the user says YES:
+     - Append the rule as a new bullet to: $MEMORY_FILE
+       under the '## Core Principles' section.
+       Format: 'N. **Short title** — description of the rule.'
+     - Confirm: '✅ Added to project memory. All future agents will follow this.'
+  3. If the user says NO:
+     - Confirm: 'Got it — applying for this task only.'
+     - Do NOT write anything to the memory file."
+
 
 INJECTED_PROMPT="$(flowai_phase_write_prompt "master" "$ROLE_FILE" "$DIRECTIVE")"
 export INJECTED_PROMPT
@@ -264,7 +300,11 @@ _master_check_events() {
       printf '\n\nYour task: Analyze why the rejection occurred. Review the artifacts '
       printf 'in the specs/ directory. Provide guidance on how to fix the issue, '
       printf 'or revise the spec if the original requirements were unclear.\n'
-      printf 'When ready, signal the revision by explaining what you changed.\n---\n'
+      printf 'When ready, signal the revision by explaining what you changed.\n\n'
+      printf 'MEMORY LEARNING: Also analyze the user feedback for reusable behavioral\n'
+      printf 'rules (not task-specific). If you detect one, ask the user whether to\n'
+      printf 'persist it to project memory at: %s\n' "$MEMORY_FILE"
+      printf 'Only write to that file if the user explicitly approves.\n---\n'
     } > "$context_prompt"
 
     flowai_event_emit "master" "re-engaged" "Responding to $rej_phase rejection"
