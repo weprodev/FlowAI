@@ -209,6 +209,8 @@ if [[ "$SKIP_GRAPH" != "true" ]] && flowai_graph_is_enabled; then
     _age="$(_flowai_graph_age_label)"
     _dep_ok "Knowledge" && printf '  %-14s %s\n' "" "${_nodes} nodes · ${_edges} edges · built ${_age}"
   fi
+fi
+
 # ── Feature Branching (Interactive) ──────────────────────────────────────────
 if [[ "$HEADLESS" != "true" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]] && command -v gum >/dev/null 2>&1; then
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"

@@ -1,4 +1,4 @@
-  #!/usr/bin/env bash
+#!/usr/bin/env bash
 # FlowAI test runner — use case bindings + harness (single entry; bindings are silent on success).
 # Usage: ./tests/run.sh
 # Verbose bindings: FLOWAI_TEST_VERBOSE=1 ./tests/run.sh
