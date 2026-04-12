@@ -200,6 +200,8 @@ flowai_test_s_tpl_002
 flowai_test_s_tpl_003
 flowai_test_s_tpl_004
 flowai_test_s_tpl_005
+flowai_test_s_tpl_006
+flowai_test_s_tpl_007
 # phase signals
 _test_banner "Phase Signal Coordination"
 flowai_test_s_sig_001
@@ -208,6 +210,7 @@ flowai_test_s_sig_003
 flowai_test_s_sig_004
 flowai_test_s_sig_005
 flowai_test_s_sig_006
+flowai_test_s_sig_007
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

@@ -98,7 +98,7 @@ flowchart TD
 `skills.sh` → `flowai_skills_build_prompt()` injects the knowledge graph context block **before** any skill files, so agents see it at the top of their context window:
 
 ```
-[Role prompt] → [Constitution] → [KNOWLEDGE GRAPH block] → [EVENT LOG] → [Skills]
+[Role prompt + Directive] → [PIPELINE COORDINATION] → [Constitution] → [KNOWLEDGE GRAPH block] → [EVENT LOG] → [Skills]
 ```
 
 The graph block includes the navigation protocol (read `GRAPH_REPORT.md` → `index.md` → `graph.json` → source files).

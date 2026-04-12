@@ -212,18 +212,34 @@ if [[ "$SKIP_GRAPH" != "true" ]] && flowai_graph_is_enabled; then
 fi
 
 # ── Feature Branching (Interactive) ──────────────────────────────────────────
-if [[ "$HEADLESS" != "true" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]] && command -v gum >/dev/null 2>&1; then
+if [[ "$HEADLESS" != "true" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   if [[ "$current_branch" == "main" || "$current_branch" == "master" ]]; then
     printf '\n'
     log_info "You are on $current_branch. Let's create a feature branch."
-    feature_desc="$(gum input --placeholder "Briefly describe what you are building...")"
+
+    feature_desc=""
+    if command -v gum >/dev/null 2>&1; then
+      feature_desc="$(gum input --placeholder "Briefly describe what you are building...")"
+    else
+      read -r -p "  Briefly describe what you are building: " feature_desc < /dev/tty || true
+    fi
+
     if [[ -n "$feature_desc" ]]; then
       slug="$(echo "$feature_desc" | tr '[:upper:]' '[:lower:]' | sed -E -e 's/[^a-z0-9]+/-/g' -e 's/^-+|-+$//g')"
       if [[ -n "$slug" ]]; then
         latest_num=$(git branch --format="%(refname:short)" | grep '^[0-9]\{3\}-' | sort | tail -n 1 | grep -o '^[0-9]\{3\}' || echo "000")
         next_num=$(printf "%03d" $((10#$latest_num + 1)))
-        branch_name="$(gum input --value "${next_num}-${slug}" --prompt "Branch name: ")"
+        suggested="${next_num}-${slug}"
+
+        branch_name=""
+        if command -v gum >/dev/null 2>&1; then
+          branch_name="$(gum input --value "$suggested" --prompt "Branch name: ")"
+        else
+          read -r -p "  Branch name [$suggested]: " branch_name < /dev/tty || true
+          branch_name="${branch_name:-$suggested}"
+        fi
+
         if [[ -n "$branch_name" ]]; then
           git checkout -b "$branch_name"
           mkdir -p "specs/$branch_name"

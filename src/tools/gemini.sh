@@ -24,12 +24,24 @@ flowai_tool_gemini_run() {
   fi
 
   if [[ "$run_interactive" == "true" ]]; then
-    "${cmd[@]}" -p "$sys_prompt" || return $?
-    return 0
+    local tmp_sys
+    tmp_sys="$(mktemp "${FLOWAI_DIR:-$PWD/.flowai}/gemini_sys_XXXXXX.md")"
+    echo "$sys_prompt" > "$tmp_sys"
+    GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}"
+    local ext_code=$?
+    rm -f "$tmp_sys"
+    return $ext_code
   fi
 
-  # shellcheck disable=SC2145
-  "${cmd[@]}" "$sys_prompt" < /dev/null || return $?
+  # Oneshot: write enriched prompt to temp file via GEMINI_SYSTEM_MD to avoid
+  # ARG_MAX truncation on large prompts (graph + skills + event log context).
+  local tmp_sys
+  tmp_sys="$(mktemp "${FLOWAI_DIR:-$PWD/.flowai}/gemini_sys_XXXXXX.md")"
+  echo "$sys_prompt" > "$tmp_sys"
+  GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
+    "Execute the pipeline directive in your system prompt. Begin immediately." \
+    < /dev/null || { local rc=$?; rm -f "$tmp_sys"; return $rc; }
+  rm -f "$tmp_sys"
 }
 
 # Non-interactive single-shot invocation for graph semantic extraction.

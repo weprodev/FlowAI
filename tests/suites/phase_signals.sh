@@ -149,3 +149,38 @@ EOS
   fi
   rm -rf "$scratch"
 }
+
+# ─── SIG-007: PIPELINE COORDINATION block is always present in composed prompt ─
+# This is the architectural invariant: every agent sees the pipeline rules
+# regardless of role, skill, or tool. This test calls flowai_skills_build_prompt
+# directly and asserts [PIPELINE COORDINATION] is present in the output.
+flowai_test_s_sig_007() {
+  local id="SIG-007"
+  local scratch
+  scratch="$(mktemp -d)"
+  mkdir -p "$scratch/.flowai/launch"
+  printf '{"master":{"tool":"gemini","model":"gemini-2.5-pro"}}' > "$scratch/.flowai/config.json"
+
+  # Create a minimal role+directive prompt file (simulates flowai_phase_write_prompt output)
+  local prompt_file="$scratch/.flowai/launch/test_prompt.md"
+  printf '# Minimal Role\nYou are a test agent.\n\nTEST DIRECTIVE\n' > "$prompt_file"
+
+  # Call flowai_skills_build_prompt and capture the full composed prompt
+  local composed
+  composed="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" PWD="$scratch" bash -s <<'EOS'
+source "$FLOWAI_HOME/src/core/config.sh"
+source "$FLOWAI_HOME/src/core/skills.sh"
+source "$FLOWAI_HOME/src/core/eventlog.sh"
+source "$FLOWAI_HOME/src/core/graph.sh" 2>/dev/null || true
+flowai_skills_build_prompt "plan" "$FLOWAI_DIR/launch/test_prompt.md"
+EOS
+)"
+
+  if [[ "$composed" == *"[PIPELINE COORDINATION]"* ]]; then
+    flowai_test_pass "$id" "PIPELINE COORDINATION block injected in composed prompt"
+  else
+    printf 'FAIL %s: [PIPELINE COORDINATION] block missing from composed prompt\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+  rm -rf "$scratch"
+}

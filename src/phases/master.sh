@@ -14,22 +14,20 @@ source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
 source "$FLOWAI_HOME/src/core/phase.sh"
 
-ROLE_FILE=""
-if [[ -f "$FLOWAI_DIR/roles/master.md" ]]; then
-    ROLE_FILE="$FLOWAI_DIR/roles/master.md"
-else
-    ROLE_FILE="$FLOWAI_HOME/src/roles/master.md"
-fi
+# Role resolution — uses the same 5-tier chain as every other phase.
+# This is tool/role/skill-agnostic: the phase script drives the prompt,
+# not the role file.
+ROLE_FILE="$(flowai_phase_resolve_role_prompt "master")"
 
 log_info "Booting Master Agent..."
 flowai_event_emit "master" "started" "Master agent interactive session"
 
 # ─── Phase 1: Interactive Spec Creation ──────────────────────────────────────
-# Master is interactive, does not wait for a previous phase
+# Master is interactive, does not wait for a previous phase.
 
 FEATURE_DIR="$(flowai_phase_resolve_feature_dir)"
 if [[ -z "$FEATURE_DIR" ]]; then
-  # Fallback if no specs directory exists yet or if flowai_phase_resolve_feature_dir failed
+  # Fallback if no specs directory exists yet
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   if [[ -n "$current_branch" && "$current_branch" != "main" && "$current_branch" != "master" ]]; then
     FEATURE_DIR="$PWD/specs/$current_branch"
@@ -54,7 +52,29 @@ export INJECTED_PROMPT
 
 flowai_ai_run "master" "$INJECTED_PROMPT" "true"
 
-flowai_event_emit "master" "phase_complete" "Spec creation complete"
+# ─── Spec Artifact Verification & Signal Emission ───────────────────────────
+# This is the critical inter-agent contract: the master phase MUST verify the
+# artifact and emit spec.ready so downstream phases can unblock.
+# This loop mirrors the downstream flowai_phase_run_loop contract exactly:
+#   rc=0 → approved (spec.ready emitted by verify_artifact)
+#   rc=1 → retry agent (re-run interactive session)
+#   rc=2 → rejected (re-run interactive session for revision)
+# The loop is tool-agnostic — Gemini, Claude, Cursor, or Copilot all flow
+# through the same verify→signal path.
+while true; do
+  flowai_phase_verify_artifact "$FEATURE_DIR/spec.md" "Specification" "spec"
+  _spec_rc=$?
+  if [[ "$_spec_rc" -eq 0 ]]; then
+    flowai_event_emit "master" "phase_complete" "Spec creation complete — spec.ready emitted"
+    break
+  fi
+  # rc=1 (Retry Agent) or rc=2 (Rejected) — re-invoke interactive AI
+  if [[ "$_spec_rc" -eq 2 ]]; then
+    flowai_event_emit "master" "rejected" "Human rejected spec — re-entering interactive session"
+  fi
+  log_warn "Re-entering interactive session for spec revision..."
+  flowai_ai_run "master" "$INJECTED_PROMPT" "true"
+done
 
 # ─── Phase 2: Pipeline Monitoring ────────────────────────────────────────────
 # After spec creation, monitor the pipeline for progress and rejections.
@@ -110,11 +130,12 @@ _master_check_for_rejections() {
     log_warn "Detail: $rej_detail"
     log_info "Re-invoking Master Agent with rejection context..."
 
-    # Build a context prompt with rejection info and recent events
+    # Build a context prompt with rejection info, directive paths, and recent events
     local context_prompt
     context_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_reenter_XXXXXX")"
     {
       cat "$ROLE_FILE"
+      printf '\n%s\n' "$DIRECTIVE"
       printf '\n\n--- [REJECTION CONTEXT] ---\n'
       printf 'The **%s** phase was REJECTED by the human reviewer.\n' "$rej_phase"
       printf 'Rejection detail: %s\n\n' "$rej_detail"

@@ -125,6 +125,43 @@ flowai_skills_build_prompt() {
     prompt="$(cat "$prompt_file")"
   fi
 
+  # ─── Pipeline Coordination Preamble (role/skill/tool-agnostic) ────────────
+  # This block is injected into EVERY agent prompt. It ensures that any role
+  # (including custom user-created roles) automatically understands the pipeline
+  # contract without needing coordination-specific text in the role file.
+  prompt="${prompt}
+
+--- [PIPELINE COORDINATION] ---
+You are operating inside FlowAI's multi-agent pipeline. These rules apply to
+every agent regardless of role. Follow them precisely.
+
+## Orchestration
+- Your phase script controls when you start and what upstream signals to wait for.
+  You do NOT need to check signal files yourself — the orchestrator handles this.
+- When you finish your work, the orchestrator will verify your output and prompt
+  the human for approval. You do not need to manage approval signals.
+
+## Artifacts
+- All file paths for input artifacts (CONTEXT) and output artifacts (OUTPUT FILE)
+  are specified in the PIPELINE DIRECTIVE section of your prompt.
+  Always use those exact absolute paths — never guess or construct paths yourself.
+- You MUST use file-writing tools to create your output artifact at the specified
+  path. Do NOT just print the content — you must actually write the file.
+- Read ALL upstream artifacts listed in your CONTEXT section before starting work.
+
+## Task Tracking
+- If your phase works with a task checklist (tasks.md), mark tasks complete as
+  you finish each one. Work through them one at a time.
+- If you encounter a problem you cannot resolve, raise a blocker in the output
+  artifact under a '## Blockers' heading and do NOT proceed past it.
+
+## Pipeline Awareness
+- The [PIPELINE EVENT LOG] section below shows what other agents have done.
+  Use it to understand progress, approvals, and rejections.
+- Never write source code if your role is Specification or Architecture.
+  Each agent owns its assigned scope — do not cross into another agent's phase.
+---"
+
   # Inject constitution if present
   local constitution=""
   if declare -f flowai_specify_constitution_path >/dev/null 2>&1; then

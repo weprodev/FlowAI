@@ -102,3 +102,29 @@ flowai_test_s_tpl_005() {
     flowai_test_pass "$id" "Gemini plugin respects auto_approve setting"
   fi
 }
+
+# ─── TPL-006: Gemini interactive mode uses GEMINI_SYSTEM_MD ──────────────────
+flowai_test_s_tpl_006() {
+  local id="TPL-006"
+  local plugin="$FLOWAI_HOME/src/tools/gemini.sh"
+  if grep -q 'GEMINI_SYSTEM_MD=' "$plugin" 2>/dev/null; then
+    flowai_test_pass "$id" "Gemini interactive uses GEMINI_SYSTEM_MD (not -p)"
+  else
+    printf 'FAIL %s: Gemini plugin does not use GEMINI_SYSTEM_MD for interactive mode\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── TPL-007: Gemini oneshot does not pass raw sys_prompt as positional arg ──
+flowai_test_s_tpl_007() {
+  local id="TPL-007"
+  local plugin="$FLOWAI_HOME/src/tools/gemini.sh"
+  # The old bug: "${cmd[@]}" "$sys_prompt" < /dev/null
+  # The fix: uses GEMINI_SYSTEM_MD temp file for oneshot too
+  if grep -Fq "\"\${cmd[@]}\" \"\$sys_prompt\"" "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: Gemini oneshot still passes raw sys_prompt as positional arg\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  else
+    flowai_test_pass "$id" "Gemini oneshot uses GEMINI_SYSTEM_MD (no ARG_MAX risk)"
+  fi
+}
