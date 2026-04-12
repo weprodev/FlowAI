@@ -1159,3 +1159,30 @@ flowai_test_s_graph_032() {
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
+
+# UC-GRAPH-033 — _graph_extract_spec_meta gracefully handles files with no feature IDs or criteria
+flowai_test_s_graph_033() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/specs"
+  cat > "$tmp/specs/empty-spec.md" <<'SPEC'
+# Empty Feature Spec
+
+There are no feature IDs or criteria in this document.
+SPEC
+
+  local meta
+  meta="$(_graph_build_in "$tmp/.flowai" "$tmp" \
+    '_graph_extract_spec_meta "'"$tmp/specs/empty-spec.md"'"')"
+
+  # Output should be perfectly valid JSON with empty feature_ids and criteria arrays
+  if printf '%s' "$meta" | jq empty 2>/dev/null; then
+    flowai_test_pass "UC-GRAPH-033" "_graph_extract_spec_meta outputs valid JSON for empty spec files"
+  else
+    printf 'FAIL UC-GRAPH-033: Expected valid JSON, got: %q\n' "$meta" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

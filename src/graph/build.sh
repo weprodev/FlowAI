@@ -232,13 +232,13 @@ _graph_extract_spec_meta() {
 
   # Feature/story IDs: patterns like UC-XXX-NNN, FEAT-NNN, STORY-NNN, REQ-NNN
   local feature_ids
-  feature_ids="$(grep -oE '\b(UC|FEAT|STORY|REQ|RFC|ADR|US)-[A-Z0-9_-]+' "$file" 2>/dev/null | \
+  feature_ids="$({ grep -oE '\b(UC|FEAT|STORY|REQ|RFC|ADR|US)-[A-Z0-9_-]+' "$file" 2>/dev/null || true; } | \
     sort -u | head -20 | jq -Rs 'split("\n") | map(select(. != ""))' 2>/dev/null || echo '[]')"
 
   # Acceptance criteria / given-when-then markers
   local criteria
-  criteria="$(grep -oE '^#{1,3}[[:space:]]+(Acceptance|Given|When|Then|Must|Should|Shall)[^\n]{0,80}' \
-    "$file" 2>/dev/null | sed 's/^#*[[:space:]]*//' | head -10 | \
+  criteria="$({ grep -oE '^#{1,3}[[:space:]]+(Acceptance|Given|When|Then|Must|Should|Shall)[^\n]{0,80}' \
+    "$file" 2>/dev/null || true; } | sed 's/^#*[[:space:]]*//' | head -10 | \
     jq -Rs 'split("\n") | map(select(. != ""))' 2>/dev/null || echo '[]')"
 
   # Title: first H1

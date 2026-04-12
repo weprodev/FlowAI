@@ -182,7 +182,7 @@ _chronicle_mine_git_log() {
 # Extract all spec IDs from a string (commit message or file content).
 _chronicle_extract_ids_from_str() {
   local str="$1"
-  printf '%s' "$str" | grep -oE "$_SPEC_ID_PATTERN" | sort -u | \
+  printf '%s' "$str" | { grep -oE "$_SPEC_ID_PATTERN" || true; } | sort -u | \
     jq -Rs 'split("\n") | map(select(. != ""))' 2>/dev/null || echo '[]'
 }
 
