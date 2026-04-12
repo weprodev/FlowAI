@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # FlowAI — Implement phase
+#
+# Implements code based on spec + plan + tasks.
+# After completion, emits 'impl_produced' and stays alive until Master
+# signals approval or requests changes. This allows the Master Agent to
+# review the implementation, ask for fixes, and get user sign-off before
+# advancing to Review.
 # shellcheck shell=bash
 
 set -euo pipefail
@@ -35,7 +41,6 @@ Do NOT re-implement tasks that already pass.
 
 $(cat "$REJECTION_CONTEXT_FILE")
 ---"
-  # Clean up the rejection context after reading it
   rm -f "$REJECTION_CONTEXT_FILE"
 fi
 
@@ -57,7 +62,6 @@ INJECTED_PROMPT="$(flowai_phase_write_prompt "impl" "$ROLE_FILE" "$DIRECTIVE")"
 export INJECTED_PROMPT
 
 # ─── Progress Tracker ────────────────────────────────────────────────────────
-# Background process that monitors tasks.md checkbox progress and emits events.
 _impl_track_progress() {
   local tasks_file="$1"
   local last_report=""
@@ -77,10 +81,47 @@ _impl_track_progress() {
 
 log_info "Booting Implement phase..."
 
-# Start background progress tracker
 _impl_track_progress "$FEATURE_DIR/tasks.md" &
 _PROGRESS_PID=$!
 trap 'kill $_PROGRESS_PID 2>/dev/null || true' EXIT
 
-# impl uses tasks.md as the approval artifact (confirm all tasks are done)
-flowai_phase_run_loop "impl" "$INJECTED_PROMPT" "$FEATURE_DIR/tasks.md" "Implementation" "impl"
+# Run AI implementation
+flowai_event_emit "impl" "started" "Beginning AI run"
+flowai_ai_run "impl" "$INJECTED_PROMPT" "false"
+
+# Signal completion to Master
+flowai_event_emit "impl" "impl_produced" "Implementation complete — waiting for Master review"
+log_info "Implementation complete. Waiting for Master Agent review..."
+
+# ─── Stay Alive: Wait for Master instructions or approval ───────────────────
+# Master will either:
+#   1. Write impl.ready → we exit cleanly
+#   2. Write impl.revision_context → we re-run with changes
+while true; do
+  if [[ -f "${FLOWAI_DIR}/signals/impl.ready" ]]; then
+    log_success "Implementation approved by Master + User. Phase complete."
+    flowai_event_emit "impl" "phase_complete" "Approved and signalled"
+    break
+  fi
+
+  # Check for revision request from Master
+  if [[ -f "$REJECTION_CONTEXT_FILE" ]]; then
+    log_warn "Master requested changes. Re-running implementation..."
+    flowai_event_emit "impl" "revision_requested" "Master requested changes"
+    REJECTION_CONTEXT="
+
+--- [MASTER REVISION REQUEST] ---
+$(cat "$REJECTION_CONTEXT_FILE")
+---"
+    rm -f "$REJECTION_CONTEXT_FILE"
+
+    # Rebuild directive with revision context
+    DIRECTIVE_REV="${DIRECTIVE}${REJECTION_CONTEXT}"
+    INJECTED_PROMPT="$(flowai_phase_write_prompt "impl" "$ROLE_FILE" "$DIRECTIVE_REV")"
+    flowai_ai_run "impl" "$INJECTED_PROMPT" "false"
+    flowai_event_emit "impl" "impl_produced" "Revised implementation — waiting for Master review"
+    log_info "Revised implementation complete. Waiting for Master review..."
+  fi
+
+  sleep 3
+done

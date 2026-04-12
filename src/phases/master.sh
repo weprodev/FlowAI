@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # FlowAI - Master Phase
 #
-# The Master Agent operates in two modes:
-#   Phase 1: Interactive spec creation (existing behavior)
-#   Phase 2: Pipeline monitoring — watches event log for progress, rejections,
-#            and completion. Re-invokes AI on rejection for guidance.
+# The Master Agent is the central orchestrator of the entire pipeline.
+#
+#   Phase 1: Interactive spec creation — user directs the AI, approves spec
+#            in conversation (AI writes approval marker), pipeline auto-advances.
+#   Phase 2: Active pipeline orchestration — Master controls phase transitions,
+#            reviews downstream artifacts, manages agent lifecycles, and is the
+#            single point of contact for the user.
 #
 # shellcheck shell=bash
 
@@ -15,19 +18,15 @@ source "$FLOWAI_HOME/src/core/ai.sh"
 source "$FLOWAI_HOME/src/core/phase.sh"
 
 # Role resolution — uses the same 5-tier chain as every other phase.
-# This is tool/role/skill-agnostic: the phase script drives the prompt,
-# not the role file.
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "master")"
 
 log_info "Booting Master Agent..."
 flowai_event_emit "master" "started" "Master agent interactive session"
 
 # ─── Phase 1: Interactive Spec Creation ──────────────────────────────────────
-# Master is interactive, does not wait for a previous phase.
 
 FEATURE_DIR="$(flowai_phase_resolve_feature_dir)"
 if [[ -z "$FEATURE_DIR" ]]; then
-  # Fallback if no specs directory exists yet
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   if [[ -n "$current_branch" && "$current_branch" != "main" && "$current_branch" != "master" ]]; then
     FEATURE_DIR="$PWD/specs/$current_branch"
@@ -37,51 +36,98 @@ if [[ -z "$FEATURE_DIR" ]]; then
   mkdir -p "$FEATURE_DIR"
 fi
 
+SPEC_FILE="$FEATURE_DIR/spec.md"
+APPROVAL_MARKER="${FLOWAI_DIR}/signals/spec.user_approved"
+
 DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Specification (Master Agent).
 Your task is to comprehensively define the specification for this feature.
 Your WORKING DIRECTORY is: $PWD
 
 OUTPUT FILE — you MUST write your specification artifact to this exact path:
-  $FEATURE_DIR/spec.md
+  $SPEC_FILE
 
-When you are finished generating spec.md, tell the user, and then remain available for feedback."
+APPROVAL PROTOCOL:
+- After creating spec.md, tell the user the exact file path and ask them to review it.
+- WAIT for the user to explicitly approve (e.g., 'approved', 'go ahead', 'looks good').
+- Do NOT assume approval. The user must say it.
+- When the user gives explicit approval, you MUST do two things:
+  1. Confirm: 'Spec approved. I will hand it over to the Plan Agent and continue monitoring.'
+  2. Create this marker file: $APPROVAL_MARKER
+     Write the single word 'approved' to that file.
+- If the user requests changes, revise spec.md and ask for approval again.
+- Do NOT create the marker file until the user explicitly approves."
 
 INJECTED_PROMPT="$(flowai_phase_write_prompt "master" "$ROLE_FILE" "$DIRECTIVE")"
 export INJECTED_PROMPT
 
+# ─── Background Approval Watcher ────────────────────────────────────────────
+# Polls for BOTH spec.md AND the user approval marker. Only emits spec.ready
+# when the user has explicitly approved through the AI conversation.
+# This ensures the user MUST approve before the pipeline advances.
+_master_approval_watcher() {
+  local spec_file="$1"
+  local approval_marker="$2"
+  local signals_dir="${FLOWAI_DIR}/signals"
+
+  while true; do
+    if [[ -f "$signals_dir/spec.ready" ]]; then
+      return 0  # Already signalled
+    fi
+    if [[ -f "$spec_file" ]] && [[ -s "$spec_file" ]] && [[ -f "$approval_marker" ]]; then
+      # Both spec.md and approval marker exist — user approved
+      touch "$signals_dir/spec.ready"
+      flowai_event_emit "master" "artifact_produced" "$spec_file"
+      flowai_event_emit "master" "approved" "spec.md approved by user"
+      flowai_event_emit "master" "phase_complete" "Spec approved — pipeline advancing to Plan"
+      log_success "Spec approved by user — pipeline advancing to Plan phase."
+      # Switch focus to Plan pane
+      flowai_phase_focus "plan" 2>/dev/null || true
+      return 0
+    fi
+    sleep 3
+  done
+}
+
+_master_approval_watcher "$SPEC_FILE" "$APPROVAL_MARKER" &
+_watcher_pid=$!
+
 flowai_ai_run "master" "$INJECTED_PROMPT" "true"
 
-# ─── Spec Artifact Verification & Signal Emission ───────────────────────────
-# This is the critical inter-agent contract: the master phase MUST verify the
-# artifact and emit spec.ready so downstream phases can unblock.
-# This loop mirrors the downstream flowai_phase_run_loop contract exactly:
-#   rc=0 → approved (spec.ready emitted by verify_artifact)
-#   rc=1 → retry agent (re-run interactive session)
-#   rc=2 → rejected (re-run interactive session for revision)
-# The loop is tool-agnostic — Gemini, Claude, Cursor, or Copilot all flow
-# through the same verify→signal path.
-while true; do
-  flowai_phase_verify_artifact "$FEATURE_DIR/spec.md" "Specification" "spec"
-  _spec_rc=$?
-  if [[ "$_spec_rc" -eq 0 ]]; then
-    flowai_event_emit "master" "phase_complete" "Spec creation complete — spec.ready emitted"
-    break
-  fi
-  # rc=1 (Retry Agent) or rc=2 (Rejected) — re-invoke interactive AI
-  if [[ "$_spec_rc" -eq 2 ]]; then
-    flowai_event_emit "master" "rejected" "Human rejected spec — re-entering interactive session"
-  fi
-  log_warn "Re-entering interactive session for spec revision..."
-  flowai_ai_run "master" "$INJECTED_PROMPT" "true"
-done
+# ─── Post-Session Cleanup ───────────────────────────────────────────────────
+kill "$_watcher_pid" 2>/dev/null || true
+wait "$_watcher_pid" 2>/dev/null || true
 
-# ─── Phase 2: Pipeline Monitoring ────────────────────────────────────────────
-# After spec creation, monitor the pipeline for progress and rejections.
-# This keeps the master pane alive and responsive to downstream events.
+# Fallback: if user exited REPL without the AI creating the marker,
+# fall through to the manual gum/read approval gate
+if [[ ! -f "${FLOWAI_DIR}/signals/spec.ready" ]]; then
+  log_warn "Spec approval marker was not detected. Entering manual approval..."
+  while true; do
+    flowai_phase_verify_artifact "$SPEC_FILE" "Specification" "spec"
+    _spec_rc=$?
+    if [[ "$_spec_rc" -eq 0 ]]; then
+      flowai_event_emit "master" "phase_complete" "Spec approved — pipeline advancing to Plan"
+      flowai_phase_focus "plan" 2>/dev/null || true
+      break
+    fi
+    if [[ "$_spec_rc" -eq 2 ]]; then
+      flowai_event_emit "master" "rejected" "Human rejected spec — re-entering interactive session"
+    fi
+    log_warn "Re-entering interactive session for spec revision..."
+    flowai_ai_run "master" "$INJECTED_PROMPT" "true"
+  done
+fi
 
-log_header "Master Agent — Pipeline Monitor"
-log_info "Monitoring pipeline progress. The master will re-engage on rejections."
+# Clean up the approval marker for potential re-runs
+rm -f "$APPROVAL_MARKER" 2>/dev/null || true
+
+# ─── Phase 2: Active Pipeline Orchestration ─────────────────────────────────
+# The Master is now the central brain. It actively monitors phase transitions,
+# reviews downstream artifacts, auto-approves tasks, and mediates between
+# the implementation agent and the user for final sign-off.
+
+log_header "Master Agent — Pipeline Orchestrator"
+log_info "Monitoring pipeline. I'll manage all phase transitions."
 log_info "Press Ctrl+C to exit monitoring."
 
 _master_last_processed_line=0
@@ -97,18 +143,15 @@ _master_display_status() {
   fi
 }
 
-_master_check_for_rejections() {
+_master_check_events() {
   [[ -f "$FLOWAI_EVENTS_FILE" ]] || return 0
 
   local total_lines
   total_lines="$(wc -l < "$FLOWAI_EVENTS_FILE" | tr -d ' ')"
 
-  # Check if log was truncated/reset
   if [[ "$total_lines" -lt "$_master_last_processed_line" ]]; then
     _master_last_processed_line=0
   fi
-
-  # Only process new lines since last check
   if [[ "$total_lines" -le "$_master_last_processed_line" ]]; then
     return 0
   fi
@@ -117,7 +160,85 @@ _master_check_for_rejections() {
   new_events="$(tail -n +"$((_master_last_processed_line + 1))" "$FLOWAI_EVENTS_FILE")"
   _master_last_processed_line="$total_lines"
 
-  # Check for rejection events
+  # ── Plan phase approved → switch focus to Tasks ──
+  local plan_approved
+  plan_approved="$(printf '%s' "$new_events" | grep '"phase":"plan"' | grep '"event":"phase_complete"' || true)"
+  if [[ -n "$plan_approved" ]]; then
+    printf '\n'
+    log_success "Plan phase approved. Preparing Tasks phase..."
+    flowai_phase_focus "tasks" 2>/dev/null || true
+  fi
+
+  # ── Tasks produced → Master AI auto-approves ──
+  local tasks_ready
+  tasks_ready="$(printf '%s' "$new_events" | grep '"phase":"tasks"' | grep '"event":"tasks_produced"' || true)"
+  if [[ -n "$tasks_ready" ]] && [[ ! -f "${FLOWAI_DIR}/signals/tasks.ready" ]]; then
+    printf '\n'
+    log_info "Tasks breakdown produced. Master reviewing..."
+    # Master auto-approves tasks (user approved spec+plan, Master validates alignment)
+    if [[ -f "$FEATURE_DIR/tasks.md" ]] && [[ -s "$FEATURE_DIR/tasks.md" ]]; then
+      touch "${FLOWAI_DIR}/signals/tasks.master_approved.ready"
+      flowai_event_emit "master" "tasks_reviewed" "Master approved tasks breakdown"
+      log_success "Tasks approved by Master. Starting implementation..."
+      flowai_phase_focus "impl" 2>/dev/null || true
+    else
+      log_warn "tasks.md not found or empty — waiting for Tasks agent to produce it."
+    fi
+  fi
+
+  # ── Implementation complete → Master reviews + asks user ──
+  local impl_complete
+  impl_complete="$(printf '%s' "$new_events" | grep '"phase":"impl"' | grep '"event":"impl_produced"' || true)"
+  if [[ -n "$impl_complete" ]] && [[ ! -f "${FLOWAI_DIR}/signals/impl.ready" ]]; then
+    printf '\n'
+    log_header "Implementation Complete — Master Review"
+    log_info "The implementation agent has finished. Reviewing changes..."
+
+    # Master AI reviews the implementation
+    local review_prompt
+    review_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_review_XXXXXX")"
+    {
+      cat "$ROLE_FILE"
+      printf '\n%s\n' "$DIRECTIVE"
+      printf '\n\n--- [IMPLEMENTATION REVIEW] ---\n'
+      printf 'The Implementation agent has completed all tasks.\n'
+      printf 'Review the following artifacts:\n'
+      printf '  spec.md:  %s\n' "$FEATURE_DIR/spec.md"
+      printf '  plan.md:  %s\n' "$FEATURE_DIR/plan.md"
+      printf '  tasks.md: %s\n' "$FEATURE_DIR/tasks.md"
+      printf '\nReview the code changes (run git diff if needed).\n'
+      printf 'If changes are needed, prepare a list of improvements.\n'
+      printf 'When satisfied, ask the user to review and approve the implementation.\n'
+      printf '\nAPPROVAL PROTOCOL:\n'
+      printf 'When the user approves, create this file: %s\n' "${FLOWAI_DIR}/signals/impl.user_approved"
+      printf 'Write the single word "approved" to it.\n---\n'
+    } > "$review_prompt"
+
+    flowai_event_emit "master" "reviewing_impl" "Master reviewing implementation"
+    flowai_ai_run "master" "$review_prompt" "true"
+    rm -f "$review_prompt"
+
+    # Check if user approved through the REPL
+    if [[ -f "${FLOWAI_DIR}/signals/impl.user_approved" ]]; then
+      touch "${FLOWAI_DIR}/signals/impl.ready"
+      flowai_event_emit "master" "impl_approved" "Implementation approved by user through Master"
+      log_success "Implementation approved! Advancing to Review phase."
+      rm -f "${FLOWAI_DIR}/signals/impl.user_approved" 2>/dev/null || true
+      flowai_phase_focus "review" 2>/dev/null || true
+    else
+      # User exited without approving — use manual gate
+      log_warn "No approval marker detected. Using manual approval gate..."
+      flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation" "impl"
+      local impl_rc=$?
+      if [[ "$impl_rc" -eq 0 ]]; then
+        flowai_event_emit "master" "impl_approved" "Implementation approved manually"
+        log_success "Implementation approved! Advancing to Review phase."
+        flowai_phase_focus "review" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  # ── Rejection in any downstream phase ──
   local rejection
   rejection="$(printf '%s' "$new_events" | grep '"event":"rejected"' | tail -1 || true)"
   if [[ -n "$rejection" ]]; then
@@ -130,7 +251,6 @@ _master_check_for_rejections() {
     log_warn "Detail: $rej_detail"
     log_info "Re-invoking Master Agent with rejection context..."
 
-    # Build a context prompt with rejection info, directive paths, and recent events
     local context_prompt
     context_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_reenter_XXXXXX")"
     {
@@ -151,10 +271,13 @@ _master_check_for_rejections() {
     flowai_ai_run "master" "$context_prompt" "true"
     rm -f "$context_prompt"
 
-    flowai_event_emit "master" "guidance_provided" "Master responded to $rej_phase rejection"
+    # Auto-signal revision ready — Master has provided guidance, unblock the phase
+    touch "$SIGNALS_DIR/${rej_phase}.revision.ready" 2>/dev/null || true
+    flowai_event_emit "master" "revision_signalled" "Master unblocked $rej_phase revision"
+    log_info "Revision signal sent — $rej_phase phase will re-run."
   fi
 
-  # Check for pipeline completion
+  # ── Pipeline complete ──
   local completion
   completion="$(printf '%s' "$new_events" | grep '"phase":"review"' | grep '"event":"phase_complete"' || true)"
   if [[ -n "$completion" ]]; then
@@ -162,6 +285,14 @@ _master_check_for_rejections() {
     flowai_event_emit "master" "pipeline_complete" "All phases done"
     log_success "Pipeline complete! All phases approved."
     log_info "Review the final artifacts in specs/ and the implemented code."
+    printf '\n'
+    log_info "Next steps:"
+    log_info "  1. Review changes:  git diff"
+    log_info "  2. Commit changes:  git add -A && git commit -m 'feat: ...'"
+    log_info "  3. Update graph:    flowai graph update"
+    log_info "  4. Push:            git push"
+    printf '\n'
+    log_success "🎉 Happy FlowAI! Feature complete."
     return 1  # Signal to exit the monitor loop
   fi
 
@@ -170,7 +301,7 @@ _master_check_for_rejections() {
 
 while [[ "$_master_interrupted" -eq 0 ]]; do
   _master_display_status
-  if ! _master_check_for_rejections; then
+  if ! _master_check_events; then
     break  # Pipeline complete
   fi
   sleep 5

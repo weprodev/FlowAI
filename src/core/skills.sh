@@ -136,10 +136,12 @@ You are operating inside FlowAI's multi-agent pipeline. These rules apply to
 every agent regardless of role. Follow them precisely.
 
 ## Orchestration
+- The Master Agent is the central orchestrator of the entire pipeline.
+  All downstream agents report to Master, and Master controls phase transitions.
 - Your phase script controls when you start and what upstream signals to wait for.
   You do NOT need to check signal files yourself — the orchestrator handles this.
-- When you finish your work, the orchestrator will verify your output and prompt
-  the human for approval. You do not need to manage approval signals.
+- When you finish your work, the orchestrator will verify your output.
+  Follow the APPROVAL PROTOCOL in your PIPELINE DIRECTIVE if one is provided.
 
 ## Artifacts
 - All file paths for input artifacts (CONTEXT) and output artifacts (OUTPUT FILE)

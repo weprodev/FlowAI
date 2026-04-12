@@ -260,3 +260,28 @@ flowai_phase_resolve_role_prompt() {
   printf '%s' "$FLOWAI_HOME/src/roles/backend-engineer.md"
 }
 
+# Switch tmux focus to the pane or window running a specific phase.
+# Supports both dashboard layout (panes) and tabs layout (windows).
+# Silently no-ops if tmux is not available or the phase pane is not found.
+# Usage: flowai_phase_focus <phase_name>
+flowai_phase_focus() {
+  local phase="$1"
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n "${TMUX:-}" ]] || return 0
+
+  local session
+  session="$(tmux display-message -p '#S' 2>/dev/null)" || return 0
+
+  # Try tabs layout first: look for a window named after the phase
+  if tmux select-window -t "${session}:${phase}" 2>/dev/null; then
+    return 0
+  fi
+
+  # Dashboard layout: scan pane titles for the phase name
+  local pane_id
+  pane_id="$(tmux list-panes -t "${session}" -F '#{pane_id} #{pane_title}' 2>/dev/null \
+    | grep -i "$phase" | head -1 | awk '{print $1}')" || true
+  if [[ -n "$pane_id" ]]; then
+    tmux select-pane -t "$pane_id" 2>/dev/null || true
+  fi
+}

@@ -184,3 +184,49 @@ EOS
   fi
   rm -rf "$scratch"
 }
+
+# ─── SIG-008: master.sh requires user_approved marker before spec.ready ──────
+# Spec approval must be explicit (marker file), NOT auto on spec.md existence.
+flowai_test_s_sig_008() {
+  local id="SIG-008"
+  local plugin="$FLOWAI_HOME/src/phases/master.sh"
+
+  # The watcher must check for BOTH spec.md AND spec.user_approved
+  if grep -q 'spec.user_approved' "$plugin" 2>/dev/null; then
+    # It must NOT have the old auto-approve pattern (spec.md only)
+    if grep -Fq "auto-approved" "$plugin" 2>/dev/null; then
+      printf 'FAIL %s: master.sh still has auto-approve logic\n' "$id" >&2
+      FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    else
+      flowai_test_pass "$id" "Spec approval requires user_approved marker (not auto)"
+    fi
+  else
+    printf 'FAIL %s: master.sh does not reference spec.user_approved marker\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── SIG-009: tasks.sh emits tasks_produced and waits for master approval ────
+# Tasks must NOT use flowai_phase_run_loop (which has a human gum gate).
+# Instead it emits tasks_produced and waits for tasks.master_approved.
+flowai_test_s_sig_009() {
+  local id="SIG-009"
+  local plugin="$FLOWAI_HOME/src/phases/tasks.sh"
+
+  local has_event has_master_signal has_no_run_loop
+  has_event=false
+  has_master_signal=false
+  has_no_run_loop=true
+
+  grep -q 'tasks_produced' "$plugin" 2>/dev/null && has_event=true
+  grep -q 'tasks.master_approved' "$plugin" 2>/dev/null && has_master_signal=true
+  grep -q 'flowai_phase_run_loop' "$plugin" 2>/dev/null && has_no_run_loop=false
+
+  if $has_event && $has_master_signal && $has_no_run_loop; then
+    flowai_test_pass "$id" "Tasks uses Master approval (no human gum gate)"
+  else
+    printf 'FAIL %s: tasks.sh contract broken (event=%s master_signal=%s no_run_loop=%s)\n' \
+      "$id" "$has_event" "$has_master_signal" "$has_no_run_loop" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
