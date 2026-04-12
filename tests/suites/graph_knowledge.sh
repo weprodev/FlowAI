@@ -1186,3 +1186,91 @@ SPEC
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
+
+# UC-GRAPH-034 — Structural lint: orphaned source file detected correctly
+flowai_test_s_graph_034() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/specs" "$tmp/.flowai/wiki"
+
+  # A file node with NO SPECIFIES in-edge
+  jq -n '{
+    "metadata": {"built_at":"2026-01-01","node_count":2,"edge_count":0},
+    "nodes": [
+      {"id":"specs.feat","label":"Feature Spec","type":"spec","path":"specs/feat.md"},
+      {"id":"src.app","label":"app.sh","type":"file","path":"src/app.sh"}
+    ],
+    "edges": [],
+    "insights": []
+  }' > "$tmp/.flowai/wiki/graph.json"
+
+  local out
+  out="$(
+    cd "$tmp" || exit 99
+    FLOWAI_DIR="$tmp/.flowai" \
+    FLOWAI_HOME="$FLOWAI_HOME" \
+    FLOWAI_TESTING=1 \
+    bash -c '
+      source "$FLOWAI_HOME/src/core/log.sh"
+      source "$FLOWAI_HOME/src/core/config.sh"
+      source "$FLOWAI_HOME/src/core/graph.sh"
+      source "$FLOWAI_HOME/src/graph/lint.sh"
+      _lint_unspecified_files "$FLOWAI_WIKI_DIR/graph.json"
+    ' 2>/dev/null
+  )"
+
+  if echo "$out" | grep -q "src.app"; then
+    flowai_test_pass "UC-GRAPH-034" "Structural lint detects source file with no SPECIFIES edge as orphaned/unspecified"
+  else
+    printf 'FAIL UC-GRAPH-034: Expected src.app in unspecified output, got: %s\n' "$out" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# UC-GRAPH-035 — Structural lint: source file with SPECIFIES edge is NOT flagged as orphaned
+flowai_test_s_graph_035() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/specs" "$tmp/.flowai/wiki"
+
+  # A file node WITH a SPECIFIES in-edge
+  jq -n '{
+    "metadata": {"built_at":"2026-01-01","node_count":2,"edge_count":1},
+    "nodes": [
+      {"id":"specs.feat","label":"Feature Spec","type":"spec","path":"specs/feat.md"},
+      {"id":"src.app","label":"app.sh","type":"file","path":"src/app.sh"}
+    ],
+    "edges": [
+      {"source":"specs.feat","target":"src.app","relation":"SPECIFIES","provenance":"EXTRACTED","confidence":1}
+    ],
+    "insights": []
+  }' > "$tmp/.flowai/wiki/graph.json"
+
+  local out
+  out="$(
+    cd "$tmp" || exit 99
+    FLOWAI_DIR="$tmp/.flowai" \
+    FLOWAI_HOME="$FLOWAI_HOME" \
+    FLOWAI_TESTING=1 \
+    bash -c '
+      source "$FLOWAI_HOME/src/core/log.sh"
+      source "$FLOWAI_HOME/src/core/config.sh"
+      source "$FLOWAI_HOME/src/core/graph.sh"
+      source "$FLOWAI_HOME/src/graph/lint.sh"
+      _lint_unspecified_files "$FLOWAI_WIKI_DIR/graph.json"
+    ' 2>/dev/null
+  )"
+
+  if [[ -z "$out" ]] || ! echo "$out" | grep -q "src.app"; then
+    flowai_test_pass "UC-GRAPH-035" "Structural lint: source file with SPECIFIES edge is NOT flagged as orphaned"
+  else
+    printf 'FAIL UC-GRAPH-035: Expected src.app to NOT be in unspecified output, got: %s\n' "$out" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

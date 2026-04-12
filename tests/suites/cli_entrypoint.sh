@@ -155,3 +155,29 @@ flowai_test_s_cli_030() {
 
   flowai_test_pass "UC-CLI-030" "fai is an alias for flowai (version + help banner)"
 }
+
+# UC-CLI-038 / tests/usecases/038-cli-config-help.md
+flowai_test_s_cli_038() {
+  flowai_test_invoke config --help
+  flowai_test_assert_rc 0 "UC-CLI-038" || return
+  flowai_test_assert_combined_contains "Usage: flowai validate" "UC-CLI-038" || return
+  flowai_test_assert_combined_contains "(same as: flowai config validate)" "UC-CLI-038" || return
+  flowai_test_pass "UC-CLI-038" "flowai config --help exits 0 and shows usage"
+}
+
+# UC-CLI-039 / tests/usecases/039-cli-config-unknown.md
+flowai_test_s_cli_039() {
+  flowai_test_invoke config definitely-unknown-cmd
+  flowai_test_assert_rc 1 "UC-CLI-039" || return
+  flowai_test_assert_combined_contains "Unknown config subcommand" "UC-CLI-039" || return
+  flowai_test_pass "UC-CLI-039" "flowai config <unknown> exits 1 with error"
+}
+
+# UC-CLI-040 / tests/usecases/040-cli-update-help.md
+flowai_test_s_cli_040() {
+  flowai_test_invoke update --help
+  flowai_test_assert_rc 0 "UC-CLI-040" || return
+  flowai_test_assert_combined_contains "Self-update FlowAI" "UC-CLI-040" || return
+  flowai_test_assert_combined_contains "Usage:" "UC-CLI-040" || return
+  flowai_test_pass "UC-CLI-040" "flowai update --help exits 0 and shows usage"
+}

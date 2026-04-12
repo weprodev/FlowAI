@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+  #!/usr/bin/env bash
 # FlowAI test runner — use case bindings + harness (single entry; bindings are silent on success).
 # Usage: ./tests/run.sh
 # Verbose bindings: FLOWAI_TEST_VERBOSE=1 ./tests/run.sh
@@ -114,6 +114,9 @@ flowai_test_s_cli_034
 flowai_test_s_cli_035
 flowai_test_s_cli_036
 flowai_test_s_cli_037
+flowai_test_s_cli_038
+flowai_test_s_cli_039
+flowai_test_s_cli_040
 # skill local path
 _test_banner "Skills Path Resolution"
 flowai_test_s_skl_001
@@ -171,6 +174,9 @@ flowai_test_s_graph_029
 flowai_test_s_graph_030
 flowai_test_s_graph_031
 flowai_test_s_graph_032
+flowai_test_s_graph_033
+flowai_test_s_graph_034
+flowai_test_s_graph_035
 # event log
 _test_banner "Pipeline Event Logs & Progress"
 flowai_test_s_evt_001
