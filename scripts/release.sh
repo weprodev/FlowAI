@@ -18,13 +18,13 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [[ "$BRANCH" != "master" ]]; then
-  printf "%bChecking out master branch...%b\n" "$CYAN" "$RESET"
-  git checkout master
+if [[ "$BRANCH" != "main" ]]; then
+  printf "%bChecking out main branch...%b\n" "$CYAN" "$RESET"
+  git checkout main
 fi
 
-printf "%bPulling latest changes from origin/master...%b\n" "$CYAN" "$RESET"
-git pull origin master
+printf "%bPulling latest changes from origin/main...%b\n" "$CYAN" "$RESET"
+git pull origin main
 
 if [[ ! -f "VERSION" ]]; then
   printf "%bError: VERSION file not found.%b\n" "$RED" "$RESET"
@@ -107,8 +107,8 @@ fi
 
 CURRENT_VERSION="$NEW_VERSION"
 
-printf "\n%bPushing commits to master...%b\n" "$CYAN" "$RESET"
-git push origin master
+printf "\n%bPushing commits to main...%b\n" "$CYAN" "$RESET"
+git push origin main
 
 printf "\n%bCreating and pushing tag v%s...%b\n" "$CYAN" "$CURRENT_VERSION" "$RESET"
 git tag -a "v${CURRENT_VERSION}" -m "$(printf "%b" "$CHANGELOG_CONTENT")"
