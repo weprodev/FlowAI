@@ -24,7 +24,7 @@ flowai_tool_gemini_run() {
   fi
 
   if [[ "$run_interactive" == "true" ]]; then
-    "${cmd[@]}" || return $?
+    "${cmd[@]}" -p "$sys_prompt" || return $?
     return 0
   fi
 

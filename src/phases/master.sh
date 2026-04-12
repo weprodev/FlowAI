@@ -26,7 +26,33 @@ flowai_event_emit "master" "started" "Master agent interactive session"
 
 # ─── Phase 1: Interactive Spec Creation ──────────────────────────────────────
 # Master is interactive, does not wait for a previous phase
-flowai_ai_run "master" "$ROLE_FILE" "true"
+
+FEATURE_DIR="$(flowai_phase_resolve_feature_dir)"
+if [[ -z "$FEATURE_DIR" ]]; then
+  # Fallback if no specs directory exists yet or if flowai_phase_resolve_feature_dir failed
+  current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  if [[ -n "$current_branch" && "$current_branch" != "main" && "$current_branch" != "master" ]]; then
+    FEATURE_DIR="$PWD/specs/$current_branch"
+  else
+    FEATURE_DIR="$PWD/specs/default"
+  fi
+  mkdir -p "$FEATURE_DIR"
+fi
+
+DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
+You are assigned to Phase: Specification (Master Agent).
+Your task is to comprehensively define the specification for this feature.
+Your WORKING DIRECTORY is: $PWD
+
+OUTPUT FILE — you MUST write your specification artifact to this exact path:
+  $FEATURE_DIR/spec.md
+
+When you are finished generating spec.md, tell the user, and then remain available for feedback."
+
+INJECTED_PROMPT="$(flowai_phase_write_prompt "master" "$ROLE_FILE" "$DIRECTIVE")"
+export INJECTED_PROMPT
+
+flowai_ai_run "master" "$INJECTED_PROMPT" "true"
 
 flowai_event_emit "master" "phase_complete" "Spec creation complete"
 

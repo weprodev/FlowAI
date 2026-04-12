@@ -209,6 +209,26 @@ if [[ "$SKIP_GRAPH" != "true" ]] && flowai_graph_is_enabled; then
     _age="$(_flowai_graph_age_label)"
     _dep_ok "Knowledge" && printf '  %-14s %s\n' "" "${_nodes} nodes · ${_edges} edges · built ${_age}"
   fi
+# ── Feature Branching (Interactive) ──────────────────────────────────────────
+if [[ "$HEADLESS" != "true" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]] && command -v gum >/dev/null 2>&1; then
+  current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  if [[ "$current_branch" == "main" || "$current_branch" == "master" ]]; then
+    printf '\n'
+    log_info "You are on $current_branch. Let's create a feature branch."
+    feature_desc="$(gum input --placeholder "Briefly describe what you are building...")"
+    if [[ -n "$feature_desc" ]]; then
+      slug="$(echo "$feature_desc" | tr '[:upper:]' '[:lower:]' | sed -E -e 's/[^a-z0-9]+/-/g' -e 's/^-+|-+$//g')"
+      if [[ -n "$slug" ]]; then
+        latest_num=$(git branch --format="%(refname:short)" | grep '^[0-9]\{3\}-' | sort | tail -n 1 | grep -o '^[0-9]\{3\}' || echo "000")
+        next_num=$(printf "%03d" $((10#$latest_num + 1)))
+        branch_name="$(gum input --value "${next_num}-${slug}" --prompt "Branch name: ")"
+        if [[ -n "$branch_name" ]]; then
+          git checkout -b "$branch_name"
+          mkdir -p "specs/$branch_name"
+        fi
+      fi
+    fi
+  fi
 fi
 
 SESSION="$(flowai_session_name "$PWD")"

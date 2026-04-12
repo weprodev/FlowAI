@@ -31,7 +31,7 @@ flowai_tool_claude_run() {
   fi
 
   if [[ "$run_interactive" == "true" ]]; then
-    "${cmd[@]}" || return $?
+    "${cmd[@]}" --system-prompt "$sys_prompt" || return $?
     return 0
   fi
 

@@ -208,7 +208,7 @@ _chronicle_generate_edges() {
   # This maps "UC-AUTH-001" → "specs.auth-feature" (the actual graph node id)
   local lookup_tmp
   lookup_tmp="$(mktemp "${TMPDIR:-/tmp}/flowai_chron_lookup_XXXXXX")"
-  trap 'rm -f "$lookup_tmp" 2>/dev/null' RETURN
+  trap 'rm -f "${lookup_tmp:-}" 2>/dev/null' RETURN
   # First spec node wins when the same feature ID appears in multiple documents
   jq -r '
     .nodes |
@@ -465,7 +465,7 @@ flowai_graph_chronicle() {
   local tmp_edges tmp_evolution
   tmp_edges="$(mktemp "${TMPDIR:-/tmp}/flowai_chron_edges_XXXXXX")"
   tmp_evolution="$(mktemp "${TMPDIR:-/tmp}/flowai_chron_evo_XXXXXX")"
-  trap 'rm -f "$tmp_edges" "$tmp_evolution" 2>/dev/null' RETURN
+  trap 'rm -f "${tmp_edges:-}" "${tmp_evolution:-}" 2>/dev/null' RETURN
 
   _chronicle_generate_edges "$tmp_edges" "$tmp_evolution"
 

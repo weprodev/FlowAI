@@ -51,7 +51,7 @@ flowai_wiki_ingest() {
   # Build the ingest prompt
   local prompt_file
   prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_ingest_XXXXXX")"
-  trap 'rm -f "$prompt_file" 2>/dev/null' RETURN
+  trap 'rm -f "${prompt_file:-}" 2>/dev/null' RETURN
 
   cat > "$prompt_file" <<INGEST_PROMPT
 # Knowledge Wiki — Ingest Operation
@@ -112,7 +112,7 @@ flowai_wiki_query() {
   # Build the query prompt
   local prompt_file
   prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_query_XXXXXX")"
-  trap 'rm -f "$prompt_file" 2>/dev/null' RETURN
+  trap 'rm -f "${prompt_file:-}" 2>/dev/null' RETURN
 
   # Generate a filesystem-safe slug for the answer page
   local slug
@@ -193,7 +193,7 @@ flowai_wiki_lint() {
 
   local prompt_file
   prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_XXXXXX")"
-  trap 'rm -f "$prompt_file" 2>/dev/null' RETURN
+  trap 'rm -f "${prompt_file:-}" 2>/dev/null' RETURN
 
   cat > "$prompt_file" <<LINT_PROMPT
 # Knowledge Wiki — Lint Operation

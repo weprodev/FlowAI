@@ -169,7 +169,7 @@ flowai_graph_lint_structural() {
   tmp_zombie="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_zomb_XXXXXX")"
   tmp_debt="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_debt_XXXXXX")"
   tmp_unverified="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_unv_XXXXXX")"
-  trap 'rm -f "$tmp_unimpl" "$tmp_unspec" "$tmp_zombie" "$tmp_debt" "$tmp_unverified" 2>/dev/null' RETURN
+  trap 'rm -f "${tmp_unimpl:-}" "${tmp_unspec:-}" "${tmp_zombie:-}" "${tmp_debt:-}" "${tmp_unverified:-}" 2>/dev/null' RETURN
 
   _lint_unimplemented_specs "$graph_file" > "$tmp_unimpl"
   _lint_unspecified_files   "$graph_file" > "$tmp_unspec"

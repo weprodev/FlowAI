@@ -34,7 +34,7 @@ _graph_scan_paths() {
   local cfg="${FLOWAI_DIR}/config.json"
   if [[ -f "$cfg" ]]; then
     local paths
-    paths="$(jq -r '.graph.scan_paths // ["src","docs","specs"] | .[]' "$cfg" 2>/dev/null | tr -d '\r')"
+    paths="$(jq -r '.graph.scan_paths // ["src","docs","specs"] | .[]' "$cfg"  | tr -d '\r')"
     if [[ -n "$paths" ]]; then
       echo "$paths"
       return
@@ -47,7 +47,7 @@ _graph_scan_paths() {
 _graph_ignore_patterns() {
   local cfg="${FLOWAI_DIR}/config.json"
   if [[ -f "$cfg" ]]; then
-    jq -r '.graph.ignore_patterns // [] | .[]' "$cfg" 2>/dev/null
+    jq -r '.graph.ignore_patterns // [] | .[]' "$cfg" 
   fi
 }
 
@@ -58,7 +58,7 @@ _graph_semantic_enabled() {
     return 1
   fi
   local v
-  v="$(jq -r 'if .graph.semantic_enabled == null then "false" else (.graph.semantic_enabled | tostring) end' "$cfg" 2>/dev/null | tr -d '\r')"
+  v="$(jq -r 'if .graph.semantic_enabled == null then "false" else (.graph.semantic_enabled | tostring) end' "$cfg"  | tr -d '\r')"
   [[ "$v" == "true" ]]
 }
 
@@ -124,7 +124,7 @@ _graph_discover_files() {
     local abs_dir
     abs_dir="$(_graph_project_root)/$scan_dir"
     [[ -d "$abs_dir" ]] || continue
-    find "$abs_dir" -type f "${ignore_args[@]}" 2>/dev/null
+    find "$abs_dir" -type f "${ignore_args[@]}" 
   done < <(_graph_scan_paths)
 }
 
@@ -139,7 +139,7 @@ _graph_sha256() {
     shasum -a 256 "$file" | awk '{print $1}'
   else
     # Fallback: use file mtime+size as a coarse fingerprint
-    stat -f '%m%z' "$file" 2>/dev/null || stat -c '%Y%s' "$file" 2>/dev/null || echo "0"
+    stat -f '%m%z' "$file"  || stat -c '%Y%s' "$file"  || echo "0"
   fi
 }
 
@@ -232,18 +232,18 @@ _graph_extract_spec_meta() {
 
   # Feature/story IDs: patterns like UC-XXX-NNN, FEAT-NNN, STORY-NNN, REQ-NNN
   local feature_ids
-  feature_ids="$({ grep -oE '\b(UC|FEAT|STORY|REQ|RFC|ADR|US)-[A-Z0-9_-]+' "$file" 2>/dev/null || true; } | \
-    sort -u | head -20 | jq -Rs 'split("\n") | map(select(. != ""))' 2>/dev/null || echo '[]')"
+  feature_ids="$({ grep -oE '\b(UC|FEAT|STORY|REQ|RFC|ADR|US)-[A-Z0-9_-]+' "$file"  || true; } | \
+    sort -u | head -20 | jq -Rs 'split("\n") | map(select(. != ""))'  || echo '[]')"
 
   # Acceptance criteria / given-when-then markers
   local criteria
   criteria="$({ grep -oE '^#{1,3}[[:space:]]+(Acceptance|Given|When|Then|Must|Should|Shall)[^\n]{0,80}' \
-    "$file" 2>/dev/null || true; } | sed 's/^#*[[:space:]]*//' | head -10 | \
-    jq -Rs 'split("\n") | map(select(. != ""))' 2>/dev/null || echo '[]')"
+    "$file"  || true; } | sed 's/^#*[[:space:]]*//' | head -10 | \
+    jq -Rs 'split("\n") | map(select(. != ""))'  || echo '[]')"
 
   # Title: first H1
   local title
-  title="$(grep -m1 '^# ' "$file" 2>/dev/null | sed 's/^# //' || echo "$(basename "$file")")"
+  title="$(grep -m1 '^# ' "$file"  | sed 's/^# //' || echo "$(basename "$file")")"
 
   jq -n \
     --argjson fids "$feature_ids" \
@@ -269,7 +269,7 @@ _graph_structural_extract_file() {
     local spec_meta
     spec_meta="$(_graph_extract_spec_meta "$file")"
     local spec_title
-    spec_title="$(printf '%s' "$spec_meta" | jq -r '.title' 2>/dev/null || basename "$file" | tr -d '\r')"
+    spec_title="$(printf '%s' "$spec_meta" | jq -r '.title'  || basename "$file" | tr -d '\r')"
 
     # Spec node carries richer metadata
     nodes+=("$(jq -n \
@@ -288,7 +288,7 @@ _graph_structural_extract_file() {
       local link_id
       link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(sh|md|json|js|ts)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$link_id" "SPECIFIES" "EXTRACTED")")
-    done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | grep -oE '\(([^)]+)\)' | tr -d '()' | \
+    done < <(grep -oE '\]\(([^)]+)\)' "$file"  | grep -oE '\(([^)]+)\)' | tr -d '()' | \
                grep -vE '^https?://' || true)
   else
     # Standard file node
@@ -302,7 +302,7 @@ _graph_structural_extract_file() {
       local dep_id
       dep_id="$(printf '%s' "$dep" | tr '/' '.' | sed -E 's/\.(sh)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$dep_id" "sources" "EXTRACTED")")
-    done < <(grep -oE 'source[[:space:]]+"?\$\{?FLOWAI_HOME\}?/([^"[:space:]]+\.sh)' "$file" 2>/dev/null | \
+    done < <(grep -oE 'source[[:space:]]+"?\$\{?FLOWAI_HOME\}?/([^"[:space:]]+\.sh)' "$file"  | \
              grep -oE 'src/[^"[:space:]]+\.sh' || true)
 
     # Function definitions (one graph node per matching top-level function)
@@ -314,7 +314,7 @@ _graph_structural_extract_file() {
       local fn_id="${file_id}.${fn}"
       nodes+=("$(_graph_node_json "$fn_id" "$fn" "function" "$rel_path")")
       edges+=("$(_graph_edge_json "$file_id" "$fn_id" "defines" "EXTRACTED")")
-    done < <(grep -E '^[[:space:]]*(flowai_[a-z_]+|_[a-z_]+)\(\)' "$file" 2>/dev/null || true)
+    done < <(grep -E '^[[:space:]]*(flowai_[a-z_]+|_[a-z_]+)\(\)' "$file"  || true)
   fi
 
   # ── Python: import/class/def detection ─────────────────────────────────────
@@ -330,7 +330,7 @@ _graph_structural_extract_file() {
       local imp_id
       imp_id="$(printf '%s' "$imp_module" | tr '.' '.' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$imp_id" "imports" "EXTRACTED")")
-    done < <(grep -E '^(from|import)\s+[a-zA-Z]' "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E '^(from|import)\s+[a-zA-Z]' "$file"  | head -50 || true)
 
     # Class and function definitions
     while IFS= read -r def_line; do
@@ -344,7 +344,7 @@ _graph_structural_extract_file() {
       local def_id="${file_id}.${def_name}"
       nodes+=("$(_graph_node_json "$def_id" "$def_name" "$def_node_type" "$rel_path")")
       edges+=("$(_graph_edge_json "$file_id" "$def_id" "defines" "EXTRACTED")")
-    done < <(grep -E '^[[:space:]]*(class|def)\s+[a-zA-Z_]' "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E '^[[:space:]]*(class|def)\s+[a-zA-Z_]' "$file"  | head -50 || true)
   fi
 
   # ── TypeScript/JavaScript: import/export detection ───────────────────────
@@ -362,7 +362,7 @@ _graph_structural_extract_file() {
       local ts_id
       ts_id="$(printf '%s' "$ts_module" | sed -E 's|^\./||;s|^/||' | tr '/' '.' | sed -E 's/\.(ts|tsx|js|jsx)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$ts_id" "imports" "EXTRACTED")")
-    done < <(grep -E "^[[:space:]]*(import|const|let|var).*from[[:space:]]*['\"]|require\(" "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E "^[[:space:]]*(import|const|let|var).*from[[:space:]]*['\"]|require\(" "$file"  | head -50 || true)
 
     # Export declarations: export function/class/const/default
     while IFS= read -r exp_line; do
@@ -373,7 +373,7 @@ _graph_structural_extract_file() {
       local exp_id="${file_id}.${exp_name}"
       nodes+=("$(_graph_node_json "$exp_id" "$exp_name" "function" "$rel_path")")
       edges+=("$(_graph_edge_json "$file_id" "$exp_id" "defines" "EXTRACTED")")
-    done < <(grep -E '^[[:space:]]*export[[:space:]]+(default[[:space:]]+)?(function|class|const|let|var|interface|type|enum)\s' "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E '^[[:space:]]*export[[:space:]]+(default[[:space:]]+)?(function|class|const|let|var|interface|type|enum)\s' "$file"  | head -50 || true)
   fi
 
   # ── Go: import/func/type detection ──────────────────────────────────────
@@ -387,7 +387,7 @@ _graph_structural_extract_file() {
       local go_id
       go_id="$(printf '%s' "$go_module" | tr '/' '.' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$go_id" "imports" "EXTRACTED")")
-    done < <(grep -E '^\s*"[a-zA-Z]' "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E '^\s*"[a-zA-Z]' "$file"  | head -50 || true)
 
     # Function and type definitions
     while IFS= read -r def_line; do
@@ -399,7 +399,7 @@ _graph_structural_extract_file() {
         nodes+=("$(_graph_node_json "$go_fn_id" "$go_name" "function" "$rel_path")")
         edges+=("$(_graph_edge_json "$file_id" "$go_fn_id" "defines" "EXTRACTED")")
       fi
-    done < <(grep -E '^func\s' "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E '^func\s' "$file"  | head -50 || true)
 
     while IFS= read -r type_line; do
       [[ -z "$type_line" ]] && continue
@@ -409,7 +409,7 @@ _graph_structural_extract_file() {
       local go_type_id="${file_id}.${go_type_name}"
       nodes+=("$(_graph_node_json "$go_type_id" "$go_type_name" "class" "$rel_path")")
       edges+=("$(_graph_edge_json "$file_id" "$go_type_id" "defines" "EXTRACTED")")
-    done < <(grep -E '^type\s+[A-Z]' "$file" 2>/dev/null | head -50 || true)
+    done < <(grep -E '^type\s+[A-Z]' "$file"  | head -50 || true)
   fi
 
   # ── Markdown: link/reference detection (non-spec files) ────────────────────
@@ -420,7 +420,7 @@ _graph_structural_extract_file() {
       local link_id
       link_id="$(printf '%s' "$linked" | tr '/' '.' | sed -E 's/^\.//;s/\.(md)$//' | tr -d '\r')"
       edges+=("$(_graph_edge_json "$file_id" "$link_id" "references" "EXTRACTED")")
-    done < <(grep -oE '\]\(([^)]+)\)' "$file" 2>/dev/null | grep -oE '\(([^)]+)\)' | tr -d '()' || true)
+    done < <(grep -oE '\]\(([^)]+)\)' "$file"  | grep -oE '\(([^)]+)\)' | tr -d '()' || true)
   fi
 
   # ── JSON: config dependency mapping ───────────────────────────────────────
@@ -431,17 +431,17 @@ _graph_structural_extract_file() {
       local key_id="${file_id}.${key}"
       nodes+=("$(_graph_node_json "$key_id" "$key" "config_key" "$rel_path")")
       edges+=("$(_graph_edge_json "$file_id" "$key_id" "contains" "EXTRACTED")")
-    done < <(jq -r 'keys[]' "$file" 2>/dev/null | head -20 || true | tr -d '\r')
+    done < <(jq -r 'keys[]' "$file"  | head -20 || true | tr -d '\r')
   fi
 
   # Output partial graph fragment — collect nodes and edges into temp JSONL files
   # and then build the final JSON fragment
   local nodes_arr="[]" edges_arr="[]"
   if (( ${#nodes[@]} > 0 )); then
-    nodes_arr="$(printf '%s\n' "${nodes[@]}" | jq -sc '.' 2>/dev/null || echo '[]')"
+    nodes_arr="$(printf '%s\n' "${nodes[@]}" | jq -sc '.'  || echo '[]')"
   fi
   if (( ${#edges[@]} > 0 )); then
-    edges_arr="$(printf '%s\n' "${edges[@]}" | jq -sc '.' 2>/dev/null || echo '[]')"
+    edges_arr="$(printf '%s\n' "${edges[@]}" | jq -sc '.'  || echo '[]')"
   fi
 
 
@@ -464,7 +464,7 @@ _graph_run_structural_pass() {
   local tmp_nodes tmp_edges
   tmp_nodes="$(mktemp "${TMPDIR:-/tmp}/flowai_struct_n_XXXXXX")"
   tmp_edges="$(mktemp "${TMPDIR:-/tmp}/flowai_struct_e_XXXXXX")"
-  trap 'rm -f "$tmp_nodes" "$tmp_edges"' RETURN
+  trap 'rm -f "${tmp_nodes:-}" "${tmp_edges:-}" 2>/dev/null' RETURN
 
   log_info "Pass 1: Structural extraction..." >&2
 
@@ -482,11 +482,11 @@ _graph_run_structural_pass() {
     if [[ "$force" != "true" ]] && _graph_file_is_cached "$file" && [[ -f "$fragment_cache" ]]; then
       # Validate cached fragment: reject stale cache with zero nodes (corrupt from prior bug)
       local _cached_node_count
-      _cached_node_count="$(jq '.nodes | length' "$fragment_cache" 2>/dev/null || echo 0)"
+      _cached_node_count="$(jq '.nodes | length' "$fragment_cache"  || echo 0)"
       if [[ "$_cached_node_count" -gt 0 ]]; then
         # Append cached fragment's nodes/edges to accumulators
-        jq -c '.nodes[]' "$fragment_cache" >> "$tmp_nodes" 2>/dev/null || true
-        jq -c '.edges[]' "$fragment_cache" >> "$tmp_edges" 2>/dev/null || true
+        jq -c '.nodes[]' "$fragment_cache" >> "$tmp_nodes"  || true
+        jq -c '.edges[]' "$fragment_cache" >> "$tmp_edges"  || true
         cached=$(( cached + 1 ))
         continue
       fi
@@ -498,8 +498,8 @@ _graph_run_structural_pass() {
     printf '%s' "$fragment" > "$fragment_cache"
 
     # Append this fragment's nodes/edges to JSONL accumulators
-    printf '%s' "$fragment" | jq -c '.nodes[]' >> "$tmp_nodes" 2>/dev/null || true
-    printf '%s' "$fragment" | jq -c '.edges[]' >> "$tmp_edges" 2>/dev/null || true
+    printf '%s' "$fragment" | jq -c '.nodes[]' >> "$tmp_nodes"  || true
+    printf '%s' "$fragment" | jq -c '.edges[]' >> "$tmp_edges"  || true
 
     _graph_cache_update "$file"
     processed=$(( processed + 1 ))
@@ -515,12 +515,12 @@ _graph_run_structural_pass() {
 
   local nodes_array edges_array
   if [[ -s "$tmp_nodes" ]]; then
-    nodes_array="$(jq -sc '.' "$tmp_nodes" 2>/dev/null || echo '[]')"
+    nodes_array="$(jq -sc '.' "$tmp_nodes"  || echo '[]')"
   else
     nodes_array='[]'
   fi
   if [[ -s "$tmp_edges" ]]; then
-    edges_array="$(jq -sc '.' "$tmp_edges" 2>/dev/null || echo '[]')"
+    edges_array="$(jq -sc '.' "$tmp_edges"  || echo '[]')"
   else
     edges_array='[]'
   fi
@@ -542,7 +542,7 @@ _graph_semantic_prompt() {
   local rel_path
   rel_path="$(_graph_rel_path "$file")"
   local content
-  content="$(head -200 "$file" 2>/dev/null)"  # First 200 lines — enough for concept extraction
+  content="$(head -200 "$file" )"  # First 200 lines — enough for concept extraction
 
   cat <<PROMPT
 You are extracting a knowledge graph fragment from a project file.
@@ -607,7 +607,7 @@ _graph_semantic_extract_file() {
   local raw_output
   if command -v flowai_tool_"${tool}"_run_oneshot >/dev/null 2>&1; then
     # Prefer non-interactive oneshot mode if the tool supports it
-    raw_output="$(flowai_tool_"${tool}"_run_oneshot "$model" "$prompt_file" 2>/dev/null || echo '{}')"
+    raw_output="$(flowai_tool_"${tool}"_run_oneshot "$model" "$prompt_file"  || echo '{}')"
   else
     # Fallback: write placeholder; semantic pass is best-effort
     raw_output='{"nodes":[],"edges":[],"insights":[]}'
@@ -645,7 +645,7 @@ _graph_merge() {
     find "$(dirname "$output_file")" -maxdepth 1 \
       -name "$(basename "$output_file").*" \
       -not -name "*.pre-rollback" -not -name "*.lock" \
-      2>/dev/null | sort -r | tail -n +"$((keep + 1))" | \
+       | sort -r | tail -n +"$((keep + 1))" | \
       while IFS= read -r old_backup; do rm -f "$old_backup"; done
   fi
 
@@ -654,22 +654,22 @@ _graph_merge() {
   if [[ -d "$semantic_dir" ]]; then
     while IFS= read -r f; do
       [[ -f "$f" ]] && semantic_files+=("$f")
-    done < <(find "$semantic_dir" -name "*.json" 2>/dev/null)
+    done < <(find "$semantic_dir" -name "*.json" )
   fi
 
   # Build the merged graph via jq
   local struct_nodes struct_edges
-  struct_nodes="$(jq '.nodes // []' "$structural_file" 2>/dev/null)"
-  struct_edges="$(jq '.edges // []' "$structural_file" 2>/dev/null)"
+  struct_nodes="$(jq '.nodes // []' "$structural_file" )"
+  struct_edges="$(jq '.edges // []' "$structural_file" )"
 
   local sem_nodes='[]' sem_edges='[]' all_insights='[]'
 
   if [[ "${semantic_files[*]-}" != "" ]]; then
     for sf in "${semantic_files[@]}"; do
       local snodes sedges insights
-      snodes="$(jq '.nodes // []' "$sf" 2>/dev/null)"
-      sedges="$(jq '.edges // []' "$sf" 2>/dev/null)"
-      insights="$(jq '.insights // []' "$sf" 2>/dev/null)"
+      snodes="$(jq '.nodes // []' "$sf" )"
+      sedges="$(jq '.edges // []' "$sf" )"
+      insights="$(jq '.insights // []' "$sf" )"
       sem_nodes="$(jq -n --argjson a "$sem_nodes" --argjson b "$snodes" '$a + $b')"
       sem_edges="$(jq -n --argjson a "$sem_edges" --argjson b "$sedges" '$a + $b')"
       all_insights="$(jq -n --argjson a "$all_insights" --argjson b "$insights" '$a + $b')"
@@ -728,7 +728,7 @@ _graph_detect_communities() {
   # Write jq program to a temp file to avoid shell quoting issues
   local jq_prog_file
   jq_prog_file="$(mktemp "${TMPDIR:-/tmp}/flowai_community_XXXXXX")"
-  trap 'rm -f "$jq_prog_file" 2>/dev/null' RETURN
+  trap 'rm -f "${jq_prog_file:-}" 2>/dev/null' RETURN
   cat > "$jq_prog_file" <<'JQ_PROG'
 # Step 1: Compute degree for each node
 ([ .edges[] | .source, .target ] | group_by(.) | map({key: .[0], value: length}) | from_entries) as $deg |
@@ -773,7 +773,7 @@ _graph_detect_communities() {
 JQ_PROG
 
   local updated
-  updated="$(jq -f "$jq_prog_file" "$graph_file" 2>/dev/null || true)"
+  updated="$(jq -f "$jq_prog_file" "$graph_file"  || true)"
 
 
   # Fallback: simpler degree-only annotation if label propagation fails
@@ -792,7 +792,7 @@ JQ_PROG
         }
       ) |
       .metadata.community_count = (.nodes | length)
-    ' "$graph_file" 2>/dev/null || cat "$graph_file")"
+    ' "$graph_file"  || cat "$graph_file")"
   fi
 
   if [[ -n "$updated" ]]; then
@@ -829,13 +829,13 @@ _graph_generate_report() {
     .[0:10] |
     .[] |
     "- **\(.label)** (\(.path // .id)) — degree \(.degree // 0)"
-  ' "$graph_file" 2>/dev/null)"
+  ' "$graph_file" )"
 
   # Collect all architectural insights from semantic pass
   local insights
   insights="$(jq -r '
     .insights // [] | .[0:10] | .[] | "- \(.)"
-  ' "$graph_file" 2>/dev/null)"
+  ' "$graph_file" )"
 
   # AMBIGUOUS edges (flagged for review)
   local ambiguous_edges
@@ -845,7 +845,7 @@ _graph_generate_report() {
     .[0:5] |
     .[] |
     "- \(.source) → \(.target) (\(.relation))"
-  ' "$graph_file" 2>/dev/null)"
+  ' "$graph_file" )"
 
   # Spec coverage — specs with SPECIFIES edges pointing to real code
   local spec_count specifies_count implements_count spec_nodes_list
@@ -855,10 +855,10 @@ _graph_generate_report() {
 
   # Spec status counts for the dashboard (YAML/frontmatter — not the same as git chronicle)
   local cnt_planned cnt_inprogress cnt_implemented cnt_deprecated
-  cnt_planned="$(jq '[.nodes[] | select(.type=="spec" and .status=="planned")] | length' "$graph_file" 2>/dev/null || echo 0)"
-  cnt_inprogress="$(jq '[.nodes[] | select(.type=="spec" and .status=="in-progress")] | length' "$graph_file" 2>/dev/null || echo 0)"
-  cnt_implemented="$(jq '[.nodes[] | select(.type=="spec" and .status=="implemented")] | length' "$graph_file" 2>/dev/null || echo 0)"
-  cnt_deprecated="$(jq '[.nodes[] | select(.type=="spec" and (.status=="deprecated" or .status=="superseded"))] | length' "$graph_file" 2>/dev/null || echo 0)"
+  cnt_planned="$(jq '[.nodes[] | select(.type=="spec" and .status=="planned")] | length' "$graph_file"  || echo 0)"
+  cnt_inprogress="$(jq '[.nodes[] | select(.type=="spec" and .status=="in-progress")] | length' "$graph_file"  || echo 0)"
+  cnt_implemented="$(jq '[.nodes[] | select(.type=="spec" and .status=="implemented")] | length' "$graph_file"  || echo 0)"
+  cnt_deprecated="$(jq '[.nodes[] | select(.type=="spec" and (.status=="deprecated" or .status=="superseded"))] | length' "$graph_file"  || echo 0)"
 
   # Git-derived evolution (Karpathy wiki: compiled, incremental history — not re-parsing git each time)
   local evo_event_total specs_with_git_trail
@@ -876,7 +876,7 @@ _graph_generate_report() {
     (if .author != null then "· \(.author) " else "" end) +
     "— IDs: " + ((.feature_ids // []) | if length > 0 then join(", ") else "none" end) +
     " · " + ((.criteria // []) | length | tostring) + " criteria"
-  ' "$graph_file" 2>/dev/null)"
+  ' "$graph_file" )"
 
   mkdir -p "$FLOWAI_WIKI_DIR"
 
@@ -987,7 +987,7 @@ $(jq -r '
   .[0:10] |
   .[] |
   "- **" + .[0] + "** (" + (length | tostring) + " members)"
-' "$graph_file" 2>/dev/null || echo "_No communities detected yet._")
+' "$graph_file"  || echo "_No communities detected yet._")
 
 ---
 
@@ -1051,7 +1051,7 @@ $(jq -r '
   (if .since != null then "· `" + .since + "` " else "" end) +
   (if .author != null then "· " + .author + " " else "" end) +
   "— " + ((.feature_ids // []) | if length > 0 then join(", ") else "no feature IDs" end)
-' "$graph_file" 2>/dev/null || echo "_No spec documents found._")
+' "$graph_file"  || echo "_No spec documents found._")
 
 ---
 
@@ -1063,7 +1063,7 @@ $(jq -r '
   sort_by(.label) |
   .[] |
   "- **[\(.label)](\(.path // .id))** — \(.summary // "source file")"
-' "$graph_file" 2>/dev/null)
+' "$graph_file" )
 
 ---
 
@@ -1075,7 +1075,7 @@ $(jq -r '
   sort_by(.label) |
   .[] |
   "- **\(.label)** — \(.summary // "")"
-' "$graph_file" 2>/dev/null)
+' "$graph_file" )
 
 ---
 
@@ -1096,7 +1096,7 @@ $(jq -r '
   .[0:12] |
   .[] |
   "- `\(.date)` **\(.spec)** — \(.message) _(\(.author))_"
-' "$graph_file" 2>/dev/null || echo "_No evolution events yet. Run: flowai graph chronicle_")
+' "$graph_file"  || echo "_No evolution events yet. Run: flowai graph chronicle_")
 
 ---
 
@@ -1139,8 +1139,8 @@ flowai_graph_build() {
   # then patches the graph.json spec nodes in-place.
   if [[ -f "$FLOWAI_HOME/src/graph/chronicle.sh" ]]; then
     # shellcheck source=src/graph/chronicle.sh
-    source "$FLOWAI_HOME/src/graph/chronicle.sh" 2>/dev/null || true
-    _chronicle_enrich_spec_frontmatter 2>/dev/null || true
+    source "$FLOWAI_HOME/src/graph/chronicle.sh"  || true
+    _chronicle_enrich_spec_frontmatter  || true
   fi
 
   # Read metadata for logging
@@ -1182,10 +1182,10 @@ flowai_graph_print_status() {
 
   # Spec coverage stats
   local spec_count implemented_count implements_edges
-  spec_count="$(jq '.metadata.spec_count // 0' "$FLOWAI_GRAPH_JSON" 2>/dev/null || echo 0)"
+  spec_count="$(jq '.metadata.spec_count // 0' "$FLOWAI_GRAPH_JSON"  || echo 0)"
   implemented_count="$(jq '[.nodes[] | select(.type=="spec" and .status=="implemented")] | length' \
-    "$FLOWAI_GRAPH_JSON" 2>/dev/null || echo 0)"
-  implements_edges="$(jq '.metadata.implements_edge_count // 0' "$FLOWAI_GRAPH_JSON" 2>/dev/null || echo 0)"
+    "$FLOWAI_GRAPH_JSON"  || echo 0)"
+  implements_edges="$(jq '.metadata.implements_edge_count // 0' "$FLOWAI_GRAPH_JSON"  || echo 0)"
 
   if flowai_graph_is_stale; then
     stale_label=" (stale — run: flowai graph update)"
