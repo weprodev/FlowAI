@@ -1274,3 +1274,280 @@ flowai_test_s_graph_035() {
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
+
+# UC-GRAPH-036 — Bridge edge detection annotates cross-community edges
+flowai_test_s_graph_036() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/.flowai/wiki"
+
+  # Two distinct clusters: (a↔b) and (c↔d) connected by a single bridge a→c
+  cat > "$tmp/.flowai/wiki/graph.json" <<'JSON'
+{
+  "metadata": {"built_at":"2026-01-01T00:00:00Z","version":"1.0",
+               "node_count":4,"edge_count":4,"community_count":0},
+  "nodes": [
+    {"id":"a","label":"A","type":"file","path":"src/a.sh"},
+    {"id":"b","label":"B","type":"file","path":"src/b.sh"},
+    {"id":"c","label":"C","type":"file","path":"src/c.sh"},
+    {"id":"d","label":"D","type":"file","path":"src/d.sh"}
+  ],
+  "edges": [
+    {"source":"a","target":"b","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"b","target":"a","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"c","target":"d","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"a","target":"c","relation":"calls","provenance":"EXTRACTED","confidence":1}
+  ],
+  "insights": []
+}
+JSON
+
+  _graph_build_in "$tmp/.flowai" "$tmp" '_graph_detect_communities' >/dev/null 2>&1
+
+  local graph="$tmp/.flowai/wiki/graph.json"
+  local bridge_count
+  bridge_count="$(jq '.metadata.bridge_edge_count // 0' "$graph" 2>/dev/null)"
+  local has_bridge_field
+  has_bridge_field="$(jq '[.edges[] | select(.bridge != null)] | length' "$graph" 2>/dev/null)"
+
+  if [[ "${bridge_count:-0}" -ge 1 ]] && [[ "${has_bridge_field:-0}" -ge 1 ]]; then
+    flowai_test_pass "UC-GRAPH-036" "Bridge edge detection annotates cross-community edges with bridge metadata"
+  else
+    printf 'FAIL UC-GRAPH-036: Expected bridge edges, bridge_count=%s has_bridge_field=%s\n' \
+      "$bridge_count" "$has_bridge_field" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# UC-GRAPH-037 — Bridge edges carry source_community and target_community
+flowai_test_s_graph_037() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/.flowai/wiki"
+
+  cat > "$tmp/.flowai/wiki/graph.json" <<'JSON'
+{
+  "metadata": {"built_at":"2026-01-01T00:00:00Z","version":"1.0",
+               "node_count":4,"edge_count":4,"community_count":0},
+  "nodes": [
+    {"id":"a","label":"A","type":"file","path":"src/a.sh"},
+    {"id":"b","label":"B","type":"file","path":"src/b.sh"},
+    {"id":"c","label":"C","type":"file","path":"src/c.sh"},
+    {"id":"d","label":"D","type":"file","path":"src/d.sh"}
+  ],
+  "edges": [
+    {"source":"a","target":"b","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"b","target":"a","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"c","target":"d","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"a","target":"c","relation":"calls","provenance":"EXTRACTED","confidence":1}
+  ],
+  "insights": []
+}
+JSON
+
+  _graph_build_in "$tmp/.flowai" "$tmp" '_graph_detect_communities' >/dev/null 2>&1
+
+  local graph="$tmp/.flowai/wiki/graph.json"
+  local bridges_with_meta
+  bridges_with_meta="$(jq '[.edges[] | select(.bridge == true and .source_community != null and .target_community != null)] | length' "$graph" 2>/dev/null)"
+
+  if [[ "${bridges_with_meta:-0}" -ge 1 ]]; then
+    flowai_test_pass "UC-GRAPH-037" "Bridge edges carry source_community and target_community metadata"
+  else
+    printf 'FAIL UC-GRAPH-037: Expected bridge edges with community metadata, got %s\n' \
+      "$bridges_with_meta" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# UC-GRAPH-038 — Non-bridge edges have bridge:false
+flowai_test_s_graph_038() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/.flowai/wiki"
+
+  # Triangle graph — fully connected, converges to one community, no bridges
+  cat > "$tmp/.flowai/wiki/graph.json" <<'JSON'
+{
+  "metadata": {"built_at":"2026-01-01T00:00:00Z","version":"1.0",
+               "node_count":3,"edge_count":3,"community_count":0},
+  "nodes": [
+    {"id":"a","label":"A","type":"file","path":"src/a.sh"},
+    {"id":"b","label":"B","type":"file","path":"src/b.sh"},
+    {"id":"c","label":"C","type":"file","path":"src/c.sh"}
+  ],
+  "edges": [
+    {"source":"a","target":"b","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"b","target":"c","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"a","target":"c","relation":"sources","provenance":"EXTRACTED","confidence":1}
+  ],
+  "insights": []
+}
+JSON
+
+  _graph_build_in "$tmp/.flowai" "$tmp" '_graph_detect_communities' >/dev/null 2>&1
+
+  local graph="$tmp/.flowai/wiki/graph.json"
+  local all_annotated bridge_count
+  all_annotated="$(jq '[.edges[] | select(.bridge != null)] | length' "$graph" 2>/dev/null)"
+  bridge_count="$(jq '.metadata.bridge_edge_count // -1' "$graph" 2>/dev/null)"
+
+  if [[ "${all_annotated:-0}" -eq 3 ]] && [[ "${bridge_count}" -eq 0 ]]; then
+    flowai_test_pass "UC-GRAPH-038" "Intra-community edges annotated bridge:false, bridge_edge_count=0"
+  else
+    printf 'FAIL UC-GRAPH-038: Expected all 3 edges bridge-annotated with 0 bridges, annotated=%s count=%s\n' \
+      "$all_annotated" "$bridge_count" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# UC-GRAPH-039 — Oversized community splitting breaks up large communities
+flowai_test_s_graph_039() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/.flowai/wiki"
+
+  # Build a graph where ALL 12 nodes form one community via a chain,
+  # which exceeds 25% threshold (threshold = max(floor(12*0.25),10) = 10,
+  # so 12 > 10 triggers splitting). Actually need more nodes to trigger.
+  # With 12 nodes, 25% = 3, min 10 → threshold = 10. 12 > 10. Triggers split.
+  # But label propagation on a chain converges to one community. Let's use 40+ nodes.
+  # 40 nodes → 25% = 10. One community of 40 > 10. Triggers splitting.
+  local nodes_json edges_json
+  nodes_json="["
+  edges_json="["
+  for i in $(seq 1 40); do
+    [[ "$i" -gt 1 ]] && nodes_json+=","
+    nodes_json+="{\"id\":\"n${i}\",\"label\":\"N${i}\",\"type\":\"file\",\"path\":\"src/n${i}.sh\"}"
+  done
+  nodes_json+="]"
+  for i in $(seq 1 39); do
+    [[ "$i" -gt 1 ]] && edges_json+=","
+    edges_json+="{\"source\":\"n${i}\",\"target\":\"n$((i+1))\",\"relation\":\"sources\",\"provenance\":\"EXTRACTED\",\"confidence\":1}"
+  done
+  edges_json+="]"
+
+  jq -n --argjson nodes "$nodes_json" --argjson edges "$edges_json" '{
+    "metadata": {"built_at":"2026-01-01T00:00:00Z","version":"1.0",
+                 "node_count":40,"edge_count":39,"community_count":0},
+    "nodes": $nodes,
+    "edges": $edges,
+    "insights": []
+  }' > "$tmp/.flowai/wiki/graph.json"
+
+  _graph_build_in "$tmp/.flowai" "$tmp" '_graph_detect_communities' >/dev/null 2>&1
+
+  local graph="$tmp/.flowai/wiki/graph.json"
+  local community_count largest_community
+  community_count="$(jq '.metadata.community_count // 0' "$graph" 2>/dev/null)"
+  largest_community="$(jq '[.nodes[].community_id] | group_by(.) | map(length) | max' "$graph" 2>/dev/null)"
+
+  # After splitting, we should have more than 1 community
+  if [[ "${community_count:-0}" -gt 1 ]]; then
+    flowai_test_pass "UC-GRAPH-039" "Oversized community splitting produces multiple communities from a single large cluster"
+  else
+    printf 'FAIL UC-GRAPH-039: Expected >1 communities after splitting, got community_count=%s largest=%s\n' \
+      "$community_count" "$largest_community" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# UC-GRAPH-040 — Small graphs (< 10 nodes) skip oversized-community splitting
+flowai_test_s_graph_040() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/src" "$tmp/.flowai/wiki"
+
+  # 3 nodes in a chain — well under the 10-node minimum for splitting
+  cat > "$tmp/.flowai/wiki/graph.json" <<'JSON'
+{
+  "metadata": {"built_at":"2026-01-01T00:00:00Z","version":"1.0",
+               "node_count":3,"edge_count":2,"community_count":0},
+  "nodes": [
+    {"id":"a","label":"A","type":"file","path":"src/a.sh"},
+    {"id":"b","label":"B","type":"file","path":"src/b.sh"},
+    {"id":"c","label":"C","type":"file","path":"src/c.sh"}
+  ],
+  "edges": [
+    {"source":"a","target":"b","relation":"sources","provenance":"EXTRACTED","confidence":1},
+    {"source":"b","target":"c","relation":"sources","provenance":"EXTRACTED","confidence":1}
+  ],
+  "insights": []
+}
+JSON
+
+  _graph_build_in "$tmp/.flowai" "$tmp" '_graph_detect_communities' >/dev/null 2>&1
+
+  local graph="$tmp/.flowai/wiki/graph.json"
+  # No community_id should contain "__" (the sub-splitting marker)
+  local split_markers
+  split_markers="$(jq '[.nodes[].community_id | select(contains("__"))] | length' "$graph" 2>/dev/null)"
+
+  if [[ "${split_markers:-0}" -eq 0 ]]; then
+    flowai_test_pass "UC-GRAPH-040" "Small graphs skip oversized-community splitting (no sub-labels)"
+  else
+    printf 'FAIL UC-GRAPH-040: Expected no split markers in small graph, got %s\n' \
+      "$split_markers" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# UC-GRAPH-041 — Graph context block includes bridge count
+flowai_test_s_graph_041() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _graph_write_config "$tmp"
+  mkdir -p "$tmp/.flowai/wiki" "$tmp/docs"
+
+  # Minimal graph with bridge_edge_count in metadata
+  jq -n '{
+    "metadata": {"built_at":"2026-01-01","node_count":4,"edge_count":3,
+                 "community_count":2,"bridge_edge_count":1},
+    "nodes": [
+      {"id":"a","label":"A","type":"file","path":"src/a.sh"},
+      {"id":"b","label":"B","type":"file","path":"src/b.sh"}
+    ],
+    "edges": [],
+    "insights": []
+  }' > "$tmp/.flowai/wiki/graph.json"
+  echo "# Graph Report" > "$tmp/docs/GRAPH_REPORT.md"
+
+  local out
+  out="$(
+    cd "$tmp" || exit 99
+    FLOWAI_DIR="$tmp/.flowai" \
+    FLOWAI_GRAPH_REPORT_PATH="$tmp/docs/GRAPH_REPORT.md" \
+    FLOWAI_HOME="$FLOWAI_HOME" \
+    FLOWAI_TESTING=1 \
+    bash -c '
+      source "$FLOWAI_HOME/src/core/log.sh"
+      source "$FLOWAI_HOME/src/core/config.sh"
+      source "$FLOWAI_HOME/src/core/graph.sh"
+      flowai_graph_context_block
+    ' 2>/dev/null
+  )"
+
+  if echo "$out" | grep -q "bridges"; then
+    flowai_test_pass "UC-GRAPH-041" "Graph context block includes bridge count in stats line"
+  else
+    printf 'FAIL UC-GRAPH-041: Expected "bridges" in context block, got: %s\n' "$out" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

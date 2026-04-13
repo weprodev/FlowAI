@@ -5,6 +5,29 @@
 #   flowai_tool_copilot_run           — used by: ai.sh dispatcher
 # shellcheck shell=bash
 
+# Inject FlowAI rules into .github/copilot-instructions.md for Copilot propagation.
+# GitHub Copilot reads copilot-instructions.md for project-level custom instructions.
+# Args: $1=content (tool-agnostic rules from flowai_ai_project_config_content)
+flowai_tool_copilot_inject_project_config() {
+  local content="$1"
+  local marker_start="<!-- FLOWAI:START -->"
+  local marker_end="<!-- FLOWAI:END -->"
+  local gh_dir="$PWD/.github"
+  local copilot_md="$gh_dir/copilot-instructions.md"
+  local block="${marker_start}
+${content}
+${marker_end}"
+
+  mkdir -p "$gh_dir"
+  if [[ -f "$copilot_md" ]]; then
+    local cleaned
+    cleaned="$(sed "/${marker_start}/,/${marker_end}/d" "$copilot_md")"
+    printf '%s\n\n%s\n' "$cleaned" "$block" > "$copilot_md"
+  else
+    printf '%s\n' "$block" > "$copilot_md"
+  fi
+}
+
 flowai_tool_copilot_print_models() {
   # _flowai_print_tool_block is dynamically provided by the caller (models.sh)
   _flowai_print_tool_block "copilot"

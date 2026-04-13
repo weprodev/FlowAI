@@ -176,41 +176,39 @@ flowai_graph_context_block() {
     return 0
   fi
 
-  local nodes edges communities age wiki_dir
+  local nodes edges communities bridges age wiki_dir
   nodes="$(_flowai_graph_node_count)"
   edges="$(_flowai_graph_edge_count)"
   communities="$(_flowai_graph_community_count)"
+  bridges="$(jq -r '.metadata.bridge_edge_count // 0' "$FLOWAI_GRAPH_JSON" 2>/dev/null | tr -d '\r')"
   age="$(_flowai_graph_age_label)"
   wiki_dir="$(_graph_rel_path "$FLOWAI_WIKI_DIR")"  # project-relative path for display
 
+  # Embed the actual graph report content so the agent already HAS the codebase
+  # map without needing to read a file. Instructions like "read GRAPH_REPORT.md
+  # first" are consistently ignored — embedding the content is the only reliable
+  # approach. Truncate to first 200 lines to keep prompt size reasonable.
+  local report_content=""
+  if [[ -f "$FLOWAI_GRAPH_REPORT" ]]; then
+    report_content="$(head -200 "$FLOWAI_GRAPH_REPORT" 2>/dev/null || true)"
+  fi
+
   cat <<GRAPH_BLOCK
 
---- [FLOWAI KNOWLEDGE GRAPH] ---
-A compiled knowledge graph of this codebase is available. Use it as your
-primary navigation layer — it is significantly more token-efficient than
-reading raw files.
+--- [FLOWAI KNOWLEDGE GRAPH — CODEBASE MAP] ---
+${nodes} nodes · ${edges} edges · ${communities} communities · ${bridges} bridges · built ${age}
 
-  Graph:  ${wiki_dir}/graph.json
-          ${nodes} nodes · ${edges} edges · ${communities} communities · built ${age}
+FILES: graph.json=${wiki_dir}/graph.json | index=${wiki_dir}/index.md
 
-  Start:  ${wiki_dir}/GRAPH_REPORT.md
-          → God nodes (highest-degree hubs), community summaries, suggested queries
+USE THIS MAP to navigate the codebase. Do NOT search files blindly — the graph
+already maps every entity, relationship, and community. Only read a source file
+when you need specific implementation details that the graph summary below
+does not cover.
 
-  Index:  ${wiki_dir}/index.md
-          → Full catalog of wiki pages with one-line summaries
+${report_content}
 
-Navigation protocol:
-  1. Read GRAPH_REPORT.md before searching any files
-  2. Use index.md to find the exact wiki page for any concept
-  3. Use graph.json for multi-hop reasoning (dependencies, call chains)
-  4. Only read raw source files when the graph points you to a specific location
-  5. If you discover an undocumented relationship, include it in your response
-     so it can be integrated on the next 'flowai graph update' run
-
-Provenance tags in graph.json:
-  EXTRACTED   — relationship found directly in source (high confidence)
-  INFERRED    — reasonable inference from context (treat as hypothesis)
-  AMBIGUOUS   — flagged for human review
+Provenance: EXTRACTED=high confidence | INFERRED=hypothesis | AMBIGUOUS=needs review
+For multi-hop queries (dependencies, call chains): read ${wiki_dir}/graph.json
 ---
 GRAPH_BLOCK
 }

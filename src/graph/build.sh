@@ -799,9 +799,102 @@ JQ_PROG
     printf '%s' "$updated" > "$graph_file"
   fi
 
-  local communities
+  # ── Oversized-community splitting ──────────────────────────────────────────
+  # Inspired by graphify: if any community exceeds 25% of total nodes (min 10),
+  # re-run label propagation on that subgraph to break it into smaller clusters.
+  # This prevents a single "junk drawer" community from dominating the graph.
+  local split_prog_file
+  split_prog_file="$(mktemp "${TMPDIR:-/tmp}/flowai_community_split_XXXXXX")"
+  cat > "$split_prog_file" <<'SPLIT_PROG'
+(.nodes | length) as $total |
+if $total < 10 then .
+else
+  (($total * 0.25) | floor | if . < 10 then 10 else . end) as $max_size |
+
+  # Find oversized communities
+  ([.nodes[].community_id] | group_by(.) |
+   map({community: .[0], count: length}) |
+   map(select(.count > $max_size))) as $oversized |
+
+  if ($oversized | length) == 0 then .
+  else
+    # Build adjacency list for splitting
+    (reduce .edges[] as $e ({};
+      .[$e.source] = ((.[$e.source] // []) + [$e.target]) |
+      .[$e.target] = ((.[$e.target] // []) + [$e.source])
+    )) as $adj |
+
+    # For each oversized community, re-assign sub-labels
+    reduce ($oversized[].community) as $cid (.;
+      # Gather nodes in this community
+      ([.nodes[] | select(.community_id == $cid) | .id]) as $members |
+      # Re-initialize labels within the community
+      ($members | map({key: ., value: .}) | from_entries) as $sub_labels |
+      # 3-iteration sub-propagation
+      (reduce range(3) as $iter ($sub_labels;
+        . as $labels |
+        reduce ($members[]) as $node ($labels;
+          ([$adj[$node] // [] | .[] | select(. as $n | $members | any(. == $n))] ) as $neighbors |
+          if ($neighbors | length) == 0 then .
+          else
+            ([$neighbors[] | $labels[.] // .] | group_by(.) | sort_by(-(length)) | .[0][0]) as $best |
+            .[$node] = ($cid + "__" + $best)
+          end
+        )
+      )) as $sub_final |
+      .nodes |= map(
+        if .community_id == $cid then
+          .community_id = ($sub_final[.id] // .community_id)
+        else . end
+      )
+    ) |
+    .metadata.community_count = ([.nodes[].community_id] | unique | length)
+  end
+end
+SPLIT_PROG
+
+  local split_result
+  split_result="$(jq -f "$split_prog_file" "$graph_file" 2>/dev/null || true)"
+  rm -f "$split_prog_file" 2>/dev/null
+  if [[ -n "$split_result" ]]; then
+    printf '%s' "$split_result" > "$graph_file"
+  fi
+
+  # ── Bridge edge detection ──────────────────────────────────────────────────
+  # Find edges that connect different communities — these are architectural
+  # coupling points and potentially surprising connections.
+  local bridge_prog_file
+  bridge_prog_file="$(mktemp "${TMPDIR:-/tmp}/flowai_bridge_XXXXXX")"
+  cat > "$bridge_prog_file" <<'BRIDGE_PROG'
+# Build node→community lookup
+(.nodes | map({key: .id, value: .community_id}) | from_entries) as $comm |
+
+# Find edges whose source and target are in different communities
+.edges |= map(
+  ($comm[.source] // "unknown") as $src_comm |
+  ($comm[.target] // "unknown") as $tgt_comm |
+  if $src_comm != $tgt_comm then
+    . + { "bridge": true, "source_community": $src_comm, "target_community": $tgt_comm }
+  else
+    . + { "bridge": false }
+  end
+) |
+
+# Count bridge edges in metadata
+.metadata.bridge_edge_count = ([.edges[] | select(.bridge == true)] | length)
+BRIDGE_PROG
+
+  local bridge_result
+  bridge_result="$(jq -f "$bridge_prog_file" "$graph_file" 2>/dev/null || true)"
+  rm -f "$bridge_prog_file" 2>/dev/null
+  if [[ -n "$bridge_result" ]]; then
+    printf '%s' "$bridge_result" > "$graph_file"
+  fi
+
+  local communities bridge_count
   communities="$(jq '.metadata.community_count // 0' "$graph_file")"
-  log_success "Community detection: ${communities} communities identified"
+  bridge_count="$(jq '.metadata.bridge_edge_count // 0' "$graph_file")"
+  log_success "Community detection: ${communities} communities, ${bridge_count} bridge edges"
 }
 
 # ─── GRAPH_REPORT.md Generation ───────────────────────────────────────────────
@@ -944,6 +1037,22 @@ Key design decisions and patterns extracted from source and documentation.
 Treat **INFERRED** insights as hypotheses until verified.
 
 ${insights:-_No insights extracted yet. Run \`flowai graph ingest <spec-file>\` to populate._}
+
+---
+
+## Bridge Connections (Cross-Community Coupling)
+
+Edges that connect different communities — architectural coupling points.
+These are often the most important relationships to understand because they
+reveal how separate modules depend on each other.
+
+$(jq -r '
+  [.edges[] | select(.bridge == true)] |
+  sort_by(.confidence // 1 | - .) |
+  .[0:10] |
+  .[] |
+  "- **\(.source)** → **\(.target)** (\(.relation)) — bridges \(.source_community // "?") ↔ \(.target_community // "?")"
+' "$graph_file"  || echo "_No bridge edges detected._")
 
 ---
 

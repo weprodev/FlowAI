@@ -106,8 +106,8 @@ flowai_test_s_orch_005() {
 flowai_test_s_orch_006() {
   local id="ORCH-006"
   local tasks="$FLOWAI_HOME/src/phases/tasks.sh"
-  if grep -q 'Do NOT delete tasks.rejection_context before' "$tasks" 2>/dev/null \
-    && grep -q 'local_revision="$(cat "$TASKS_REJECTION_FILE"' "$tasks" 2>/dev/null; then
+  if grep -q 'local_revision="$(cat "$TASKS_REJECTION_FILE"' "$tasks" 2>/dev/null \
+    && grep -q 'rm -f "$TASKS_REJECTION_FILE"' "$tasks" 2>/dev/null; then
     flowai_test_pass "$id" "tasks.sh documents and reads rejection context before rm"
   else
     printf 'FAIL %s: tasks retry contract broken\n' "$id" >&2
@@ -163,7 +163,7 @@ EOS
 flowai_test_s_orch_010() {
   local id="ORCH-010"
   local master="$FLOWAI_HOME/src/phases/master.sh"
-  if ! grep -qF "printf '%s\n' '--- spec.md ---'" "$master" 2>/dev/null; then
+  if ! grep -qE "printf '(\\\\n)?%s(\\\\n)?' '--- spec.md ---'" "$master" 2>/dev/null; then
     printf 'FAIL %s: master.sh must use printf %%s for --- spec.md header (bash/macOS)\n' "$id" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
     return
@@ -196,6 +196,30 @@ flowai_test_s_orch_011() {
     flowai_test_pass "$id" "plain terminal env wired in wait_ui + log"
   else
     printf 'FAIL %s: PLAIN_TERMINAL must gate wait_ui redraw\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-012: Approval gate shows phase-specific context ────────────────────
+flowai_test_s_orch_012() {
+  local id="ORCH-012"
+  local phase="$FLOWAI_HOME/src/core/phase.sh"
+  local has_context_fn has_plan has_impl has_git_diff
+  has_context_fn=false
+  has_plan=false
+  has_impl=false
+  has_git_diff=false
+
+  grep -q '_flowai_phase_approval_context' "$phase" 2>/dev/null && has_context_fn=true
+  grep -q 'PLAN REVIEW' "$phase" 2>/dev/null && has_plan=true
+  grep -q 'IMPLEMENTATION REVIEW' "$phase" 2>/dev/null && has_impl=true
+  grep -q 'git diff --stat' "$phase" 2>/dev/null && has_git_diff=true
+
+  if $has_context_fn && $has_plan && $has_impl && $has_git_diff; then
+    flowai_test_pass "$id" "Approval gate shows phase-specific context (plan, impl, git diff)"
+  else
+    printf 'FAIL %s: approval context missing (fn=%s plan=%s impl=%s git=%s)\n' \
+      "$id" "$has_context_fn" "$has_plan" "$has_impl" "$has_git_diff" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }

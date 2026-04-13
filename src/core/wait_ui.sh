@@ -123,6 +123,11 @@ flowai_wait_ui_release_if_owner() {
 }
 
 # Args: elapsed_sec, step_sec (sleep interval in caller), short_label
+#
+# Overwrite strategy: \r + space-padding instead of \r\033[K (CSI erase).
+# tmux scrollback buffers capture every CSI sequence, so hundreds of \033[K
+# writes accumulate as garbled ^[[K / ^[[B noise when the user scrolls back.
+# Space-padding is invisible in scrollback and avoids the problem entirely.
 flowai_wait_ui_pulse_line() {
   local elapsed="$1"
   local step="${2:-2}"
@@ -134,12 +139,15 @@ flowai_wait_ui_pulse_line() {
     2) c='-' ;;
     3) c="\\" ;;
   esac
-  printf '\r\033[K%s%s  %s · %ds%s' "$YELLOW" "$c" "$short_label" "$elapsed" "$RESET"
+  # Build the visible text, then pad to 80 chars to overwrite any previous content.
+  local text
+  text="$(printf '%s%s  %s · %ds%s' "$YELLOW" "$c" "$short_label" "$elapsed" "$RESET")"
+  printf '\r%-80s\r%s' '' "$text"
 }
 
 flowai_wait_ui_clear_line() {
   if [[ "${FLOWAI_TESTING:-0}" == "1" ]] || [[ ! -t 1 ]] || [[ "${FLOWAI_PLAIN_TERMINAL:-0}" == "1" ]]; then
     return 0
   fi
-  printf '\r\033[K'
+  printf '\r%-80s\r' ''
 }

@@ -182,6 +182,12 @@ flowai_test_s_graph_032
 flowai_test_s_graph_033
 flowai_test_s_graph_034
 flowai_test_s_graph_035
+flowai_test_s_graph_036
+flowai_test_s_graph_037
+flowai_test_s_graph_038
+flowai_test_s_graph_039
+flowai_test_s_graph_040
+flowai_test_s_graph_041
 # event log
 _test_banner "Pipeline Event Logs & Progress"
 flowai_test_s_evt_001
@@ -228,6 +234,23 @@ flowai_test_s_sig_015
 flowai_test_s_sig_016
 flowai_test_s_sig_017
 flowai_test_s_sig_018
+flowai_test_s_sig_019
+flowai_test_s_sig_020
+flowai_test_s_sig_021
+flowai_test_s_sig_022
+flowai_test_s_sig_023
+flowai_test_s_sig_024
+flowai_test_s_sig_025
+flowai_test_s_sig_026
+flowai_test_s_sig_027
+flowai_test_s_sig_028
+flowai_test_s_sig_029
+flowai_test_s_sig_030
+flowai_test_s_sig_031
+flowai_test_s_sig_032
+flowai_test_s_sig_033
+flowai_test_s_sig_034
+flowai_test_s_sig_035
 # orchestration regression contracts (behavioral — not grep-only)
 _test_banner "Orchestration regression contracts"
 flowai_test_s_orch_001
@@ -241,6 +264,7 @@ flowai_test_s_orch_008
 flowai_test_s_orch_009
 flowai_test_s_orch_010
 flowai_test_s_orch_011
+flowai_test_s_orch_012
 # spec readiness (trunk + specs/<branch>/spec.md)
 _test_banner "Spec workspace readiness"
 flowai_test_s_sr_001

@@ -120,20 +120,34 @@ flowai_skills_build_prompt() {
   local skill_role
   skill_role="$(flowai_skills_effective_role_for_phase "$phase")"
 
-  local prompt=""
-  if [[ -f "$prompt_file" ]]; then
-    prompt="$(cat "$prompt_file")"
-  fi
-
   # ─── Pipeline Coordination Preamble (role/skill/tool-agnostic) ────────────
-  # This block is injected into EVERY agent prompt. It ensures that any role
-  # (including custom user-created roles) automatically understands the pipeline
-  # contract without needing coordination-specific text in the role file.
-  prompt="${prompt}
+  # This block is injected FIRST — before the role content — into EVERY agent
+  # prompt. LLMs weight instructions near the top of the context window more
+  # heavily. Placing HARD CONSTRAINTS here ensures they are read before any
+  # role-specific content that might cause the agent to deviate.
+  local prompt="--- [PIPELINE COORDINATION — MANDATORY RULES] ---
+You are operating inside FlowAI's multi-agent pipeline. These rules are
+MANDATORY and override your default behaviors. Violating them breaks the
+pipeline for all agents.
 
---- [PIPELINE COORDINATION] ---
-You are operating inside FlowAI's multi-agent pipeline. These rules apply to
-every agent regardless of role. Follow them precisely.
+## HARD CONSTRAINTS (read these first)
+1. FILE CREATION: You may ONLY write to the OUTPUT FILE specified in your
+   PIPELINE DIRECTIVE. Do NOT create any other files. No review documents,
+   no plan files, no summary files, no temporary analysis files. If your
+   output is not a file (e.g., verbal review), say it in the conversation.
+   PROHIBITED file patterns: *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md
+   The ONLY files you may create or modify:
+     spec/master phase → spec.md | plan phase → plan.md | tasks phase → tasks.md
+     impl phase → source code files | review phase → NO files (verbal only)
+2. GRAPH FIRST: If a knowledge graph is available (see [FLOWAI KNOWLEDGE GRAPH]
+   below), you MUST read GRAPH_REPORT.md BEFORE using any search, find, grep,
+   or file exploration tools. Do NOT explore the codebase with search tools
+   when the graph already maps it. Read the graph, then read only the specific
+   files the graph points you to.
+3. SPEC IS TRUTH: The specification (spec.md) is the AUTHORITATIVE single
+   source of truth. Every decision traces back to it. When any artifact
+   conflicts with spec.md, the spec wins. Before completing your work,
+   verify alignment against spec.md acceptance criteria.
 
 ## Orchestration
 - The Master Agent is the central orchestrator of the entire pipeline.
@@ -142,14 +156,6 @@ every agent regardless of role. Follow them precisely.
   You do NOT need to check signal files yourself — the orchestrator handles this.
 - When you finish your work, the orchestrator will verify your output.
   Follow the APPROVAL PROTOCOL in your PIPELINE DIRECTIVE if one is provided.
-
-## Artifacts
-- All file paths for input artifacts (CONTEXT) and output artifacts (OUTPUT FILE)
-  are specified in the PIPELINE DIRECTIVE section of your prompt.
-  Always use those exact absolute paths — never guess or construct paths yourself.
-- You MUST use file-writing tools to create your output artifact at the specified
-  path. Do NOT just print the content — you must actually write the file.
-- Read ALL upstream artifacts listed in your CONTEXT section before starting work.
 
 ## Task Tracking
 - If your phase works with a task checklist (tasks.md), mark tasks complete as
@@ -160,9 +166,16 @@ every agent regardless of role. Follow them precisely.
 ## Pipeline Awareness
 - The [PIPELINE EVENT LOG] section below shows what other agents have done.
   Use it to understand progress, approvals, and rejections.
-- Never write source code if your role is Specification or Architecture.
-  Each agent owns its assigned scope — do not cross into another agent's phase.
 ---"
+
+  # ─── Role + Directive + Artifact Boundary ────────────────────────────────
+  # Injected AFTER the HARD CONSTRAINTS so the mandatory rules are always at
+  # the top of the context window — role content follows.
+  if [[ -f "$prompt_file" ]]; then
+    prompt="${prompt}
+
+$(cat "$prompt_file")"
+  fi
 
   # Inject constitution if present
   local constitution=""

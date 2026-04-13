@@ -92,6 +92,55 @@ flowai_ai_tool_is_paste_only() {
   esac
 }
 
+# ─── Tool Project Config Injection ───────────────────────────────────────────
+# Tool-agnostic content for project config injection. This is the SHARED content
+# that every tool's project config should contain. Each tool plugin implements
+# flowai_tool_<name>_inject_project_config() with the tool-specific file format
+# and location (e.g., CLAUDE.md, .cursorrules, copilot-instructions.md).
+#
+# Usage: content="$(flowai_ai_project_config_content)"
+flowai_ai_project_config_content() {
+  cat <<'RULES'
+# FlowAI Pipeline Rules (auto-generated — do not edit between markers)
+
+## MANDATORY: Knowledge Graph Navigation
+A compiled knowledge graph of this codebase is available at `.flowai/wiki/`.
+
+**You MUST follow this order:**
+1. BEFORE any file search, grep, find, or Bash exploration: READ `.flowai/wiki/GRAPH_REPORT.md`
+2. Use `.flowai/wiki/index.md` to locate the exact wiki page for any concept
+3. Use `.flowai/wiki/graph.json` for multi-hop reasoning (dependencies, call chains)
+4. ONLY after the graph points you to a specific file should you read that file
+5. Do NOT explore the codebase blindly — the graph exists to prevent that
+
+**PROHIBITED:** Do NOT run find, grep, rg, or broad file searches to understand
+the codebase. The graph already contains this information. Read the graph first.
+
+## MANDATORY: Artifact Boundaries
+When operating inside a FlowAI pipeline phase:
+- You may ONLY write to the OUTPUT FILE specified in the PIPELINE DIRECTIVE
+- Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files
+- spec.md is the single source of truth — verify alignment before completing work
+RULES
+}
+
+# Inject project config into ALL tools that provide _inject_project_config().
+# Called from start.sh when a knowledge graph exists. Each tool plugin handles
+# its own file format and location — this function is the tool-agnostic dispatcher.
+flowai_ai_inject_all_tool_configs() {
+  local content
+  content="$(flowai_ai_project_config_content)"
+
+  local tool inject_fn
+  for tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
+    tool="$(basename "$tool_plugin" .sh)"
+    inject_fn="flowai_tool_${tool}_inject_project_config"
+    if declare -F "$inject_fn" >/dev/null 2>&1; then
+      "$inject_fn" "$content"
+    fi
+  done
+}
+
 flowai_ai_run() {
   local phase="$1"
   local prompt_file="$2"
@@ -125,11 +174,15 @@ flowai_ai_run() {
     return 1
   fi
 
-  "$run_fn" "$model" "$auto_approve" "$run_interactive" "$sys_prompt"
+  # Export phase so tool plugins can apply phase-specific restrictions
+  # (e.g., disallow Write for review phase, restrict artifact paths).
+  FLOWAI_CURRENT_PHASE="$phase" "$run_fn" "$model" "$auto_approve" "$run_interactive" "$sys_prompt"
 }
 
 # Non-interactive single-shot AI invocation.
 # Runs the prompt through the configured tool and prints the LLM response to stdout.
+# Enriches the prompt with knowledge graph context when available (cheap navigation
+# layer that reduces token usage on codebase exploration within the oneshot).
 # Usage: output="$(flowai_ai_run_oneshot <phase> <prompt_file>)"
 flowai_ai_run_oneshot() {
   local phase="$1"
@@ -150,13 +203,31 @@ flowai_ai_run_oneshot() {
   fi
   model="$(flowai_ai_resolve_model_for_tool "$tool" "$model")"
 
+  # Enrich prompt with knowledge graph context when available.
+  # The graph block is ~25 lines — small token cost for significant quality gain:
+  # agents navigate via the compiled graph instead of exploring files blindly.
+  local enriched_prompt="$prompt_file"
+  if declare -F flowai_graph_is_enabled >/dev/null 2>&1 \
+     && flowai_graph_is_enabled && flowai_graph_exists; then
+    local graph_block
+    graph_block="$(flowai_graph_context_block)"
+    if [[ -n "$graph_block" ]]; then
+      enriched_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_oneshot_enriched_XXXXXX")"
+      { cat "$prompt_file"; printf '%s\n' "$graph_block"; } > "$enriched_prompt"
+    fi
+  fi
+
   local run_fn="flowai_tool_${tool}_run_oneshot"
   if ! declare -F "$run_fn" >/dev/null 2>&1; then
     # Fail closed: if tool has no _run_oneshot, reject rather than silently approve
     log_warn "Tool '$tool' has no oneshot function — cannot perform AI validation."
     echo "VERDICT: REJECTED — tool '$tool' does not support one-shot review"
+    [[ "$enriched_prompt" != "$prompt_file" ]] && rm -f "$enriched_prompt" 2>/dev/null
     return 1
   fi
 
-  "$run_fn" "$model" "$prompt_file"
+  "$run_fn" "$model" "$enriched_prompt"
+  local rc=$?
+  [[ "$enriched_prompt" != "$prompt_file" ]] && rm -f "$enriched_prompt" 2>/dev/null
+  return $rc
 }

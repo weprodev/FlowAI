@@ -22,6 +22,16 @@ if [[ "${FLOWAI_TEST_SKIP_AI:-}" == "1" ]]; then
 fi
 
 ROLE_FILE="$(flowai_phase_resolve_role_prompt "plan")"
+
+# If plan.md already exists, tell the agent to read and improve it.
+_PLAN_EXISTING_HINT=""
+if [[ -f "$FEATURE_DIR/plan.md" ]] && [[ -s "$FEATURE_DIR/plan.md" ]]; then
+  _PLAN_EXISTING_HINT="
+EXISTING ARTIFACT — a plan.md already exists at the path above.
+READ it first. Improve, refine, or complete it — do NOT start from scratch.
+Only rewrite sections that conflict with the spec or are incomplete."
+fi
+
 DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Plan (Architecture).
 Your WORKING DIRECTORY is: $PWD
@@ -31,7 +41,7 @@ CONTEXT — read the following upstream artifact before starting:
 
 OUTPUT FILE — you MUST write your artifact to this exact path:
   $FEATURE_DIR/plan.md
-
+${_PLAN_EXISTING_HINT}
 POST-WRITE UX (required):
 - When plan.md is written, tell the user the **absolute path** above.
 - Tell them the FlowAI terminal will show an **approval menu** next (Approve / Needs changes / Review artifact).

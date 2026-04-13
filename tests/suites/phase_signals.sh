@@ -178,7 +178,7 @@ flowai_skills_build_prompt "plan" "$FLOWAI_DIR/launch/test_prompt.md"
 EOS
 )"
 
-  if [[ "$composed" == *"[PIPELINE COORDINATION]"* ]]; then
+  if [[ "$composed" == *"PIPELINE COORDINATION"* ]]; then
     flowai_test_pass "$id" "PIPELINE COORDINATION block injected in composed prompt"
   else
     printf 'FAIL %s: [PIPELINE COORDINATION] block missing from composed prompt\n' "$id" >&2
@@ -460,6 +460,449 @@ flowai_test_s_sig_018() {
   else
     printf 'FAIL %s: memory protocol incomplete (append=%s consent=%s ephemeral=%s path=%s)\n' \
       "$id" "$has_append_rule" "$has_user_consent" "$has_ephemeral" "$has_memory_path" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-019 — flowai_phase_artifact_boundary function exists in phase.sh
+# Framework-level guard: every phase prompt gets artifact ownership rules.
+flowai_test_s_sig_019() {
+  local id="SIG-019"
+  local phase="$FLOWAI_HOME/src/core/phase.sh"
+
+  local has_function has_ownership_map has_violation_warning
+  has_function=false
+  has_ownership_map=false
+  has_violation_warning=false
+
+  grep -q 'flowai_phase_artifact_boundary()' "$phase" 2>/dev/null && has_function=true
+  grep -q 'spec/master.*spec.md' "$phase" 2>/dev/null && has_ownership_map=true
+  grep -q 'Violating this rule\|pipeline violation' "$phase" 2>/dev/null && has_violation_warning=true
+
+  if $has_function && $has_ownership_map && $has_violation_warning; then
+    flowai_test_pass "$id" "flowai_phase_artifact_boundary exists with ownership map"
+  else
+    printf 'FAIL %s: artifact boundary broken (function=%s ownership=%s violation=%s)\n' \
+      "$id" "$has_function" "$has_ownership_map" "$has_violation_warning" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-020 — flowai_phase_write_prompt injects artifact boundary for all phases
+# Every phase prompt composed via flowai_phase_write_prompt must include the
+# artifact boundary rule — this is the architectural invariant.
+flowai_test_s_sig_020() {
+  local id="SIG-020"
+  local scratch
+  scratch="$(mktemp -d)"
+  mkdir -p "$scratch/.flowai/launch"
+  printf '{"master":{"tool":"gemini","model":"gemini-2.5-pro"}}' > "$scratch/.flowai/config.json"
+  local role_file="$FLOWAI_HOME/src/roles/backend-engineer.md"
+  local prompt_file content
+  prompt_file="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<EOF
+source "\$FLOWAI_HOME/src/core/phase.sh"
+flowai_phase_write_prompt "plan" "$role_file" "TEST DIRECTIVE"
+EOF
+)"
+  local ok=true
+  if [[ -f "$prompt_file" ]]; then
+    content="$(cat "$prompt_file")"
+    if [[ "$content" != *"ARTIFACT BOUNDARY"* ]]; then
+      printf 'FAIL %s: prompt missing ARTIFACT BOUNDARY block\n' "$id" >&2
+      ok=false
+    fi
+    if [[ "$content" != *"Violating this rule"* ]] && [[ "$content" != *"pipeline violation"* ]]; then
+      printf 'FAIL %s: prompt missing pipeline violation warning\n' "$id" >&2
+      ok=false
+    fi
+    if [[ "$content" != *"plan"* ]]; then
+      printf 'FAIL %s: prompt does not contain phase name\n' "$id" >&2
+      ok=false
+    fi
+  else
+    printf 'FAIL %s: prompt file not created\n' "$id" >&2
+    ok=false
+  fi
+  if $ok; then
+    flowai_test_pass "$id" "flowai_phase_write_prompt injects artifact boundary"
+  else
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+  rm -rf "$scratch"
+}
+
+# SIG-021 — Pipeline Coordination preamble includes artifact ownership rule
+# The skills.sh preamble must enforce artifact ownership for ALL agents.
+flowai_test_s_sig_021() {
+  local id="SIG-021"
+  local skills="$FLOWAI_HOME/src/core/skills.sh"
+
+  local has_ownership has_only_create has_violation
+  has_ownership=false
+  has_only_create=false
+  has_violation=false
+
+  grep -q 'FILE CREATION\|Artifacts & Ownership' "$skills" 2>/dev/null && has_ownership=true
+  grep -q 'ONLY write to the OUTPUT FILE\|ONLY create or modify' "$skills" 2>/dev/null && has_only_create=true
+  grep -q 'PROHIBITED file patterns\|pipeline violation' "$skills" 2>/dev/null && has_violation=true
+
+  if $has_ownership && $has_only_create && $has_violation; then
+    flowai_test_pass "$id" "Pipeline Coordination includes artifact ownership enforcement"
+  else
+    printf 'FAIL %s: skills.sh artifact ownership missing (section=%s only_create=%s violation=%s)\n' \
+      "$id" "$has_ownership" "$has_only_create" "$has_violation" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-022 — Master post-QA review prompt prohibits file creation
+# Master's oneshot review must be verbal only — no artifact creation.
+flowai_test_s_sig_022() {
+  local id="SIG-022"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+
+  local has_verbal_only has_no_create_files has_boundary_call
+  has_verbal_only=false
+  has_no_create_files=false
+  has_boundary_call=false
+
+  grep -q 'VERBAL review' "$master" 2>/dev/null && has_verbal_only=true
+  grep -q 'Do NOT create any files' "$master" 2>/dev/null && has_no_create_files=true
+  grep -q 'flowai_phase_artifact_boundary.*master' "$master" 2>/dev/null && has_boundary_call=true
+
+  if $has_verbal_only && $has_no_create_files && $has_boundary_call; then
+    flowai_test_pass "$id" "Master post-QA review is verbal-only with artifact boundary"
+  else
+    printf 'FAIL %s: master.sh review file-creation guard missing (verbal=%s no_create=%s boundary=%s)\n' \
+      "$id" "$has_verbal_only" "$has_no_create_files" "$has_boundary_call" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-023 — Pipeline Coordination preamble enforces Spec-Driven Development
+# Spec.md must be declared the authoritative source of truth for all agents.
+flowai_test_s_sig_023() {
+  local id="SIG-023"
+  local skills="$FLOWAI_HOME/src/core/skills.sh"
+
+  local has_spec_authority has_source_of_truth has_acceptance_criteria has_spec_wins
+  has_spec_authority=false
+  has_source_of_truth=false
+  has_acceptance_criteria=false
+  has_spec_wins=false
+
+  grep -q 'SPEC IS TRUTH\|Specification Authority' "$skills" 2>/dev/null && has_spec_authority=true
+  grep -q 'single source of truth\|AUTHORITATIVE' "$skills" 2>/dev/null && has_source_of_truth=true
+  grep -q 'acceptance criteria' "$skills" 2>/dev/null && has_acceptance_criteria=true
+  grep -q 'spec wins' "$skills" 2>/dev/null && has_spec_wins=true
+
+  if $has_spec_authority && $has_source_of_truth && $has_acceptance_criteria && $has_spec_wins; then
+    flowai_test_pass "$id" "Pipeline Coordination enforces Spec-Driven Development"
+  else
+    printf 'FAIL %s: spec-driven enforcement missing (authority=%s truth=%s criteria=%s wins=%s)\n' \
+      "$id" "$has_spec_authority" "$has_source_of_truth" "$has_acceptance_criteria" "$has_spec_wins" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-024 — flowai_ai_run_oneshot enriches prompts with knowledge graph context
+# Oneshot calls must inject the graph block so review agents navigate efficiently.
+flowai_test_s_sig_024() {
+  local id="SIG-024"
+  local ai="$FLOWAI_HOME/src/core/ai.sh"
+
+  local has_graph_check has_enrichment has_cleanup
+  has_graph_check=false
+  has_enrichment=false
+  has_cleanup=false
+
+  grep -q 'flowai_graph_is_enabled' "$ai" 2>/dev/null && has_graph_check=true
+  grep -q 'enriched_prompt' "$ai" 2>/dev/null && has_enrichment=true
+  grep -q 'rm -f.*enriched_prompt' "$ai" 2>/dev/null && has_cleanup=true
+
+  if $has_graph_check && $has_enrichment && $has_cleanup; then
+    flowai_test_pass "$id" "flowai_ai_run_oneshot enriches with graph context"
+  else
+    printf 'FAIL %s: oneshot graph enrichment missing (graph_check=%s enrichment=%s cleanup=%s)\n' \
+      "$id" "$has_graph_check" "$has_enrichment" "$has_cleanup" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-026 — Knowledge graph context block enforces graph-first navigation
+flowai_test_s_sig_026() {
+  local id="SIG-026"
+  local graph="$FLOWAI_HOME/src/core/graph.sh"
+
+  local has_navigate has_no_blind_search has_embedded
+  has_navigate=false
+  has_no_blind_search=false
+  has_embedded=false
+
+  grep -q 'USE THIS MAP to navigate' "$graph" 2>/dev/null && has_navigate=true
+  grep -q 'Do NOT search files blindly' "$graph" 2>/dev/null && has_no_blind_search=true
+  grep -q 'report_content' "$graph" 2>/dev/null && has_embedded=true
+
+  if $has_navigate && $has_no_blind_search && $has_embedded; then
+    flowai_test_pass "$id" "Graph context block enforces navigation with embedded report content"
+  else
+    printf 'FAIL %s: graph protocol not mandatory (navigate=%s no_blind=%s embedded=%s)\n' \
+      "$id" "$has_navigate" "$has_no_blind_search" "$has_embedded" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-027 — Claude oneshot does NOT hardcode graph-only system prompt
+# The oneshot function must use a generic system prompt, not "knowledge graph extraction engine"
+flowai_test_s_sig_027() {
+  local id="SIG-027"
+  local claude="$FLOWAI_HOME/src/tools/claude.sh"
+
+  local has_generic_prompt has_no_graph_hardcode
+  has_generic_prompt=false
+  has_no_graph_hardcode=true
+
+  grep -q 'Follow the directive' "$claude" 2>/dev/null && has_generic_prompt=true
+  grep -q 'knowledge graph extraction engine' "$claude" 2>/dev/null && has_no_graph_hardcode=false
+
+  if $has_generic_prompt && $has_no_graph_hardcode; then
+    flowai_test_pass "$id" "Claude oneshot uses generic system prompt (not graph-only)"
+  else
+    printf 'FAIL %s: claude.sh oneshot broken (generic=%s no_hardcode=%s)\n' \
+      "$id" "$has_generic_prompt" "$has_no_graph_hardcode" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-028 — Pipeline Coordination HARD CONSTRAINTS are at the top of preamble
+# The most critical rules (file creation, graph first, spec is truth) must be
+# the FIRST section agents see, not buried after softer orchestration rules.
+flowai_test_s_sig_028() {
+  local id="SIG-028"
+  local skills="$FLOWAI_HOME/src/core/skills.sh"
+
+  local has_hard_constraints has_graph_first has_file_creation
+  has_hard_constraints=false
+  has_graph_first=false
+  has_file_creation=false
+
+  grep -q 'HARD CONSTRAINTS' "$skills" 2>/dev/null && has_hard_constraints=true
+  grep -q 'GRAPH FIRST' "$skills" 2>/dev/null && has_graph_first=true
+  grep -q 'FILE CREATION' "$skills" 2>/dev/null && has_file_creation=true
+
+  if $has_hard_constraints && $has_graph_first && $has_file_creation; then
+    flowai_test_pass "$id" "HARD CONSTRAINTS section at top of Pipeline Coordination"
+  else
+    printf 'FAIL %s: hard constraints missing (section=%s graph=%s file=%s)\n' \
+      "$id" "$has_hard_constraints" "$has_graph_first" "$has_file_creation" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-029 — HARD CONSTRAINTS appear BEFORE role content in composed prompt
+# The prompt builder must inject PIPELINE COORDINATION (with HARD CONSTRAINTS)
+# at the TOP of the system prompt, before the role file content. LLMs weight
+# instructions near the beginning of the context window more heavily.
+flowai_test_s_sig_029() {
+  local id="SIG-029"
+  local skills="$FLOWAI_HOME/src/core/skills.sh"
+
+  # Check that the Pipeline Coordination block is prepended (before the prompt_file content),
+  # not appended after it. The code must set prompt= with the preamble FIRST, then cat prompt_file.
+  local preamble_first=false
+  # The preamble is assigned to prompt= before the prompt_file is appended.
+  # Look for: prompt starts with the coordination block, then prompt_file is added later.
+  if grep -q 'local prompt="---.*PIPELINE COORDINATION' "$skills" 2>/dev/null; then
+    preamble_first=true
+  fi
+
+  if $preamble_first; then
+    flowai_test_pass "$id" "HARD CONSTRAINTS are FIRST in composed prompt (before role content)"
+  else
+    printf 'FAIL %s: HARD CONSTRAINTS must be at START of prompt (before role file)\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-030 — Claude tool uses --append-system-prompt for constraint reinforcement
+# The "sandwich" technique: constraints at the top of system prompt AND appended
+# at the end ensures LLMs see mandatory rules at both edges of the context window.
+flowai_test_s_sig_030() {
+  local id="SIG-030"
+  local claude_sh="$FLOWAI_HOME/src/tools/claude.sh"
+
+  local has_append has_reminder
+  has_append=false
+  has_reminder=false
+
+  grep -q '\-\-append-system-prompt' "$claude_sh" 2>/dev/null && has_append=true
+  grep -q 'CONSTRAINT_REMINDER\|MANDATORY RULES' "$claude_sh" 2>/dev/null && has_reminder=true
+
+  if $has_append && $has_reminder; then
+    flowai_test_pass "$id" "Claude tool appends constraint reminder (sandwich reinforcement)"
+  else
+    printf 'FAIL %s: Missing --append-system-prompt reinforcement (append=%s reminder=%s)\n' \
+      "$id" "$has_append" "$has_reminder" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-031 — Non-interactive -p message reinforces constraints (not generic)
+# The user message sent via -p must reference HARD CONSTRAINTS and OUTPUT FILE
+# restrictions — a vague "begin immediately" lets Claude default to its own behaviors.
+flowai_test_s_sig_031() {
+  local id="SIG-031"
+  local claude_sh="$FLOWAI_HOME/src/tools/claude.sh"
+  local gemini_sh="$FLOWAI_HOME/src/tools/gemini.sh"
+
+  local claude_ok=false gemini_ok=false
+
+  if grep -q 'HARD CONSTRAINTS.*MANDATORY\|ONLY write to the OUTPUT FILE' "$claude_sh" 2>/dev/null; then
+    claude_ok=true
+  fi
+  if grep -q 'HARD CONSTRAINTS.*MANDATORY\|ONLY write to the OUTPUT FILE' "$gemini_sh" 2>/dev/null; then
+    gemini_ok=true
+  fi
+
+  if $claude_ok && $gemini_ok; then
+    flowai_test_pass "$id" "Non-interactive -p message reinforces constraints in Claude and Gemini"
+  else
+    printf 'FAIL %s: -p message must reinforce constraints (claude=%s gemini=%s)\n' \
+      "$id" "$claude_ok" "$gemini_ok" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-032 — Claude tool applies phase-aware tool restrictions
+# The review phase must disallow Write to prevent Claude from creating files.
+# Other phases rely on prompt enforcement since Claude Code --disallowed-tools
+# doesn't support path-based patterns.
+flowai_test_s_sig_032() {
+  local id="SIG-032"
+  local claude_sh="$FLOWAI_HOME/src/tools/claude.sh"
+
+  local has_phase_check has_review_disallow has_env_var
+  has_phase_check=false
+  has_review_disallow=false
+  has_env_var=false
+
+  grep -q 'FLOWAI_CURRENT_PHASE' "$claude_sh" 2>/dev/null && has_phase_check=true
+  # review case + disallowed-tools Write can be on separate lines in the case block
+  if grep -q 'review)' "$claude_sh" 2>/dev/null && grep -q 'disallowed-tools.*Write\|disallowed.*Write' "$claude_sh" 2>/dev/null; then
+    has_review_disallow=true
+  fi
+  grep -q 'FLOWAI_CURRENT_PHASE' "$FLOWAI_HOME/src/core/ai.sh" 2>/dev/null && has_env_var=true
+
+  if $has_phase_check && $has_review_disallow && $has_env_var; then
+    flowai_test_pass "$id" "Claude tool applies phase-aware tool restrictions (review disallows Write)"
+  else
+    printf 'FAIL %s: Missing phase restrictions (check=%s review=%s env=%s)\n' \
+      "$id" "$has_phase_check" "$has_review_disallow" "$has_env_var" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-033 — Tool-agnostic project config injection in start.sh
+# start.sh must call the tool-agnostic dispatcher (flowai_ai_inject_all_tool_configs)
+# instead of hardcoding injection for a specific tool.
+flowai_test_s_sig_033() {
+  local id="SIG-033"
+  local start_sh="$FLOWAI_HOME/src/commands/start.sh"
+  local ai_sh="$FLOWAI_HOME/src/core/ai.sh"
+
+  local has_dispatcher has_graph_check has_content_fn
+  has_dispatcher=false
+  has_graph_check=false
+  has_content_fn=false
+
+  grep -q 'flowai_ai_inject_all_tool_configs' "$start_sh" 2>/dev/null && has_dispatcher=true
+  grep -q 'flowai_graph_exists\|graph_exists' "$start_sh" 2>/dev/null && has_graph_check=true
+  grep -q 'flowai_ai_project_config_content' "$ai_sh" 2>/dev/null && has_content_fn=true
+
+  if $has_dispatcher && $has_graph_check && $has_content_fn; then
+    flowai_test_pass "$id" "start.sh uses tool-agnostic dispatcher for project config injection"
+  else
+    printf 'FAIL %s: Missing tool-agnostic injection (dispatcher=%s graph=%s content=%s)\n' \
+      "$id" "$has_dispatcher" "$has_graph_check" "$has_content_fn" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-034 — All tool plugins implement _inject_project_config with markers
+# Each tool must handle its own file format/location but use the shared
+# FLOWAI:START/END markers to preserve user content.
+flowai_test_s_sig_034() {
+  local id="SIG-034"
+  local ok=true
+
+  for tool in claude gemini cursor copilot; do
+    local tool_sh="$FLOWAI_HOME/src/tools/${tool}.sh"
+    if ! grep -q "flowai_tool_${tool}_inject_project_config" "$tool_sh" 2>/dev/null; then
+      printf 'FAIL %s: %s.sh missing _inject_project_config()\n' "$id" "$tool" >&2
+      ok=false
+    fi
+    if ! grep -q 'FLOWAI:START' "$tool_sh" 2>/dev/null; then
+      printf 'FAIL %s: %s.sh missing FLOWAI:START marker\n' "$id" "$tool" >&2
+      ok=false
+    fi
+  done
+
+  if $ok; then
+    flowai_test_pass "$id" "All tool plugins implement _inject_project_config with markers"
+  else
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-035 — Interactive mode sends initial prompt to anchor agent behavior
+# Without an initial user message, Claude/Gemini open a blank session and
+# respond to whatever the user types — ignoring the pipeline directive.
+flowai_test_s_sig_035() {
+  local id="SIG-035"
+
+  local claude_ok=false gemini_ok=false
+  # Claude: check for initial prompt in interactive path (not -p)
+  if grep -q 'STAGED WORKFLOW.*step 1\|PIPELINE DIRECTIVE.*HARD CONSTRAINTS' \
+    "$FLOWAI_HOME/src/tools/claude.sh" 2>/dev/null; then
+    claude_ok=true
+  fi
+  # Gemini: check for initial prompt in interactive path
+  if grep -q 'STAGED WORKFLOW.*step 1\|PIPELINE DIRECTIVE.*HARD CONSTRAINTS' \
+    "$FLOWAI_HOME/src/tools/gemini.sh" 2>/dev/null; then
+    gemini_ok=true
+  fi
+
+  if $claude_ok && $gemini_ok; then
+    flowai_test_pass "$id" "Interactive mode sends initial prompt to anchor agent behavior"
+  else
+    printf 'FAIL %s: Missing initial prompt (claude=%s gemini=%s)\n' \
+      "$id" "$claude_ok" "$gemini_ok" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# SIG-025 — All phase directives reference spec.md in CONTEXT
+# Every downstream phase must read spec.md as an upstream artifact.
+flowai_test_s_sig_025() {
+  local id="SIG-025"
+  local ok=true
+
+  for phase_file in plan.sh tasks.sh implement.sh review.sh; do
+    local f="$FLOWAI_HOME/src/phases/$phase_file"
+    if [[ ! -f "$f" ]]; then
+      printf 'FAIL %s: %s not found\n' "$id" "$phase_file" >&2
+      ok=false
+      continue
+    fi
+    if ! grep -q 'spec.md' "$f" 2>/dev/null; then
+      printf 'FAIL %s: %s does not reference spec.md\n' "$id" "$phase_file" >&2
+      ok=false
+    fi
+  done
+
+  if $ok; then
+    flowai_test_pass "$id" "All downstream phases reference spec.md in CONTEXT"
+  else
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }

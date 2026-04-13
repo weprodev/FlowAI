@@ -5,6 +5,27 @@
 #   flowai_tool_cursor_run           — used by: ai.sh dispatcher
 # shellcheck shell=bash
 
+# Inject FlowAI rules into .cursorrules for Cursor AI subagent propagation.
+# Cursor reads .cursorrules from the project root for project-level instructions.
+# Args: $1=content (tool-agnostic rules from flowai_ai_project_config_content)
+flowai_tool_cursor_inject_project_config() {
+  local content="$1"
+  local marker_start="<!-- FLOWAI:START -->"
+  local marker_end="<!-- FLOWAI:END -->"
+  local cursor_rules="$PWD/.cursorrules"
+  local block="${marker_start}
+${content}
+${marker_end}"
+
+  if [[ -f "$cursor_rules" ]]; then
+    local cleaned
+    cleaned="$(sed "/${marker_start}/,/${marker_end}/d" "$cursor_rules")"
+    printf '%s\n\n%s\n' "$cleaned" "$block" > "$cursor_rules"
+  else
+    printf '%s\n' "$block" > "$cursor_rules"
+  fi
+}
+
 flowai_tool_cursor_print_models() {
   # _flowai_print_tool_block is dynamically provided by the caller (models.sh)
   _flowai_print_tool_block "cursor"

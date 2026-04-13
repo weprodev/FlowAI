@@ -269,6 +269,24 @@ rm -f "$FLOWAI_DIR"/gemini_sys_* 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals/tasks.dispute_round" 2>/dev/null || true
 rm -f "$FLOWAI_DIR/gemini_slow_auth_hint_shown" 2>/dev/null || true
 
+# ── Inject tool project configs for subagent propagation ────────────────────
+# Most AI tools' --system-prompt or equivalent does NOT propagate to subagents.
+# The ONLY way to ensure subagents follow graph-first navigation and artifact
+# rules is via tool-specific project config files:
+#   Claude  → .claude/CLAUDE.md
+#   Cursor  → .cursorrules
+#   Copilot → .github/copilot-instructions.md
+#   Gemini  → GEMINI.md
+#
+# Each tool plugin implements flowai_tool_<name>_inject_project_config().
+# The content is tool-agnostic (shared via flowai_ai_project_config_content);
+# only the file format/location is tool-specific. Content is wrapped in
+# <!-- FLOWAI:START/END --> markers to preserve user content.
+if flowai_graph_is_enabled && flowai_graph_exists; then
+  flowai_ai_inject_all_tool_configs
+  log_info "Injected graph navigation rules into tool project configs (subagent propagation)"
+fi
+
 # Initialize the shared event log for cross-agent visibility
 source "$FLOWAI_HOME/src/core/eventlog.sh"
 flowai_event_reset

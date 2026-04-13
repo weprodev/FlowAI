@@ -23,6 +23,41 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+# ── Ensure prerequisites needed by `flowai start` are available ──────────────
+_init_missing_deps=()
+for _dep in tmux gum; do
+  command -v "$_dep" >/dev/null 2>&1 || _init_missing_deps+=("$_dep")
+done
+
+if [[ ${#_init_missing_deps[@]} -gt 0 ]]; then
+  if [[ -t 0 ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]] && command -v brew >/dev/null 2>&1; then
+    log_warn "Missing dependencies required by 'flowai start': ${_init_missing_deps[*]}"
+    read -r -p "Install via Homebrew now? [Y/n]: " _ans_deps
+    if [[ ! "$_ans_deps" =~ ^[nN] ]]; then
+      for _dep in "${_init_missing_deps[@]}"; do
+        log_info "Installing $_dep..."
+        if brew install "$_dep"; then
+          log_success "$_dep installed."
+        else
+          log_error "Failed to install $_dep. Install manually: $(flowai_os_install_hint "$_dep")"
+          exit 1
+        fi
+      done
+    else
+      log_warn "Skipped dependency install. Before running 'flowai start', install:"
+      for _dep in "${_init_missing_deps[@]}"; do
+        printf '  %s\n' "$(flowai_os_install_hint "$_dep")"
+      done
+    fi
+  else
+    log_warn "Missing dependencies required by 'flowai start': ${_init_missing_deps[*]}"
+    log_info "Install before running 'flowai start':"
+    for _dep in "${_init_missing_deps[@]}"; do
+      printf '  %s\n' "$(flowai_os_install_hint "$_dep")"
+    done
+  fi
+fi
+
 log_info "Initializing FlowAI in $PWD..."
 
 FLOWAI_DIR="$PWD/.flowai"

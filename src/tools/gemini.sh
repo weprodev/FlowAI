@@ -6,6 +6,27 @@ source "$FLOWAI_HOME/src/core/debug_session.sh"
 source "$FLOWAI_HOME/src/core/log.sh"
 
 # One-time user-visible hint: Google Gemini CLI often blocks 1–3 min on first auth per session.
+# Inject FlowAI rules into GEMINI.md for Gemini CLI subagent propagation.
+# Gemini CLI reads GEMINI.md from the project root for project-level instructions.
+# Args: $1=content (tool-agnostic rules from flowai_ai_project_config_content)
+flowai_tool_gemini_inject_project_config() {
+  local content="$1"
+  local marker_start="<!-- FLOWAI:START -->"
+  local marker_end="<!-- FLOWAI:END -->"
+  local gemini_md="$PWD/GEMINI.md"
+  local block="${marker_start}
+${content}
+${marker_end}"
+
+  if [[ -f "$gemini_md" ]]; then
+    local cleaned
+    cleaned="$(sed "/${marker_start}/,/${marker_end}/d" "$gemini_md")"
+    printf '%s\n\n%s\n' "$cleaned" "$block" > "$gemini_md"
+  else
+    printf '%s\n' "$block" > "$gemini_md"
+  fi
+}
+
 _flowai_gemini_slow_auth_hint_once() {
   [[ "${FLOWAI_GEMINI_AUTH_HINT:-1}" == "0" ]] && return 0
   local hint="${FLOWAI_DIR:-$PWD/.flowai}/gemini_slow_auth_hint_shown"
@@ -59,7 +80,10 @@ flowai_tool_gemini_run() {
     local _g0 _g1 _gw _sz
     _sz="$(wc -c < "$tmp_sys" | tr -d ' ')"
     _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
-    GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" 2> >(_flowai_gemini_filter_executor_noise >&2)
+    # Send initial prompt to anchor Gemini to the pipeline workflow (same pattern as Claude).
+    GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
+      "Read your PIPELINE DIRECTIVE and HARD CONSTRAINTS in the system prompt. You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as written — begin with step 1 now. Do NOT deviate from the directive." \
+      2> >(_flowai_gemini_filter_executor_noise >&2)
     local ext_code=$?
     _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
     _gw=$((_g1 - _g0))
@@ -83,7 +107,7 @@ flowai_tool_gemini_run() {
   _sz="$(wc -c < "$tmp_sys" | tr -d ' ')"
   _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
-    "Execute the pipeline directive in your system prompt. Begin immediately." \
+    "Execute the PIPELINE DIRECTIVE in your system prompt. HARD CONSTRAINTS are MANDATORY — you may ONLY write to the OUTPUT FILE specified in the directive. Do NOT create any other files. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE searching files. Begin immediately." \
     < /dev/null 2> >(_flowai_gemini_filter_executor_noise >&2) || _rc=$?
   _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   _gw=$((_g1 - _g0))

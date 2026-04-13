@@ -39,64 +39,61 @@ fi
 SPEC_FILE="$FEATURE_DIR/spec.md"
 APPROVAL_MARKER="${FLOWAI_DIR}/signals/spec.user_approved"
 
-# Master ↔ Tasks two-round review (opinion → Tasks AGREE/CONTEST → Master final VERDICT)
-readonly _MASTER_TASKS_OP_R1="${FLOWAI_DIR}/signals/tasks.master_opinion_r1.md"
-readonly _MASTER_TASKS_DISP="${FLOWAI_DIR}/signals/tasks.task_disposition.md"
-readonly _MASTER_TASKS_DISP_DONE="${FLOWAI_DIR}/signals/tasks.task_disposition_done"
-readonly _MASTER_TASKS_R2_DONE="${FLOWAI_DIR}/signals/tasks.r2_complete"
+# Master → Tasks: single-round binding review (VERDICT in one AI call).
+# Previously used a two-round protocol (R1 opinion → Tasks AGREE/CONTEST → R2 VERDICT)
+# which added 2 extra AI calls (~2-4 min each) with negligible practical value.
 readonly _MASTER_TASKS_DISPUTE_ROUND="${FLOWAI_DIR}/signals/tasks.dispute_round"
+readonly _MASTER_TASKS_VERDICT_DONE="${FLOWAI_DIR}/signals/tasks.verdict_complete"
 
 _master_tasks_clear_review_state() {
-  rm -f "$_MASTER_TASKS_OP_R1" "$_MASTER_TASKS_DISP" "$_MASTER_TASKS_DISP_DONE" "$_MASTER_TASKS_R2_DONE" 2>/dev/null || true
+  rm -f "$_MASTER_TASKS_VERDICT_DONE" 2>/dev/null || true
 }
 
-# Run after Tasks posts disposition; emits final approve or rejection_context.
-_master_tasks_run_round2_final() {
-  [[ -f "$_MASTER_TASKS_DISP_DONE" ]] || return 0
-  [[ -f "$_MASTER_TASKS_R2_DONE" ]] && return 0
-  # Use master_approved, not tasks.ready — stale tasks.ready must not skip binding verdict.
+# Single-round binding review: Master reads spec+plan+tasks → issues VERDICT.
+_master_tasks_run_verdict() {
+  [[ -f "$_MASTER_TASKS_VERDICT_DONE" ]] && return 0
   [[ -f "${FLOWAI_DIR}/signals/tasks.master_approved.ready" ]] && return 0
   [[ -f "$FEATURE_DIR/tasks.md" ]] && [[ -s "$FEATURE_DIR/tasks.md" ]] || return 0
-  [[ -f "$_MASTER_TASKS_OP_R1" ]] || return 0
-  [[ -f "$_MASTER_TASKS_DISP" ]] || return 0
 
   flowai_phase_focus "master" 2>/dev/null || true
-  log_header "📋 Master Agent: Final Tasks Verdict (round 2)"
-  log_info "Reviewing Tasks agent disposition and issuing binding VERDICT..."
+  log_header "📋 Master Agent: Reviewing Tasks Breakdown"
+  log_info "Single-round binding review — issuing VERDICT..."
 
-  local r2_prompt
-  r2_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_tasks_r2_XXXXXX")"
+  local verdict_prompt
+  verdict_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_tasks_verdict_XXXXXX")"
   {
-    printf '%s\n' 'You are the Master Agent. Round 1 is complete; the Tasks agent responded.'
-    printf '%s\n' 'You must issue exactly ONE binding verdict on whether tasks.md may proceed.'
-    printf '\n%s\n' '--- Your round-1 opinion (non-binding) ---'
-    cat "$_MASTER_TASKS_OP_R1"
-    printf '\n%s\n' '--- Tasks agent disposition (AGREE or CONTEST) ---'
-    cat "$_MASTER_TASKS_DISP"
-    printf '%s\n' '--- spec.md ---'
+    printf '%s\n' 'You are the Master Agent reviewing a task breakdown.'
+    printf '%s\n' 'Issue exactly ONE binding verdict on whether tasks.md may proceed to implementation.'
+    printf '\n%s\n' '--- spec.md ---'
     cat "$FEATURE_DIR/spec.md" 2>/dev/null || printf '(not found)\n'
     printf '\n%s\n' '--- plan.md ---'
     cat "$FEATURE_DIR/plan.md" 2>/dev/null || printf '(not found)\n'
     printf '\n%s\n' '--- tasks.md ---'
     cat "$FEATURE_DIR/tasks.md"
     printf '\n%s\n' '---'
+    printf '%s\n' 'Review checklist:'
+    printf '%s\n' '  - All spec acceptance criteria covered by at least one task'
+    printf '%s\n' '  - Tasks align with plan architecture decisions'
+    printf '%s\n' '  - Tasks are atomic (1-3 files each, clear deliverable)'
+    printf '%s\n' '  - No scope creep beyond spec.md'
     printf '%s\n' 'Rules:'
-    printf '%s\n' '- If the Tasks agent CONTESTED with a valid reason tied to spec.md or plan.md, you may REJECT.'
-    printf '%s\n' '- If you agree the breakdown is acceptable (including after addressing round-1 concerns), APPROVE.'
-    printf '%s\n' '- Avoid repeated REJECT if tasks.md already satisfies spec/plan — prefer APPROVED with a short risk note instead of deadlock.'
+    printf '%s\n' '- APPROVE if tasks.md satisfactorily covers spec+plan — minor imperfections are OK.'
+    printf '%s\n' '- REJECT only for genuine gaps: missing acceptance criteria, spec violations, or tasks so vague they cannot be implemented.'
+    printf '%s\n' '- Avoid perfectionism — prefer APPROVED with a short note over REJECTED for style preferences.'
     printf '%s\n' 'Your LAST LINE must be exactly one of:'
     printf '%s\n' '  VERDICT: APPROVED'
     printf '%s\n' '  VERDICT: REJECTED — <one-line reason>'
     printf '%s\n' 'Do not add anything after the verdict line.'
-  } > "$r2_prompt"
+    printf '%s\n' 'This is a VERBAL verdict — do NOT create any files.'
+    flowai_phase_artifact_boundary "master"
+  } > "$verdict_prompt"
 
-  log_info "Calling Gemini for binding tasks verdict (may take a few minutes on cold auth)..."
   local tasks_verdict
-  tasks_verdict="$(flowai_ai_run_oneshot "master" "$r2_prompt" || echo 'VERDICT: REJECTED — AI review failed (tool error)')"
-  rm -f "$r2_prompt"
+  tasks_verdict="$(flowai_ai_run_oneshot "master" "$verdict_prompt" || echo 'VERDICT: REJECTED — AI review failed (tool error)')"
+  rm -f "$verdict_prompt"
 
   printf '\n'
-  log_info "── Master AI Final Review ──"
+  log_info "── Master AI — Tasks Review ──"
   printf '%s\n' "$tasks_verdict"
   printf '\n'
 
@@ -112,8 +109,8 @@ _master_tasks_run_round2_final() {
   if $is_approved; then
     rm -f "$_MASTER_TASKS_DISPUTE_ROUND" 2>/dev/null || true
     touch "${FLOWAI_DIR}/signals/tasks.master_approved.ready"
-    flowai_event_emit "master" "tasks_reviewed" "Master AI approved tasks (round 2 final)"
-    log_success "✅ Tasks APPROVED (final). Implementation phase will begin shortly..."
+    flowai_event_emit "master" "tasks_reviewed" "Master AI approved tasks"
+    log_success "✅ Tasks APPROVED. Implementation phase will begin shortly..."
   else
     local max_disputes dispute_n reject_reason
     max_disputes="${FLOWAI_TASKS_MAX_DISPUTE_ROUNDS:-3}"
@@ -125,7 +122,7 @@ _master_tasks_run_round2_final() {
     dispute_n=$((dispute_n + 1))
 
     if [[ "$dispute_n" -ge "$max_disputes" ]]; then
-      log_warn "Tasks dispute limit reached ($max_disputes consecutive binding REJECTs). Master escalating — approving tasks.md so Implement can proceed."
+      log_warn "Tasks dispute limit reached ($max_disputes consecutive REJECTs). Master escalating — approving tasks.md so Implement can proceed."
       flowai_event_emit "master" "tasks_escalated" "Master forced tasks approval after $max_disputes rejections"
       {
         printf '\n\n---\n\n## FlowAI — Master escalation\n\n'
@@ -138,13 +135,13 @@ _master_tasks_run_round2_final() {
     else
       printf '%s\n' "$dispute_n" > "$_MASTER_TASKS_DISPUTE_ROUND"
       reject_reason="$(printf '%s' "$tasks_verdict" | grep -i 'VERDICT:.*REJECTED' | head -1 || printf '%s' "$tasks_verdict" | tail -3)"
-      log_warn "❌ Tasks REJECTED (final, round $dispute_n/$max_disputes): $reject_reason"
+      log_warn "❌ Tasks REJECTED ($dispute_n/$max_disputes): $reject_reason"
       log_info "Sending revision request back to Tasks agent..."
       flowai_event_emit "master" "tasks_revision_needed" "$reject_reason"
       printf '%s\n' "$reject_reason" > "${FLOWAI_DIR}/signals/tasks.rejection_context" 2>/dev/null || true
     fi
   fi
-  touch "$_MASTER_TASKS_R2_DONE"
+  touch "$_MASTER_TASKS_VERDICT_DONE"
 }
 
 # Resolve constitution file for memory learning
@@ -454,52 +451,14 @@ _master_check_events() {
     log_info "Or re-run the phase:  flowai run tasks"
   fi
 
-  # ── Tasks produced → Master round 1 (opinion) → Tasks disposition → Master round 2 (VERDICT) ──
+  # ── Tasks produced → Master single-round binding VERDICT ──
   local tasks_ready
   tasks_ready="$(printf '%s' "$new_events" | grep '"phase":"tasks"' | grep '"event":"tasks_produced"' || true)"
-  # Do not gate on tasks.ready — a stale file from an earlier run caused Master to skip
-  # review while Tasks waited forever. tasks.sh clears tasks.ready before each tasks_produced.
   if [[ -n "$tasks_ready" ]]; then
     printf '\n'
-    flowai_phase_focus "master" 2>/dev/null || true
-    log_header "📋 Master Agent: Reviewing Tasks Breakdown"
-    log_info "⚡ Received tasks_produced — round 1: preliminary opinion (Tasks agent responds next)."
-    log_info "Reading spec.md, plan.md, and tasks.md..."
     if [[ -f "$FEATURE_DIR/tasks.md" ]] && [[ -s "$FEATURE_DIR/tasks.md" ]]; then
       _master_tasks_clear_review_state
-      local tasks_r1_prompt
-      tasks_r1_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_tasks_r1_XXXXXX")"
-      {
-        printf '%s\n' 'You are the Master Agent reviewing a task breakdown (ROUND 1 — not binding).'
-        printf '%s\n' 'Give a concise preliminary opinion: strengths, gaps, and risks vs spec.md and plan.md.'
-        printf '%s\n' 'Do NOT output VERDICT in this round. The Tasks agent will AGREE or CONTEST your opinion next.'
-        printf '%s\n' 'Then you will issue a single binding VERDICT in round 2.'
-        printf '\n%s\n' '--- spec.md ---'
-        cat "$FEATURE_DIR/spec.md" 2>/dev/null || printf '(not found)\n'
-        printf '\n%s\n' '--- plan.md ---'
-        cat "$FEATURE_DIR/plan.md" 2>/dev/null || printf '(not found)\n'
-        printf '\n%s\n' '--- tasks.md ---'
-        cat "$FEATURE_DIR/tasks.md"
-        printf '\n%s\n' '---'
-        printf '%s\n' 'Check: coverage of acceptance criteria, alignment with plan, task atomicity.'
-        printf '%s\n' 'End your reply with a single line exactly: ROUND1_DONE'
-      } > "$tasks_r1_prompt"
-
-      log_info "⏳ Round 1 — Master opinion (non-final; Gemini may take minutes on cold auth)..."
-      printf '\n'
-
-      local tasks_r1_out
-      tasks_r1_out="$(flowai_ai_run_oneshot "master" "$tasks_r1_prompt" || printf '%s\n' 'ROUND1_DONE')"
-      rm -f "$tasks_r1_prompt"
-      printf '%s\n' "$tasks_r1_out" > "$_MASTER_TASKS_OP_R1"
-
-      printf '\n'
-      log_info "── Master AI — round 1 opinion ──"
-      printf '%s\n' "$tasks_r1_out"
-      printf '\n'
-
-      flowai_event_emit "master" "tasks_r1_opinion_ready" "Master posted round-1 tasks opinion — awaiting Tasks disposition"
-      log_info "👉 Tasks agent: respond with AGREE or CONTEST (valid reason). Master will issue final VERDICT next."
+      _master_tasks_run_verdict
     else
       log_warn "tasks.md not found or empty — waiting for Tasks agent to produce it."
     fi
@@ -530,11 +489,15 @@ _master_check_events() {
       printf '  plan.md:  %s\n' "$FEATURE_DIR/plan.md"
       printf '  tasks.md:  %s\n' "$FEATURE_DIR/tasks.md"
       printf '\nReview the code changes (conceptually: git diff, tests/linters as appropriate).\n'
-      printf '\n--- [REQUIRED OUTPUT SHAPE — single response] ---\n'
-      printf '1) ## Master — review plan (bullets: checks vs spec/plan/tasks)\n'
+      printf '\nIMPORTANT: This is a VERBAL review only. Do NOT create any files.\n'
+      printf 'Do NOT create plan files, review documents, or any other artifacts.\n'
+      printf 'Output your review directly in the conversation.\n'
+      printf '\n--- [REQUIRED OUTPUT SHAPE — single response, in conversation only] ---\n'
+      printf '1) ## Master — review checklist (bullets: checks vs spec/plan/tasks)\n'
       printf '2) ## Master — findings (Spec compliance | Plan alignment | Tasks | Quality | Risks)\n'
       printf '3) Short recommendation: ready for human sign-off or list gaps.\n'
-      printf '\nProduce the full review in this one response.\n---\n'
+      printf '\nProduce the full review in this one response. Do NOT write it to a file.\n---\n'
+      flowai_phase_artifact_boundary "master"
     } > "$review_prompt"
 
     flowai_event_emit "master" "reviewing_impl" "Master final sign-off after QA"
@@ -602,6 +565,7 @@ _master_check_events() {
       printf 'rules (not task-specific). If you detect one, ask the user whether to\n'
       printf 'persist it to project memory at: %s\n' "$MEMORY_FILE"
       printf 'Only write to that file if the user explicitly approves.\n---\n'
+      flowai_phase_artifact_boundary "master"
     } > "$context_prompt"
 
     flowai_event_emit "master" "re-engaged" "Responding to $rej_phase rejection"
@@ -621,13 +585,6 @@ _master_check_events() {
     fi
   fi
 
-  # Disposition just landed — run binding verdict in the same tick (do not wait for poll sleep).
-  local _tasks_disp_evt
-  _tasks_disp_evt="$(printf '%s' "$new_events" | grep '"phase":"tasks"' | grep '"event":"task_disposition_submitted"' || true)"
-  if [[ -n "$_tasks_disp_evt" ]]; then
-    _master_tasks_run_round2_final
-  fi
-
   return 0
 }
 
@@ -636,7 +593,6 @@ while [[ "$_master_interrupted" -eq 0 ]]; do
   if ! _master_check_events; then
     break  # Pipeline complete
   fi
-  _master_tasks_run_round2_final
   sleep "${FLOWAI_MASTER_POLL_SEC:-2}"
 done
 

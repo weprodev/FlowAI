@@ -199,49 +199,45 @@ Two sub-scenarios:
 
 ---
 
-### 3. Tasks (Breakdown) — two-round Master review, then Master-approved
+### 3. Tasks (Breakdown) — single-round Master review, then Master-approved
 
 The Tasks Agent breaks the plan into implementable tasks. **The Master Agent** runs a
-**two-round** review (velocity + fairness): round 1 is a non-binding opinion; the Tasks
-agent **AGREE**s or **CONTEST**s with a valid reason; round 2 is the **binding VERDICT**.
-No separate human approval gate for tasks.
+**single-round binding review** — one AI call that issues a `VERDICT: APPROVED` or
+`VERDICT: REJECTED`. No separate human approval gate for tasks.
 
 ```mermaid
 flowchart TD
-    Wait["Waits for plan.ready"]
-    AI["AI reads spec.md + plan.md<br/>→ produces tasks.md → exits"]
-    Event["Tasks emits tasks_produced"]
-    R1["👑 Master round 1: opinion → tasks.master_opinion_r1.md"]
-    Disp["Tasks agent: DISPOSITION AGREE or CONTEST → disposition files"]
-    R2["👑 Master round 2: binding VERDICT"]
-    Approve["✅ VERDICT: APPROVED"]
-    Reject["❌ VERDICT: REJECTED"]
-    Signal["tasks.master_approved.ready → tasks.ready"]
-    Revise["tasks.rejection_context → Tasks revises"]
+    Wait[“Waits for plan.ready”]
+    AI[“AI reads spec.md + plan.md<br/>→ produces tasks.md → exits”]
+    Event[“Tasks emits tasks_produced”]
+    Verdict[“👑 Master single-round<br/>binding VERDICT”]
+    Approve[“✅ VERDICT: APPROVED”]
+    Reject[“❌ VERDICT: REJECTED”]
+    Signal[“tasks.master_approved.ready → tasks.ready”]
+    Revise[“tasks.rejection_context → Tasks revises”]
 
-    Wait --> AI --> Event --> R1 --> Disp --> R2
-    R2 --> Approve --> Signal
-    R2 --> Reject --> Revise --> AI
+    Wait --> AI --> Event --> Verdict
+    Verdict --> Approve --> Signal
+    Verdict --> Reject --> Revise --> AI
 ```
 
-**Round 1 — Master opinion (non-final):**
+**How it works:**
 
-1. Master detects `tasks_produced`, clears prior review artifacts, runs a one-shot AI call that **must not** emit `VERDICT`; output is saved to `tasks.master_opinion_r1.md`.
+1. Master detects `tasks_produced`, runs a single one-shot AI call with spec+plan+tasks.
+2. The AI reviews coverage, alignment, and atomicity, then issues a binding `VERDICT`.
+3. On **APPROVED**: Master creates `tasks.master_approved.ready` → Tasks touches `tasks.ready`, emits `phase_complete`, and the **Tasks** pane/window may **auto-close** (same mechanism as Plan) so Master + Implement keep space.
+4. On **REJECTED**: Master writes `tasks.rejection_context` with the reason; Tasks revises and emits a new `tasks_produced` — loop until approval.
 
-**Tasks disposition:**
-
-2. Tasks phase sees the opinion file and runs a one-shot call: last line `DISPOSITION: AGREE — …` or `DISPOSITION: CONTEST — …` (contest must cite spec/plan). Writes `tasks.task_disposition.md` and touches `tasks.task_disposition_done`.
-
-**Round 2 — Master final VERDICT:**
-
-3. Master runs a one-shot with round-1 opinion, disposition, and spec/plan/tasks. Last line: `VERDICT: APPROVED` or `VERDICT: REJECTED — …`.
-4. On **APPROVED**: Master creates `tasks.master_approved.ready` → Tasks touches `tasks.ready`, emits `phase_complete`, and the **Tasks** pane/window may **auto-close** (same mechanism as Plan) so Master + Implement keep space.
-5. On **REJECTED**: Master writes `tasks.rejection_context`; Tasks revises and emits a new `tasks_produced` — loop until approval.
-
-**Escalation (deadlock breaker):** If Master issues **REJECT** on round 2 repeatedly, FlowAI counts consecutive rejections in `tasks.dispute_round`. After **`FLOWAI_TASKS_MAX_DISPUTE_ROUNDS`** (default **3**) such verdicts, Master **force-approves** tasks: it touches `tasks.master_approved.ready`, appends a short “Master escalation” section to `tasks.md`, and emits `tasks_escalated` so Implement can proceed. Set the env var to raise or lower the threshold.
+**Escalation (deadlock breaker):** If Master issues **REJECT** repeatedly, FlowAI counts consecutive rejections in `tasks.dispute_round`. After **`FLOWAI_TASKS_MAX_DISPUTE_ROUNDS`** (default **3**) such verdicts, Master **force-approves** tasks: it touches `tasks.master_approved.ready`, appends a short “Master escalation” section to `tasks.md`, and emits `tasks_escalated` so Implement can proceed. Set the env var to raise or lower the threshold.
 
 If you **interrupt** the Tasks phase (e.g. Ctrl+C), run `touch .flowai/signals/tasks.master_approved.ready` after fixing `tasks.md`, or run `flowai run tasks` again; Master logs the same recovery hint when it sees a `phase_aborted` event.
 
+> **Why single-round?** The previous two-round protocol (R1 opinion → Tasks
+> AGREE/CONTEST → R2 VERDICT) added 2 extra AI calls (~2-4 min each) with
+> negligible practical value — the Tasks agent almost always agreed, and
+> Master overrode contests anyway. A single binding review is faster and
+> equally effective.
+>
 > **Why no human gate?** The user already approved the spec and plan, and Master
 > performs a genuine AI semantic review — not just an existence check. This keeps
 > velocity high while ensuring alignment.
@@ -290,7 +286,7 @@ flowchart TD
 
 **What happens on ✅ Master final sign-off → ✅ User Approve:**
 
-1. After QA has approved (Review emits `phase_complete`), Master runs a **non-interactive** Gemini oneshot with the post-QA prompt (required headings: **`## Master — review plan`**, **`## Master — findings`**).
+1. After QA has approved (Review emits `phase_complete`), Master runs a **non-interactive** Gemini oneshot with the post-QA prompt (required headings: **`## Master — review checklist`**, **`## Master — findings`**). This is a **verbal review only** — Master does NOT create any files during this step.
 2. The **terminal menu** (`flowai_phase_verify_artifact`) asks you to approve the implementation; on **Approve**, FlowAI touches `impl.ready`.
 3. Impl Agent detects `impl.ready` → shuts down cleanly
 4. Focus switches to the Implement pane (so you see the phase exit)
@@ -388,11 +384,8 @@ phase blocks on its upstream signal before starting.
 | `spec.ready`                  | Master (after user approves spec in REPL)                    | Plan phase                                |
 | `plan.ready`                  | Plan phase (after user approves `plan.md` via gum gate)      | Tasks phase                               |
 | `tasks.ready`                 | Tasks phase (after **Master Agent** AI review approves)      | Implement phase                           |
-| `tasks.master_approved.ready` | Master Agent (round-2 binding VERDICT APPROVED)               | Tasks phase (poll)                      |
-| `tasks.master_opinion_r1.md`  | Master Agent (round-1 opinion text)                           | Tasks phase (disposition prompt)         |
-| `tasks.task_disposition.md`   | Tasks phase (AGREE/CONTEST response)                          | Master Agent (round-2 prompt)            |
-| `tasks.task_disposition_done` | Tasks phase (touch after disposition)                         | Master Agent (triggers round 2)          |
-| `tasks.r2_complete`           | Master Agent (after round-2 VERDICT processed)                | Internal (idempotency)                   |
+| `tasks.master_approved.ready` | Master Agent (binding VERDICT APPROVED)                       | Tasks phase (poll)                      |
+| `tasks.verdict_complete`      | Master Agent (after VERDICT processed)                        | Internal (idempotency)                   |
 | `impl.code_complete.ready`    | Implement (when implementation output is ready for QA)      | Review phase                              |
 | `impl.ready`                  | Master (after QA + Master final sign-off + user approval)    | Implement phase (exit)                    |
 | `spec.user_approved`          | AI agent (when user says "approved" in REPL)                 | Master watcher                            |
@@ -434,6 +427,20 @@ Most approval signals are created by `flowai_phase_verify_artifact()` in
 when code is ready for QA so Review does not block on `impl.ready` (which is only
 created after QA and Master final sign-off).
 
+**Approval gate context:** Before the approval menu appears, FlowAI displays
+a phase-specific context block (inspired by
+[spec-kit](https://github.com/github/spec-kit) patterns) so the user knows
+exactly what they are approving:
+
+| Phase | Context shown |
+|-------|---------------|
+| **Plan** | Artifact path, what "approve" means |
+| **Review / Impl** | Git diff stats (files changed), task completion (X/Y, percentage), incomplete task warnings, what "approve" means |
+| **Spec** | Artifact path, what "approve" means |
+
+This replaces the previous generic "Human checkpoint" message that gave the user
+no visibility into what changed or what they were signing off on.
+
 ### 2. Artifact Files (`specs/<branch>/*.md`)
 
 Phases communicate data by writing to and reading from shared artifact files in
@@ -444,6 +451,18 @@ the feature directory.
 | `spec.md`  | Master     | Plan, Tasks, Impl, Review |
 | `plan.md`  | Plan       | Tasks, Impl, Review       |
 | `tasks.md` | Tasks      | Impl, Review              |
+
+**Artifact ownership is exclusive.** Each phase may ONLY create or modify its
+own artifact. A phase must never create files that belong to another phase
+(e.g., Master must never create `plan.md`, Plan must never create `tasks.md`).
+This boundary is enforced at the framework level in three places:
+
+1. `flowai_phase_artifact_boundary()` in `src/core/phase.sh` — appended to every
+   phase prompt via `flowai_phase_write_prompt()`
+2. The Pipeline Coordination preamble in `src/core/skills.sh` — injected into
+   every agent prompt regardless of role, skill, or tool
+3. Manually-built oneshot prompts (Master's review passes) include the boundary
+   rule and explicit "do NOT create any files" instructions
 
 Each phase script's `DIRECTIVE` variable tells the AI agent:
 
@@ -514,18 +533,37 @@ into every agent's prompt** as a `[FLOWAI KNOWLEDGE GRAPH]` block.
 | Machine Graph | `.flowai/wiki/graph.json`      | Nodes, edges, provenance — for multi-hop reasoning |
 | Index         | `.flowai/wiki/index.md`        | Full catalog of wiki pages with one-line summaries |
 
-**How agents use it:**
+**How agents MUST use it (mandatory protocol):**
 
 ```
-1. Read GRAPH_REPORT.md before searching any files
+1. BEFORE any file search: READ GRAPH_REPORT.md — do NOT use find/grep/search
+   tools until you have consulted the graph
 2. Use index.md to find the exact wiki page for any concept
 3. Use graph.json for multi-hop reasoning (dependencies, call chains)
-4. Only read raw source files when the graph points to a specific location
+4. ONLY read raw source files when the graph points to a specific location
+5. Do NOT explore the codebase blindly — the graph exists to prevent that
 ```
+
+> **Why mandatory, not advisory?** LLMs default to searching files directly.
+> Advisory graph instructions are consistently ignored in favor of built-in
+> search behaviors. The mandatory protocol with explicit PROHIBITED actions
+> forces agents to consult the compiled graph first, which is significantly
+> more token-efficient and produces higher-quality results.
 
 **When it is injected:** Layer 4 of the prompt composition stack in
 `flowai_skills_build_prompt()` — after the Pipeline Coordination preamble
 and Project Constitution, but before the Event Log and Skills.
+
+**Graph intelligence features:**
+
+- **Community detection** — Label propagation groups related nodes into
+  communities. Oversized communities (>25% of total nodes, min 10) are
+  automatically re-split via sub-propagation to prevent "junk drawer" clusters.
+- **Bridge edges** — Edges connecting different communities are annotated with
+  `bridge: true`, `source_community`, and `target_community`. These reveal
+  architectural coupling points between modules.
+- **Provenance tags** — Every edge is tagged `EXTRACTED` (high confidence),
+  `INFERRED` (hypothesis), or `AMBIGUOUS` (needs review).
 
 **When to update it:** After the user **commits** their changes. The graph
 mines git history (commit messages, file hashes), so it must only reflect
@@ -619,9 +657,9 @@ Plan and Review follow the standard lifecycle via `flowai_phase_run_loop()`:
 └─────────────────────────────────────────────────────┘
 ```
 
-### Tasks Phase (Master AI-reviewed, retry loop)
+### Tasks Phase (Master AI-reviewed, single-round)
 
-Tasks follows a different pattern — Master Agent reviews via one-shot AI call:
+Tasks follows a different pattern — Master Agent reviews via a single one-shot AI call:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -694,21 +732,78 @@ Every agent's prompt is assembled by `flowai_skills_build_prompt()` in
 `src/core/skills.sh`. The composition order is:
 
 ```
-1. Role file content        (e.g., src/roles/backend-engineer.md)
-2. Pipeline Coordination    (auto-injected, role-agnostic preamble)
-3. Project Constitution     (.specify/memory/constitution.md)
-4. Knowledge Graph context  (if enabled)
-5. Pipeline Event Log       (recent events from events.jsonl)
-6. Assigned Skills          (SKILL.md files for the role)
+1. Pipeline Coordination        (HARD CONSTRAINTS — FIRST, before role content)
+   (HARD CONSTRAINTS: file creation, graph first, spec is truth)
+2. Role file content            (e.g., src/roles/backend-engineer.md)
+2b. Phase directive + artifact  (OUTPUT FILE path + artifact boundary rule)
+    boundary                    via flowai_phase_write_prompt()
+3. Project Constitution         (.specify/memory/constitution.md)
+4. Knowledge Graph context      (if enabled)
+5. Pipeline Event Log           (recent events from events.jsonl)
+6. Assigned Skills              (SKILL.md files for the role)
 ```
 
-Layer 2 (Pipeline Coordination) is the key to agnosticism — it is injected
+> **Why HARD CONSTRAINTS first?** LLMs weight instructions near the beginning
+> and end of the context window more heavily than the middle. Previously, the
+> role content came first and HARD CONSTRAINTS were buried in the middle — agents
+> would ignore them in favor of their role's default behaviors. Moving mandatory
+> rules to position 1 ensures they are the first thing the agent reads.
+
+Layer 2b (Artifact Boundary) is appended by `flowai_phase_write_prompt()` to
+every phase prompt. It explicitly names which phase owns which artifact and
+prohibits creating files outside ownership. This is the framework-level guard
+that prevents role drift (e.g., a Master agent creating plan files).
+
+Layer 1 (Pipeline Coordination) is the key to agnosticism — it is injected
 into **every** agent prompt regardless of role, skill, or tool. It tells the
 agent:
 
+- **Specification Authority** — spec.md is the authoritative single source of
+  truth. Every decision traces back to it; when artifacts conflict, spec wins.
 - The phase script handles signal waiting — the agent does not check signals
 - All artifact paths are in the PIPELINE DIRECTIVE section
 - The orchestrator handles artifact verification and approval
+- Each phase may only create its own assigned artifact (artifact ownership)
+
+**Sandwich reinforcement (Claude):** In addition to placing HARD CONSTRAINTS
+at the top of the system prompt, the Claude tool plugin uses
+`--append-system-prompt` to add a brief constraint reminder at the END of the
+context window. This creates a "sandwich" effect — mandatory rules appear at
+both edges, maximizing instruction adherence.
+
+**Interactive initial prompt:** In interactive mode, tool plugins send an
+initial user message that anchors the agent to the pipeline workflow ("Read
+your PIPELINE DIRECTIVE... Follow the STAGED WORKFLOW... Begin with step 1").
+Without this, agents open a blank session and respond to whatever the user
+types — ignoring the pipeline directive in the system prompt.
+
+**Non-interactive user message:** When agents run in non-interactive mode
+(`-p` flag), the user message reinforces key constraints ("HARD CONSTRAINTS
+are MANDATORY, ONLY write to OUTPUT FILE, read GRAPH_REPORT.md first")
+instead of the previous generic "begin immediately" message.
+
+**Tool project config injection (subagent propagation):** Most tools'
+`--system-prompt` does NOT propagate to subagents. The only way to ensure
+subagents follow graph-first navigation is via tool-specific project config
+files. `flowai_ai_inject_all_tool_configs()` dispatches to each plugin:
+
+| Tool    | Project Config File                  | Auto-discovered by |
+| ------- | ------------------------------------ | ------------------- |
+| Claude  | `.claude/CLAUDE.md`                  | All Claude sessions |
+| Cursor  | `.cursorrules`                       | All Cursor sessions |
+| Copilot | `.github/copilot-instructions.md`    | All Copilot sessions|
+| Gemini  | `GEMINI.md`                          | All Gemini sessions |
+
+Content is tool-agnostic (shared via `flowai_ai_project_config_content()`);
+only the file format/location is tool-specific. FlowAI-managed content is
+wrapped in `<!-- FLOWAI:START/END -->` markers to preserve user content.
+Injected during `flowai start` when a knowledge graph exists.
+
+**Knowledge Graph injection** applies to both interactive and oneshot calls.
+`flowai_ai_run()` injects the graph via `flowai_skills_build_prompt()` (Layer 4).
+`flowai_ai_run_oneshot()` enriches the prompt file with the graph context block
+directly — so Master's tasks reviews, post-QA sign-off, and Tasks disposition
+all benefit from compiled codebase navigation.
 
 This means a user can create a brand new role file (e.g., `ios-engineer.md`)
 with zero knowledge of FlowAI internals and it will work correctly in the

@@ -30,9 +30,6 @@ ROLE_FILE="$(flowai_phase_resolve_role_prompt "tasks")"
 
 readonly TASKS_REJECTION_FILE="${FLOWAI_DIR}/signals/tasks.rejection_context"
 readonly TASKS_APPROVED_FILE="${FLOWAI_DIR}/signals/tasks.master_approved.ready"
-readonly TASKS_MASTER_OPINION_R1="${FLOWAI_DIR}/signals/tasks.master_opinion_r1.md"
-readonly TASKS_DISPOSITION_FILE="${FLOWAI_DIR}/signals/tasks.task_disposition.md"
-readonly TASKS_DISPOSITION_DONE="${FLOWAI_DIR}/signals/tasks.task_disposition_done"
 
 _tasks_interrupt_handler() {
   printf '\n'
@@ -46,6 +43,16 @@ trap '_tasks_interrupt_handler' INT TERM
 
 _tasks_build_directive() {
   local revision_context="${1:-}"
+
+  # If tasks.md already exists, tell the agent to read and improve it.
+  local existing_hint=""
+  if [[ -f "$FEATURE_DIR/tasks.md" ]] && [[ -s "$FEATURE_DIR/tasks.md" ]]; then
+    existing_hint="
+EXISTING ARTIFACT — a tasks.md already exists at the path above.
+READ it first. Improve, refine, or complete it — do NOT start from scratch.
+Only rewrite sections that conflict with the spec/plan or are incomplete."
+  fi
+
   local directive="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Tasks (Implementation Breakdown).
 Your WORKING DIRECTORY is: $PWD
@@ -56,7 +63,7 @@ CONTEXT — read the following upstream artifacts before starting:
 
 OUTPUT FILE — you MUST write your artifact to this exact path:
   $FEATURE_DIR/tasks.md
-
+${existing_hint}
 Complete your phase tasks as thoroughly as possible. When you finish, exit immediately."
 
   if [[ -n "$revision_context" ]]; then
@@ -80,13 +87,11 @@ while true; do
   _tasks_iteration=$((_tasks_iteration + 1))
 
   # On retry, inject Master's feedback (read + remove before building directive).
-  # Do NOT delete tasks.rejection_context before this — Master writes it after we break from the poll loop.
   local_revision=""
   if [[ "$_tasks_iteration" -gt 1 ]] && [[ -f "$TASKS_REJECTION_FILE" ]]; then
     local_revision="$(cat "$TASKS_REJECTION_FILE" 2>/dev/null || true)"
     rm -f "$TASKS_REJECTION_FILE" 2>/dev/null || true
-    rm -f "$TASKS_MASTER_OPINION_R1" "$TASKS_DISPOSITION_FILE" "$TASKS_DISPOSITION_DONE" \
-      "${FLOWAI_DIR}/signals/tasks.r2_complete" 2>/dev/null || true
+    rm -f "${FLOWAI_DIR}/signals/tasks.verdict_complete" 2>/dev/null || true
   fi
 
   DIRECTIVE="$(_tasks_build_directive "$local_revision")"
@@ -117,7 +122,7 @@ while true; do
     exit 1
   fi
 
-  # ── Poll: final approve / respond to Master round 1 / final rejection ──
+  # ── Poll: wait for Master's single-round binding VERDICT ──
   _tasks_poll_elapsed=0
   while true; do
     if [[ -f "$TASKS_APPROVED_FILE" ]]; then
@@ -128,35 +133,6 @@ while true; do
       log_success "Tasks approved. Handing off to Implementation phase."
       flowai_phase_schedule_close_phase_ui "tasks"
       exit 0
-    fi
-
-    # Round 1 opinion received → Tasks agent must AGREE or CONTEST (then Master round 2).
-    if [[ -f "$TASKS_MASTER_OPINION_R1" ]] && [[ ! -f "$TASKS_DISPOSITION_DONE" ]]; then
-      flowai_wait_ui_clear_line
-      flowai_wait_ui_release_if_owner "$FLOWAI_WAIT_UI_RANK_TASKS_MASTER"
-      flowai_phase_focus "tasks" 2>/dev/null || true
-      log_info "Master round-1 opinion received — submitting DISPOSITION (AGREE or CONTEST)..."
-      _tasks_disp_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_tasks_disp_XXXXXX")"
-      {
-        printf '%s\n' 'You are the Tasks phase agent.'
-        printf '%s\n' 'The Master Agent posted a preliminary (non-final) review of tasks.md.'
-        printf '\n%s\n' '--- Master round-1 opinion ---'
-        cat "$TASKS_MASTER_OPINION_R1"
-        printf '\n%s\n' '---'
-        printf '%s\n' "Decide whether you accept the Master's concerns or contest with a valid reason."
-        printf '%s\n' 'A CONTEST must cite spec.md or plan.md (not taste alone).'
-        printf '%s\n' 'Your LAST line must be exactly one of:'
-        printf '%s\n' '  DISPOSITION: AGREE — <short reason>'
-        printf '%s\n' '  DISPOSITION: CONTEST — <short reason>'
-      } > "$_tasks_disp_prompt"
-      _tasks_disp_out="$(flowai_ai_run_oneshot "tasks" "$_tasks_disp_prompt" || printf '%s\n' 'DISPOSITION: AGREE — (tool error; defaulting to AGREE)')"
-      rm -f "$_tasks_disp_prompt"
-      printf '%s\n' "$_tasks_disp_out" > "$TASKS_DISPOSITION_FILE"
-      touch "$TASKS_DISPOSITION_DONE"
-      flowai_event_emit "tasks" "task_disposition_submitted" "Tasks agent responded to Master round-1 opinion"
-      log_success "Disposition recorded — Master issues final VERDICT next."
-      _tasks_poll_elapsed=0
-      continue
     fi
 
     if [[ -f "$TASKS_REJECTION_FILE" ]]; then

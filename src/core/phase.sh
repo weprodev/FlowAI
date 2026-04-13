@@ -209,6 +209,76 @@ flowai_phase_resolve_feature_dir() {
   esac
 }
 
+# Print phase-specific context before the approval gate so the user knows
+# exactly what they are approving. Inspired by spec-kit's approval patterns:
+# show coverage metrics, change stats, and a clear "what approve means" line.
+# Args: phase_id, target_file
+_flowai_phase_approval_context() {
+  local phase_id="$1"
+  local target_file="$2"
+
+  printf '\n'
+  printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$CYAN" "$RESET"
+
+  case "$phase_id" in
+    plan)
+      printf '%s  PLAN REVIEW%s\n' "$BOLD" "$RESET"
+      printf '  Artifact: %s\n' "$target_file"
+      printf '\n'
+      printf '  %sWhat you are approving:%s\n' "$BOLD" "$RESET"
+      printf '  The architecture plan aligns with spec.md requirements\n'
+      printf '  and provides a sound implementation strategy.\n'
+      ;;
+    review|impl)
+      printf '%s  IMPLEMENTATION REVIEW%s\n' "$BOLD" "$RESET"
+      printf '\n'
+      # Git diff summary
+      local diff_stat
+      diff_stat="$(git diff --stat HEAD 2>/dev/null || true)"
+      if [[ -n "$diff_stat" ]]; then
+        printf '  %sFiles changed:%s\n' "$BOLD" "$RESET"
+        printf '%s\n' "$diff_stat" | while IFS= read -r line; do
+          printf '    %s\n' "$line"
+        done
+        printf '\n'
+      fi
+      # Task completion status from tasks.md
+      local tasks_file
+      tasks_file="$(dirname "$target_file")/tasks.md"
+      if [[ -f "$tasks_file" ]]; then
+        local total done_count
+        total="$(grep -cE '^\s*- \[' "$tasks_file" 2>/dev/null || echo 0)"
+        done_count="$(grep -cE '^\s*- \[x\]' "$tasks_file" 2>/dev/null || echo 0)"
+        if [[ "$total" -gt 0 ]]; then
+          local pct=$(( done_count * 100 / total ))
+          printf '  %sTask completion:%s %s/%s (%s%%)\n' "$BOLD" "$RESET" "$done_count" "$total" "$pct"
+          if [[ "$done_count" -lt "$total" ]]; then
+            printf '  %s⚠  %s task(s) incomplete%s\n' "$YELLOW" "$(( total - done_count ))" "$RESET"
+          fi
+          printf '\n'
+        fi
+      fi
+      printf '  %sWhat you are approving:%s\n' "$BOLD" "$RESET"
+      printf '  The implementation satisfies the spec acceptance criteria,\n'
+      printf '  follows the architecture plan, and passes QA review.\n'
+      ;;
+    spec)
+      printf '%s  SPECIFICATION REVIEW%s\n' "$BOLD" "$RESET"
+      printf '  Artifact: %s\n' "$target_file"
+      printf '\n'
+      printf '  %sWhat you are approving:%s\n' "$BOLD" "$RESET"
+      printf '  The specification accurately captures your intent,\n'
+      printf '  requirements, and acceptance criteria.\n'
+      ;;
+    *)
+      printf '%s  %s — APPROVAL GATE%s\n' "$BOLD" "$phase_id" "$RESET"
+      printf '  Artifact: %s\n' "$target_file"
+      ;;
+  esac
+
+  printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$CYAN" "$RESET"
+}
+
 # Prompt the human to approve a phase artifact.
 # Args: target_file, artifact_label (human), phase_id (canonical — MUST match pipeline id for events, e.g. plan)
 # Returns: 0 = approved, 1 = retry agent, 2 = needs changes (reject).
@@ -238,12 +308,10 @@ flowai_phase_verify_artifact() {
   done
 
   flowai_event_emit "$phase_id" "artifact_produced" "$target_file"
-  log_success "Human sign-off: $artifact_label — $target_file"
 
-  printf '\n'
-  log_info "🔍 Human checkpoint — $artifact_label"
-  log_info "   $target_file"
-  log_info "Then use the menu below: Approve, Needs changes, or Review artifact."
+  # Show phase-specific approval context (git diff, task status, what "approve" means)
+  _flowai_phase_approval_context "$phase_id" "$target_file"
+
   printf '\n'
 
   while true; do
@@ -345,7 +413,28 @@ flowai_phase_schedule_close_plan_ui() {
   flowai_phase_schedule_close_phase_ui "$1"
 }
 
-# Compose the injected prompt file: role content + phase directive.
+# Print the universal artifact boundary rule for a given phase.
+# This is the single source of truth for phase artifact ownership.
+# Usage: flowai_phase_artifact_boundary <phase_name>
+flowai_phase_artifact_boundary() {
+  local phase_name="$1"
+  cat <<BOUNDARY
+
+ARTIFACT BOUNDARY (MANDATORY — applies to ALL phases and roles):
+You are the '${phase_name}' phase.
+ALLOWED: You may ONLY write to the OUTPUT FILE specified above.
+PROHIBITED: Do NOT create any other files. Specifically:
+  - Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or similar
+  - Do NOT create files that belong to other phases
+  - If your output is verbal (e.g., review findings), say it in the conversation
+The pipeline artifact ownership is:
+  spec/master → spec.md | plan → plan.md | tasks → tasks.md
+  impl → source code | review → verbal only (no files)
+Violating this rule breaks the pipeline for all downstream agents.
+BOUNDARY
+}
+
+# Compose the injected prompt file: role content + phase directive + artifact boundary.
 # Prints the path of the written file.
 # Usage: flowai_phase_write_prompt <phase_name> <role_file> <directive>
 flowai_phase_write_prompt() {
@@ -354,7 +443,7 @@ flowai_phase_write_prompt() {
   local directive="$3"
   local out="${FLOWAI_DIR}/launch/${phase_name}_prompt.md"
   mkdir -p "${FLOWAI_DIR}/launch"
-  { cat "$role_file"; printf '\n%s\n' "$directive"; } > "$out"
+  { cat "$role_file"; printf '\n%s\n' "$directive"; flowai_phase_artifact_boundary "$phase_name"; } > "$out"
   printf '%s' "$out"
 }
 
@@ -368,6 +457,8 @@ flowai_phase_run_loop() {
   local signal_name="$5"
 
   flowai_event_emit "$phase_name" "started" "Beginning AI run"
+  # Focus the tmux pane/window on this phase so the user sees progress
+  flowai_phase_focus "$phase_name" 2>/dev/null || true
 
   while true; do
     log_info "⏳ $artifact_label: AI agent is working (stream output appears below as the tool runs)..."
