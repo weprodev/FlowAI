@@ -10,12 +10,15 @@ _skl_resolve_skill_path() {
     cd "$pwd_dir" || exit
     FLOWAI_DIR="$flowai_dir" \
     FLOWAI_HOME="$FLOWAI_HOME" \
-    bash -c "
-      source \"\$FLOWAI_HOME/src/core/log.sh\"
-      source \"\$FLOWAI_HOME/src/core/config.sh\"
-      source \"\$FLOWAI_HOME/src/core/skills.sh\"
-      flowai_skill_path \"$name\"
-    "
+    bash -s "$name" <<'EOS'
+# shellcheck source=../../src/core/log.sh
+source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=../../src/core/config.sh
+source "$FLOWAI_HOME/src/core/config.sh"
+# shellcheck source=../../src/core/skills.sh
+source "$FLOWAI_HOME/src/core/skills.sh"
+flowai_skill_path "$1"
+EOS
   ) 2>/dev/null
 }
 
@@ -25,12 +28,15 @@ _skl_skills_all() {
     cd "$pwd_dir" || exit
     FLOWAI_DIR="$flowai_dir" \
     FLOWAI_HOME="$FLOWAI_HOME" \
-    bash -c '
-      source "$FLOWAI_HOME/src/core/log.sh"
-      source "$FLOWAI_HOME/src/core/config.sh"
-      source "$FLOWAI_HOME/src/core/skills.sh"
-      flowai_skills_all
-    '
+    bash -s <<'EOS'
+# shellcheck source=../../src/core/log.sh
+source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=../../src/core/config.sh
+source "$FLOWAI_HOME/src/core/config.sh"
+# shellcheck source=../../src/core/skills.sh
+source "$FLOWAI_HOME/src/core/skills.sh"
+flowai_skills_all
+EOS
   ) 2>/dev/null
 }
 
@@ -184,6 +190,7 @@ JSON
 # UC-SKL-006 — flowai_validate_repo_rel_path rejects traversal / absolute paths
 flowai_test_s_skl_006() {
   if (
+    # shellcheck source=../../src/core/config.sh
     source "$FLOWAI_HOME/src/core/config.sh"
     flowai_validate_repo_rel_path "docs/skills" || exit 1
     flowai_validate_repo_rel_path "./docs/skills" || exit 1

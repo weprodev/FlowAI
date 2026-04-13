@@ -12,6 +12,7 @@
 # Add tests here when a defect slips through — each case should state which incident it prevents.
 # shellcheck shell=bash
 
+# shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
 
 # ─── ORCH-001: flowai_event_emit stores canonical lowercase phase in JSON ───
@@ -25,14 +26,13 @@ flowai_test_s_orch_001() {
   scratch="$(mktemp -d)"
   mkdir -p "$scratch/.flowai"
   printf '{}' > "$scratch/.flowai/config.json"
-  (
-    export FLOWAI_DIR="$scratch/.flowai"
-    export FLOWAI_HOME="$FLOWAI_HOME"
-    cd "$scratch" || exit 1
-    # shellcheck source=src/core/eventlog.sh
-    source "$FLOWAI_HOME/src/core/eventlog.sh"
-    flowai_event_emit "plan" "rejected" "human"
-  )
+  local _fd="$scratch/.flowai" _fh="$FLOWAI_HOME"
+  env FLOWAI_DIR="$_fd" FLOWAI_HOME="$_fh" bash -s "$scratch" <<'EOS'
+cd "$1" || exit 1
+# shellcheck source=../../src/core/eventlog.sh
+source "$FLOWAI_HOME/src/core/eventlog.sh"
+flowai_event_emit "plan" "rejected" "human"
+EOS
   local last
   last="$(tail -n 1 "$scratch/.flowai/events.jsonl")"
   if echo "$last" | jq -e '.phase == "plan" and .event == "rejected"' >/dev/null 2>&1; then
@@ -80,8 +80,10 @@ flowai_test_s_orch_003() {
 flowai_test_s_orch_004() {
   local id="ORCH-004"
   local master="$FLOWAI_HOME/src/phases/master.sh"
+  local _pat_rej_ready
+  _pat_rej_ready="\${rej_phase}.revision.ready"
   if grep -qF "tr '[:upper:]' '[:lower:]'" "$master" 2>/dev/null \
-    && grep -qF '${rej_phase}.revision.ready' "$master" 2>/dev/null; then
+    && grep -qF "$_pat_rej_ready" "$master" 2>/dev/null; then
     flowai_test_pass "$id" "Master normalizes rejection phase id for revision signal path"
   else
     printf 'FAIL %s: master.sh must lowercase .phase before revision.ready touch\n' "$id" >&2
@@ -93,8 +95,11 @@ flowai_test_s_orch_004() {
 flowai_test_s_orch_005() {
   local id="ORCH-005"
   local phase="$FLOWAI_HOME/src/core/phase.sh"
-  if grep -q 'flowai_event_emit "$phase_id" "rejected"' "$phase" 2>/dev/null \
-    && grep -q 'flowai_event_emit "$phase_id" "approved"' "$phase" 2>/dev/null; then
+  local _emit_rej _emit_app
+  _emit_rej="flowai_event_emit \"\$phase_id\" \"rejected\""
+  _emit_app="flowai_event_emit \"\$phase_id\" \"approved\""
+  if grep -qF "$_emit_rej" "$phase" 2>/dev/null \
+    && grep -qF "$_emit_app" "$phase" 2>/dev/null; then
     flowai_test_pass "$id" "verify_artifact emits JSON phase from canonical id"
   else
     printf 'FAIL %s: phase.sh must use phase_id for reject/approve events\n' "$id" >&2
@@ -106,8 +111,11 @@ flowai_test_s_orch_005() {
 flowai_test_s_orch_006() {
   local id="ORCH-006"
   local tasks="$FLOWAI_HOME/src/phases/tasks.sh"
-  if grep -q 'local_revision="$(cat "$TASKS_REJECTION_FILE"' "$tasks" 2>/dev/null \
-    && grep -q 'rm -f "$TASKS_REJECTION_FILE"' "$tasks" 2>/dev/null; then
+  local _tasks_cat _tasks_rm
+  _tasks_cat="local_revision=\"\$(cat \"\$TASKS_REJECTION_FILE\" 2>/dev/null || true)\""
+  _tasks_rm="rm -f \"\$TASKS_REJECTION_FILE\" 2>/dev/null || true"
+  if grep -qF "$_tasks_cat" "$tasks" 2>/dev/null \
+    && grep -qF "$_tasks_rm" "$tasks" 2>/dev/null; then
     flowai_test_pass "$id" "tasks.sh documents and reads rejection context before rm"
   else
     printf 'FAIL %s: tasks retry contract broken\n' "$id" >&2
@@ -118,7 +126,7 @@ flowai_test_s_orch_006() {
 # ─── ORCH-007: Gemini stderr filter drops LocalAgentExecutor noise only ──────
 flowai_test_s_orch_007() {
   local id="ORCH-007"
-  # shellcheck source=src/tools/gemini.sh
+  # shellcheck source=../../src/tools/gemini.sh
   source "$FLOWAI_HOME/src/tools/gemini.sh"
   local out
   out="$(
@@ -144,7 +152,9 @@ flowai_test_s_orch_008() {
   mkdir -p "$scratch/.flowai/signals"
   printf '{}' > "$scratch/.flowai/config.json"
   ( sleep 0.25; touch "$scratch/.flowai/signals/plan.revision.ready" ) &
-  env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<'EOS' || rc=$?
+  local _fh="$FLOWAI_HOME"
+  env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$_fh" bash -s <<'EOS' || rc=$?
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_wait_for "plan.revision" "orch-wait"
 EOS

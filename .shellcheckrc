@@ -1,0 +1,7 @@
+# Follow `# shellcheck source=` targets (SC1091) without passing `-x` on every invocation.
+external-sources=true
+
+# Resolve `# shellcheck source=../../...` in tests/suites/*.sh relative to each script.
+# Without this, running `shellcheck tests/suites/foo.sh` from the repo root makes
+# `../../src/...` resolve from CWD and fail to open the file.
+source-path=tests/suites

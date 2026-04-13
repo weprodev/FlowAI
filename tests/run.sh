@@ -214,6 +214,10 @@ flowai_test_s_tpl_005
 flowai_test_s_tpl_006
 flowai_test_s_tpl_007
 flowai_test_s_tpl_008
+flowai_test_s_tpl_009
+flowai_test_s_tpl_010
+flowai_test_s_tpl_011
+flowai_test_s_tpl_012
 # phase signals
 _test_banner "Phase Signal Coordination"
 flowai_test_s_sig_001

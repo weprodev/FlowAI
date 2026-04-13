@@ -195,6 +195,29 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
       fi
       printf "\n"
 
+      # ── Cursor: ensure cursor-agent CLI is available ──────────────────────
+      if [[ "$wizard_tool" == "cursor" ]] && ! command -v cursor-agent >/dev/null 2>&1; then
+        log_warn "cursor-agent CLI is not installed."
+        log_info "Without it, Cursor runs in paste-only mode (you manually paste prompts into the IDE)."
+        log_info "With cursor-agent, FlowAI orchestrates Cursor directly from the terminal — same experience as Claude/Gemini."
+        printf "\n"
+        read -r -p "Install cursor-agent now? [Y/n]: " _ans_cursor
+        if [[ ! "$_ans_cursor" =~ ^[nN] ]]; then
+          log_info "Installing cursor-agent..."
+          if curl https://cursor.com/install -fsSL | bash; then
+            log_success "cursor-agent installed."
+          else
+            log_warn "cursor-agent install failed. You can install manually later:"
+            printf '  curl https://cursor.com/install -fsSL | bash\n'
+            log_info "FlowAI will fall back to paste-only mode until cursor-agent is available."
+          fi
+        else
+          log_info "Skipped cursor-agent install. FlowAI will use paste-only mode for Cursor."
+          log_info "Install later:  curl https://cursor.com/install -fsSL | bash"
+        fi
+        printf "\n"
+      fi
+
       # 3. Auto Approve
       read -r -p "Enable auto-approval for safe shell commands? (Recommended: N) [y/N]: " ans_aa
       if [[ "$ans_aa" =~ ^[Yy]$ ]]; then
@@ -245,6 +268,12 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
             [[ -z "$_sel_tool" ]] && _sel_tool="$_cur_tool"
           fi
           eval "_cfg_tool_${phase}=\"\$_sel_tool\""
+
+          # Warn if cursor selected for a phase but cursor-agent CLI is not available
+          if [[ "$_sel_tool" == "cursor" ]] && ! command -v cursor-agent >/dev/null 2>&1; then
+            log_warn "    cursor-agent CLI not found — '$phase' will use paste-only mode."
+            log_info "    Install:  curl https://cursor.com/install -fsSL | bash"
+          fi
 
           # Model selection — show catalog for the chosen tool
           _ptool="$_sel_tool"

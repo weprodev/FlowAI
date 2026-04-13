@@ -2,11 +2,11 @@
 # Spec readiness: trunk branches + specs/<branch>/spec.md
 # shellcheck shell=bash
 
-# shellcheck source=tests/lib/harness.sh
+# shellcheck source=../lib/harness.sh
 source "$FLOWAI_HOME/tests/lib/harness.sh"
 
 : "${FLOWAI_HOME:?FLOWAI_HOME must point to the FlowAI installation root}"
-# shellcheck source=src/core/spec-readiness.sh
+# shellcheck source=../../src/core/spec-readiness.sh
 source "$FLOWAI_HOME/src/core/spec-readiness.sh"
 
 # SR-001 — no git repo: snapshot allows start (harness / non-git projects)
@@ -152,6 +152,7 @@ flowai_test_s_sr_007() {
   git -C "$tmp" checkout -b my-feat >/dev/null 2>&1
 
   out="$(cd "$tmp" && env FLOWAI_DIR="$tmp/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s 2>/dev/null <<'EOS'
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_resolve_feature_dir
 EOS

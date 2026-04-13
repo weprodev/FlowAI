@@ -84,13 +84,22 @@ flowai_ai_resolve_tool_and_model_for_phase() {
   echo "$tool:$model"
 }
 
-# Tools with no in-tmux REPL — only print a prompt for paste into an IDE (Cursor, Copilot Chat, etc.).
+# Tools with no in-tmux REPL — only print a prompt for paste into an IDE.
+# Cursor is paste-only ONLY when cursor-agent CLI is not installed; with the
+# CLI present it behaves like Claude/Gemini (interactive REPL + headless).
 flowai_ai_tool_is_paste_only() {
   case "$1" in
-    cursor|copilot) return 0 ;;
+    copilot) return 0 ;;
+    cursor)
+      if declare -F _flowai_cursor_cli_available >/dev/null 2>&1 && _flowai_cursor_cli_available; then
+        return 1
+      fi
+      return 0
+      ;;
     *) return 1 ;;
   esac
 }
+
 
 # ─── Tool Project Config Injection ───────────────────────────────────────────
 # Tool-agnostic content for project config injection. This is the SHARED content

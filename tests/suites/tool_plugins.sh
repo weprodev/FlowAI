@@ -3,6 +3,7 @@
 # Tests that all tool plugins define the required functions.
 # shellcheck shell=bash
 
+# shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
 
 # ─── TPL-001: All plugins define _run and _print_models ─────────────────────
@@ -19,10 +20,24 @@ flowai_test_s_tpl_001() {
     fi
     # Source in subshell to avoid polluting environment
     if ! (
+      # shellcheck source=../../src/core/log.sh
       source "$FLOWAI_HOME/src/core/log.sh"
+      # shellcheck source=../../src/core/config.sh
       source "$FLOWAI_HOME/src/core/config.sh"
-      # shellcheck source=/dev/null
-      source "$plugin"
+      case "$tool_name" in
+        claude)
+          # shellcheck source=../../src/tools/claude.sh
+          source "$FLOWAI_HOME/src/tools/claude.sh" ;;
+        gemini)
+          # shellcheck source=../../src/tools/gemini.sh
+          source "$FLOWAI_HOME/src/tools/gemini.sh" ;;
+        cursor)
+          # shellcheck source=../../src/tools/cursor.sh
+          source "$FLOWAI_HOME/src/tools/cursor.sh" ;;
+        copilot)
+          # shellcheck source=../../src/tools/copilot.sh
+          source "$FLOWAI_HOME/src/tools/copilot.sh" ;;
+      esac
       declare -F "flowai_tool_${tool_name}_run" >/dev/null 2>&1 || { echo "MISSING:run"; exit 1; }
       declare -F "flowai_tool_${tool_name}_print_models" >/dev/null 2>&1 || { echo "MISSING:print_models"; exit 1; }
     ); then
@@ -41,10 +56,24 @@ flowai_test_s_tpl_002() {
   for tool_name in claude gemini cursor copilot; do
     local plugin="$FLOWAI_HOME/src/tools/${tool_name}.sh"
     if ! (
+      # shellcheck source=../../src/core/log.sh
       source "$FLOWAI_HOME/src/core/log.sh"
+      # shellcheck source=../../src/core/config.sh
       source "$FLOWAI_HOME/src/core/config.sh"
-      # shellcheck source=/dev/null
-      source "$plugin"
+      case "$tool_name" in
+        claude)
+          # shellcheck source=../../src/tools/claude.sh
+          source "$FLOWAI_HOME/src/tools/claude.sh" ;;
+        gemini)
+          # shellcheck source=../../src/tools/gemini.sh
+          source "$FLOWAI_HOME/src/tools/gemini.sh" ;;
+        cursor)
+          # shellcheck source=../../src/tools/cursor.sh
+          source "$FLOWAI_HOME/src/tools/cursor.sh" ;;
+        copilot)
+          # shellcheck source=../../src/tools/copilot.sh
+          source "$FLOWAI_HOME/src/tools/copilot.sh" ;;
+      esac
       declare -F "flowai_tool_${tool_name}_run_oneshot" >/dev/null 2>&1 || exit 1
     ); then
       printf 'FAIL %s: plugin %s missing _run_oneshot\n' "$id" "$tool_name" >&2
@@ -59,21 +88,38 @@ flowai_test_s_tpl_002() {
 flowai_test_s_tpl_003() {
   local id="TPL-003"
   local all_ok=true
+  local _empty_home _fh
+  _empty_home="$(mktemp -d)"
+  _fh="$FLOWAI_HOME"
   for tool_name in cursor copilot; do
     local output
-    output="$(
-      source "$FLOWAI_HOME/src/core/log.sh"
-      source "$FLOWAI_HOME/src/core/config.sh"
-      # shellcheck source=/dev/null
-      source "$FLOWAI_HOME/src/tools/${tool_name}.sh"
-      flowai_tool_${tool_name}_run_oneshot "model" "/dev/null" 2>/dev/null
-    )"
+    # Isolate PATH/HOME so a real cursor-agent on the developer machine does not run
+    # (would return non-JSON). Copilot gets the same isolation for consistency.
+    # Use FLOWAI_TPL_TOOL (not bash -s "$tool") so $1 is never relied on — some shells/CI
+    # disagree on how bash -s maps argv to $1 for stdin scripts.
+    output="$(PATH="/usr/bin:/bin" HOME="$_empty_home" FLOWAI_HOME="$_fh" FLOWAI_TPL_TOOL="$tool_name" bash -s <<'EOS'
+# shellcheck source=../../src/core/log.sh
+source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=../../src/core/config.sh
+source "$FLOWAI_HOME/src/core/config.sh"
+if [[ "$FLOWAI_TPL_TOOL" == "cursor" ]]; then
+  # shellcheck source=../../src/tools/cursor.sh
+  source "$FLOWAI_HOME/src/tools/cursor.sh"
+  flowai_tool_cursor_run_oneshot "model" "/dev/null" 2>/dev/null
+elif [[ "$FLOWAI_TPL_TOOL" == "copilot" ]]; then
+  # shellcheck source=../../src/tools/copilot.sh
+  source "$FLOWAI_HOME/src/tools/copilot.sh"
+  flowai_tool_copilot_run_oneshot "model" "/dev/null" 2>/dev/null
+fi
+EOS
+)"
     if ! printf '%s' "$output" | jq -e '.nodes != null and .edges != null' >/dev/null 2>&1; then
       printf 'FAIL %s: %s oneshot did not return valid JSON: %s\n' "$id" "$tool_name" "$output" >&2
       FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
       all_ok=false
     fi
   done
+  rm -rf "$_empty_home"
   [[ "$all_ok" == "true" ]] && flowai_test_pass "$id" "Cursor/Copilot oneshot returns valid JSON fallback"
 }
 
@@ -145,3 +191,75 @@ flowai_test_s_tpl_008() {
     flowai_test_pass "$id" "No mktemp template has a suffix after XXXXXX (BSD-safe)"
   fi
 }
+
+# ─── TPL-009: Cursor plugin has cursor-agent CLI integration ─────────────────
+flowai_test_s_tpl_009() {
+  local id="TPL-009"
+  local plugin="$FLOWAI_HOME/src/tools/cursor.sh"
+  local all_ok=true
+  # Must contain cursor-agent CLI invocation
+  if ! grep -q 'cursor-agent' "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: Cursor plugin does not reference cursor-agent CLI\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    all_ok=false
+  fi
+  # Must contain constraint reminder (sandwich reinforcement)
+  if ! grep -q '_FLOWAI_CURSOR_CONSTRAINT_REMINDER' "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: Cursor plugin missing constraint reminder\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    all_ok=false
+  fi
+  [[ "$all_ok" == "true" ]] && flowai_test_pass "$id" "Cursor plugin has cursor-agent CLI integration and constraint reminder"
+}
+
+# ─── TPL-010: Cursor plugin has paste-only fallback ──────────────────────────
+flowai_test_s_tpl_010() {
+  local id="TPL-010"
+  local plugin="$FLOWAI_HOME/src/tools/cursor.sh"
+  if grep -q '_flowai_cursor_paste_only_run\|paste-only\|paste.only' "$plugin" 2>/dev/null; then
+    flowai_test_pass "$id" "Cursor plugin has paste-only fallback when CLI missing"
+  else
+    printf 'FAIL %s: Cursor plugin missing paste-only fallback path\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── TPL-011: ai.sh makes cursor paste-only conditional on CLI ───────────────
+flowai_test_s_tpl_011() {
+  local id="TPL-011"
+  local ai_file="$FLOWAI_HOME/src/core/ai.sh"
+  # cursor should NOT be unconditionally grouped with copilot in is_paste_only
+  if grep -q 'cursor|copilot)' "$ai_file" 2>/dev/null; then
+    printf 'FAIL %s: ai.sh still groups cursor with copilot as unconditionally paste-only\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  else
+    # Verify cursor delegates to cursor plugin (PATH-aware CLI detection)
+    if grep -q '_flowai_cursor_cli_available' "$ai_file" 2>/dev/null; then
+      flowai_test_pass "$id" "ai.sh makes cursor paste-only conditional on cursor-agent CLI"
+    else
+      printf 'FAIL %s: ai.sh does not delegate cursor paste-only to _flowai_cursor_cli_available\n' "$id" >&2
+      FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    fi
+  fi
+}
+
+# ─── TPL-012: Cursor resolves CLI without PATH + avoids CURSOR_RULES_FILE ────
+flowai_test_s_tpl_012() {
+  local id="TPL-012"
+  local plugin="$FLOWAI_HOME/src/tools/cursor.sh"
+  local ok=true
+  if ! grep -q '_flowai_cursor_resolve_executable' "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: cursor.sh missing _flowai_cursor_resolve_executable (tmux PATH fix)\n' "$id" >&2
+    ok=false
+  fi
+  if grep -q 'CURSOR_RULES_FILE' "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: cursor.sh must not use CURSOR_RULES_FILE (unsupported by cursor-agent)\n' "$id" >&2
+    ok=false
+  fi
+  if $ok; then
+    flowai_test_pass "$id" "Cursor plugin resolves CLI without PATH and avoids CURSOR_RULES_FILE"
+  else
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+

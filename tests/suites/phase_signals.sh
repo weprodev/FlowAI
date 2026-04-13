@@ -7,6 +7,7 @@
 #
 # Temp projects: env FLOWAI_DIR=… bash -s <<'EOS' … EOS (avoids SC2030/SC2031 on export-in-subshell).
 
+# shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
 
 # ─── SIG-001: phase_wait_for returns immediately if signal exists ────────────
@@ -18,6 +19,7 @@ flowai_test_s_sig_001() {
   printf '{"master":{"tool":"gemini","model":"gemini-2.5-pro"},"pipeline":{"plan":"team-lead"}}' > "$scratch/.flowai/config.json"
   touch "$scratch/.flowai/signals/spec.ready"
   env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<'EOS'
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_wait_for "spec" "test-phase"
 EOS
@@ -41,6 +43,7 @@ flowai_test_s_sig_002() {
   local rc=0
   env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" FLOWAI_PHASE_TIMEOUT_SEC=2 \
     bash -s 2>/dev/null <<'EOS' || rc=$?
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_wait_for "nonexistent" "test-phase"
 EOS
@@ -62,6 +65,7 @@ flowai_test_s_sig_003() {
   printf '{"master":{"tool":"gemini","model":"gemini-2.5-pro"},"pipeline":{"plan":"team-lead"}}' > "$scratch/.flowai/config.json"
   local result
   result="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<'EOS'
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_resolve_role_prompt "plan"
 EOS
@@ -85,6 +89,7 @@ flowai_test_s_sig_004() {
   printf '# Custom plan role\n' > "$scratch/.flowai/roles/plan.md"
   local result
   result="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<'EOS'
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_resolve_role_prompt "plan"
 EOS
@@ -108,6 +113,7 @@ flowai_test_s_sig_005() {
   local role_file="$FLOWAI_HOME/src/roles/backend-engineer.md"
   local prompt_file content
   prompt_file="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<EOF
+# shellcheck source=../../src/core/phase.sh
 source "\$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_write_prompt "test" "$role_file" "TEST DIRECTIVE"
 EOF
@@ -136,6 +142,7 @@ flowai_test_s_sig_006() {
   printf '{"master":{"tool":"gemini","model":"gemini-2.5-pro"}}' > "$scratch/.flowai/config.json"
   touch "$scratch/.flowai/signals/spec.ready"
   env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s 2>/dev/null <<'EOS'
+# shellcheck source=../../src/core/phase.sh
 source "$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_wait_for "spec" "test-phase"
 EOS
@@ -170,9 +177,13 @@ flowai_test_s_sig_007() {
   # Call flowai_skills_build_prompt and capture the full composed prompt
   local composed
   composed="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" PWD="$scratch" bash -s <<'EOS'
+# shellcheck source=../../src/core/config.sh
 source "$FLOWAI_HOME/src/core/config.sh"
+# shellcheck source=../../src/core/skills.sh
 source "$FLOWAI_HOME/src/core/skills.sh"
+# shellcheck source=../../src/core/eventlog.sh
 source "$FLOWAI_HOME/src/core/eventlog.sh"
+# shellcheck source=../../src/core/graph.sh
 source "$FLOWAI_HOME/src/core/graph.sh" 2>/dev/null || true
 flowai_skills_build_prompt "plan" "$FLOWAI_DIR/launch/test_prompt.md"
 EOS
@@ -500,6 +511,7 @@ flowai_test_s_sig_020() {
   local role_file="$FLOWAI_HOME/src/roles/backend-engineer.md"
   local prompt_file content
   prompt_file="$(env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<EOF
+# shellcheck source=../../src/core/phase.sh
 source "\$FLOWAI_HOME/src/core/phase.sh"
 flowai_phase_write_prompt "plan" "$role_file" "TEST DIRECTIVE"
 EOF
