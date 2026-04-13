@@ -161,18 +161,31 @@ You are assigned to Phase: Specification (Master Agent).
 Your task is to comprehensively define the specification for this feature.
 Your WORKING DIRECTORY is: $PWD
 
-OUTPUT FILE — you MUST write your specification artifact to this exact path:
+OUTPUT FILE — the canonical specification MUST end up at this exact path:
   $SPEC_FILE
+
+PLACEHOLDER (branch bootstrap):
+- $SPEC_FILE may exist with only a title line and a short \"placeholder\" paragraph from FlowAI init.
+- That is NOT the real specification. Do NOT ask the user to approve placeholder text.
+- Do NOT present ## Overview / acceptance criteria / checklists until after clarification unless the user already gave a complete brief.
+
+STAGED WORKFLOW — strict order:
+1) CLARIFY FIRST: Welcome briefly, then ask what they want to build (problem, goals, audience, scope, constraints).
+   Your first replies should be questions and short acknowledgements — not a full spec document.
+   If they already pasted full requirements, acknowledge and move to step 2.
+2) WRITE THE SPEC: Only once intent is clear, replace $SPEC_FILE with the full specification
+   (overview, scope, acceptance criteria, non-goals, constraints as appropriate).
+3) REQUEST APPROVAL: Point to the file path, ask them to read it, then follow APPROVAL PROTOCOL below.
 
 OPENING TURN — user guidance:
 - Your FIRST reply in this session MUST briefly welcome the user and ask them to explain
   what they want to build: problem, goals, audience, scope, and constraints — in their own words.
 - If they already pasted requirements or pointed you at an existing spec.md, acknowledge that
   and proceed; do not re-ask unnecessarily.
-- Only after you understand their intent should you draft or revise spec.md.
+- Only after you understand their intent should you draft or revise spec.md into the full artifact.
 
 APPROVAL PROTOCOL:
-- After creating spec.md, tell the user the exact file path and ask them to review it.
+- After the full specification is written to $SPEC_FILE, tell the user the exact file path and ask them to review it.
 - WAIT for the user to explicitly approve (e.g., 'approved', 'go ahead', 'looks good').
 - Do NOT assume approval. The user must say it.
 - When the user gives explicit approval, you MUST do two things:
@@ -259,9 +272,9 @@ _watcher_pid=$!
 
 _master_print_spec_session_start() {
   log_header "Specification — start here"
-  log_info "Explain what you want to build: the problem, goals, who it is for, scope, and constraints."
-  log_info "The Master Agent will capture this in: $SPEC_FILE"
-  log_info "When you are happy with the draft, approve in chat (e.g. 'approved') so the pipeline can move to Plan."
+  log_info "If $SPEC_FILE is only a placeholder, ignore it — Master clarifies first, then writes the real spec, then asks for approval."
+  log_info "Explain what you want to build: problem, goals, audience, scope, and constraints."
+  log_info "When the full spec is written and you approve in chat (e.g. 'approved'), the pipeline moves to Plan."
   printf '\n'
 }
 
@@ -283,7 +296,8 @@ _master_wait_paste_only_spec_approval() {
   local max_sec="${FLOWAI_SPEC_PASTE_WAIT_SEC:-1200}"
   log_header "Clarify the spec (in your editor)"
   log_info "Master is set to tool: $MASTER_TOOL (paste-only — no chat REPL in this tmux pane)."
-  log_info "Use the long prompt printed above in Cursor/Copilot: first turn = ask what to build, then refine $SPEC_FILE."
+  log_info "Paste the prompt above into Cursor/Copilot: clarify first (questions), then overwrite $SPEC_FILE with the full spec, then seek approval."
+  log_info "Do not treat the placeholder in spec.md as something to sign off — replace it with the real specification first."
   log_info "When the user approves in chat, the agent must write the marker: $APPROVAL_MARKER"
   log_info "This pane waits for that approval (Plan stays blocked until then). Manual menu comes later if needed."
   local e=0

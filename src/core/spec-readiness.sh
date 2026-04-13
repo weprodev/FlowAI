@@ -95,7 +95,7 @@ flowai_spec_git_checkout_default_base() {
   log_warn "Default branch '${base}' not found locally or as origin/${base}. Set default_branch in .flowai/config.json or create '${base}'. Creating the feature branch from your current HEAD."
 }
 
-# Write a minimal spec template (non-destructive if file exists and has content unless force).
+# Write a minimal placeholder so snapshot readiness passes — not a real spec (Master replaces it after clarification).
 flowai_spec_write_template() {
   local spec_file="$1"
   local title="${2:-New feature}"
@@ -103,13 +103,7 @@ flowai_spec_write_template() {
   cat > "$spec_file" <<EOF
 # Feature: ${title}
 
-## Overview
-Describe the problem, goals, audience, and scope.
-
-The Master Agent will ask what you want to build — answer in this session so the spec can be refined before Plan and Tasks.
-
-## Acceptance criteria
-- [ ]
+_Placeholder only. The Master Agent will ask clarifying questions first, then overwrite this file with the full specification before approval._
 
 EOF
 }

@@ -72,10 +72,10 @@ When you run **`flowai start`** from a **trunk** branch (`main`, `master`, or `d
 2. **Check out** that branch locally (or create it from `origin/<default_branch>` when missing).
 3. **Pull** fast-forward when possible so the new work branches from current remote head.
 4. Ask for a **short feature description** (used to derive the **git branch name** and spec title).
-5. **`git checkout -b <branch>`**, create **`specs/<branch>/spec.md`** from the **template** (starter content only — not final spec).
-6. Start the **tmux** session. **Master** then drives **clarification and refinement** of `spec.md` (see below).
+5. **`git checkout -b <branch>`**, create **`specs/<branch>/spec.md`** as a **one-line placeholder** (title + short note — not a filled spec). Master **does not** treat this as approval-ready; it **clarifies first**, then **overwrites** the file with the real specification, then seeks approval.
+6. Start the **tmux** session. **Master** then drives **clarification → full spec → approval** (see below).
 
-If you are **already on a feature branch** but `spec.md` is missing or empty, FlowAI offers to create the template before starting.
+If you are **already on a feature branch** but `spec.md` is missing or empty, FlowAI offers to create the placeholder before starting.
 
 ---
 
