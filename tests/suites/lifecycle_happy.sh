@@ -552,7 +552,7 @@ flowai_test_s_cli_034() {
   printf 'ok\n' >"$tmp/specs/feat-review/spec.md"
   printf 'ok\n' >"$tmp/specs/feat-review/tasks.md"
   mkdir -p "$tmp/.flowai/signals"
-  touch "$tmp/.flowai/signals/impl.ready"
+  touch "$tmp/.flowai/signals/impl.code_complete.ready"
 
   flowai_test_invoke_in_dir_env "$tmp" FLOWAI_TEST_SKIP_AI=1 "$FLOWAI_BIN" run review
   flowai_test_assert_rc 0 "UC-CLI-034" || return

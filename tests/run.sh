@@ -65,6 +65,10 @@ source "$TESTS_ROOT/suites/event_log.sh"
 source "$TESTS_ROOT/suites/tool_plugins.sh"
 # shellcheck source=tests/suites/phase_signals.sh
 source "$TESTS_ROOT/suites/phase_signals.sh"
+# shellcheck source=tests/suites/orchestration_contracts.sh
+source "$TESTS_ROOT/suites/orchestration_contracts.sh"
+# shellcheck source=tests/suites/spec_readiness.sh
+source "$TESTS_ROOT/suites/spec_readiness.sh"
 
 echo "FlowAI test run — FLOWAI_HOME=$FLOWAI_HOME"
 
@@ -203,6 +207,7 @@ flowai_test_s_tpl_004
 flowai_test_s_tpl_005
 flowai_test_s_tpl_006
 flowai_test_s_tpl_007
+flowai_test_s_tpl_008
 # phase signals
 _test_banner "Phase Signal Coordination"
 flowai_test_s_sig_001
@@ -223,6 +228,28 @@ flowai_test_s_sig_015
 flowai_test_s_sig_016
 flowai_test_s_sig_017
 flowai_test_s_sig_018
+# orchestration regression contracts (behavioral — not grep-only)
+_test_banner "Orchestration regression contracts"
+flowai_test_s_orch_001
+flowai_test_s_orch_002
+flowai_test_s_orch_003
+flowai_test_s_orch_004
+flowai_test_s_orch_005
+flowai_test_s_orch_006
+flowai_test_s_orch_007
+flowai_test_s_orch_008
+flowai_test_s_orch_009
+flowai_test_s_orch_010
+flowai_test_s_orch_011
+# spec readiness (trunk + specs/<branch>/spec.md)
+_test_banner "Spec workspace readiness"
+flowai_test_s_sr_001
+flowai_test_s_sr_002
+flowai_test_s_sr_003
+flowai_test_s_sr_004
+flowai_test_s_sr_005
+flowai_test_s_sr_006
+flowai_test_s_sr_007
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

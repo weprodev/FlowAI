@@ -26,7 +26,7 @@ the absent approval gate) would both go undetected.
 - `jq` is installed.
 - Project has been initialized (`flowai init`).
 - `specs/<feature>/tasks.md` exists.
-- `.flowai/signals/impl.ready` exists (upstream implement phase complete).
+- `.flowai/signals/impl.code_complete.ready` exists (implement has produced code for QA).
 - Environment: `FLOWAI_TEST_SKIP_AI=1` (test harness only).
 
 ## Action (When)

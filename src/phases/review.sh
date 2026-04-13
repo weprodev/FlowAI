@@ -8,7 +8,7 @@ source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
 source "$FLOWAI_HOME/src/core/phase.sh"
 
-flowai_phase_wait_for "impl" "Review Phase"
+flowai_phase_wait_for "impl.code_complete" "Review Phase"
 
 FEATURE_DIR="$(flowai_phase_resolve_feature_dir)"
 if [[ -z "$FEATURE_DIR" ]]; then
@@ -58,4 +58,6 @@ INJECTED_PROMPT="$(flowai_phase_write_prompt "review" "$ROLE_FILE" "$DIRECTIVE")
 export INJECTED_PROMPT
 
 log_info "Booting Review phase..."
-flowai_phase_run_loop "review" "$INJECTED_PROMPT" "$FEATURE_DIR/tasks.md" "Review" "review"
+log_info "QA scope: the whole implementation in this repo (git diff, tests/audit, spec + plan + tasks cross-check) — see your role and the directive above."
+log_info "The human menu names tasks.md only as the pipeline checklist anchor (shared with Implement); it is not asking you to ignore source code."
+flowai_phase_run_loop "review" "$INJECTED_PROMPT" "$FEATURE_DIR/tasks.md" "Implementation QA" "review"

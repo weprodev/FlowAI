@@ -32,6 +32,11 @@ CONTEXT — read the following upstream artifact before starting:
 OUTPUT FILE — you MUST write your artifact to this exact path:
   $FEATURE_DIR/plan.md
 
+POST-WRITE UX (required):
+- When plan.md is written, tell the user the **absolute path** above.
+- Tell them the FlowAI terminal will show an **approval menu** next (Approve / Needs changes / Review artifact).
+- They must use that menu — you do not approve your own work.
+
 Complete your phase tasks as thoroughly as possible. When you finish, exit immediately."
 
 INJECTED_PROMPT="$(flowai_phase_write_prompt "plan" "$ROLE_FILE" "$DIRECTIVE")"

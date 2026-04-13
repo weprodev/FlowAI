@@ -128,3 +128,20 @@ flowai_test_s_tpl_007() {
     flowai_test_pass "$id" "Gemini oneshot uses GEMINI_SYSTEM_MD (no ARG_MAX risk)"
   fi
 }
+
+# ─── TPL-008: No mktemp template has a suffix after XXXXXX ───────────────────
+# BSD mktemp (macOS) requires XXXXXX at the very end of the template string.
+# A suffix like .md causes mktemp to treat the Xs literally → "File exists".
+flowai_test_s_tpl_008() {
+  local id="TPL-008"
+  local bad_lines
+  # Match mktemp calls where XXXXXX is followed by anything other than quote/paren/whitespace
+  bad_lines="$(grep -rnE 'mktemp.*XXXXXX[^"'\'')\s]' "$FLOWAI_HOME/src" 2>/dev/null || true)"
+  if [[ -n "$bad_lines" ]]; then
+    printf 'FAIL %s: mktemp template has suffix after XXXXXX (breaks BSD mktemp):\n%s\n' \
+      "$id" "$bad_lines" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  else
+    flowai_test_pass "$id" "No mktemp template has a suffix after XXXXXX (BSD-safe)"
+  fi
+}

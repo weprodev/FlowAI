@@ -32,7 +32,7 @@ Run individually with `flowai run <phase>` or all together via `flowai start`:
 | Plan | `flowai run plan` | `spec.ready` |
 | Tasks | `flowai run tasks` | `plan.ready` |
 | Implement | `flowai run implement` (alias: `impl`) | `tasks.ready` |
-| Review | `flowai run review` | `impl.ready` |
+| Review | `flowai run review` | `impl.code_complete.ready` (Implement touches this when code is ready for QA) |
 
 Each phase runs the AI, then prompts for human approval before emitting its `.ready` signal. Rejecting returns to the AI loop after a revision signal.
 
@@ -88,6 +88,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete
 | `FLOWAI_ALLOW_UNKNOWN_MODEL=1` | Skip catalog model validation at runtime. |
 | `FLOWAI_SKIP_CONFIG_VALIDATE=1` | Skip start-time config validation only. |
 | `FLOWAI_PHASE_TIMEOUT_SEC=N` | Hard timeout (seconds) for phase signal waits. `0` = unlimited (default). |
+| `FLOWAI_PLAIN_TERMINAL=1` | Disable carriage-return redraws (Master pipeline line, phase wait spinner). Use for readable scrollback in tmux/Terminal after long sessions. |
 | `FLOWAI_TESTING=1` | Enable CI mode: bypass gum, auto-select dirs, skip dependency checks. |
 | `FLOWAI_TEST_SKIP_AI=1` | Contract-test mode: phase scripts exit 0 before invoking AI. |
 | `FLOWAI_SKIP_GRAPH=1` | Skip graph enforcement in `flowai start` (same as `--skip-graph` flag). |

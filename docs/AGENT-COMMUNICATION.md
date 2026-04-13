@@ -43,8 +43,9 @@ flowchart LR
     Master -->|"spec.ready"| Plan["📐 Plan"]
     Plan -->|"plan.ready"| Tasks["📋 Tasks"]
     Tasks -->|"tasks.ready"| Impl["🔨 Implement"]
-    Impl -->|"impl.ready"| Review["🔍 Review"]
-    Review -->|"pipeline_complete"| Master
+    Impl -->|"impl.code_complete.ready"| Review["🔍 Review / QA"]
+    Review -->|"review.phase_complete"| Master
+    Master -->|"impl.ready"| Impl
 ```
 
 ### Who approves what?
@@ -54,7 +55,7 @@ flowchart LR
 | **Spec**   | `spec.md`   | 👤 **User**                 | Conversational — user says "approved" in the REPL |
 | **Plan**   | `plan.md`   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
 | **Tasks**  | `tasks.md`  | 👑 **Master Agent**         | One-shot AI review — validates coverage + alignment |
-| **Impl**   | source code | 👑 **Master** → 👤 **User** | Master reviews first, then asks user for sign-off |
+| **Impl**   | source code | 👑 **Master** → 👤 **User** (after QA) | QA (Review) runs first; Master final sign-off last → `impl.ready` |
 | **Review** | QA report   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
 
 ---
@@ -63,10 +64,34 @@ flowchart LR
 
 ---
 
+### 0. Before the session — `flowai start` (trunk → feature)
+
+When you run **`flowai start`** from a **trunk** branch (`main`, `master`, or `develop`), FlowAI runs the **feature wizard** before tmux:
+
+1. **Fetch** `default_branch` from `origin` (from `.flowai/config.json`, set at `flowai init`).
+2. **Check out** that branch locally (or create it from `origin/<default_branch>` when missing).
+3. **Pull** fast-forward when possible so the new work branches from current remote head.
+4. Ask for a **short feature description** (used to derive the **git branch name** and spec title).
+5. **`git checkout -b <branch>`**, create **`specs/<branch>/spec.md`** from the **template** (starter content only — not final spec).
+6. Start the **tmux** session. **Master** then drives **clarification and refinement** of `spec.md` (see below).
+
+If you are **already on a feature branch** but `spec.md` is missing or empty, FlowAI offers to create the template before starting.
+
+---
+
 ### 1. Master (Specification) — interactive
 
 The user interacts with the Master Agent to define the feature.
 **The user MUST explicitly approve** the spec before the pipeline advances.
+
+**Where the conversation runs depends on the Master tool** (`.flowai/config.json` → `master.tool`):
+
+| Tool | Where clarification happens | Notes |
+| ---- | ----------------------------- | ----- |
+| **Gemini / Claude** (CLI REPL) | In the **Master tmux pane** | Opening turn asks what to build; approval is conversational in that REPL. |
+| **Cursor / Copilot** (paste-only) | In your **IDE** after you paste the system prompt | There is **no** long-running chat in the pane — FlowAI prints the prompt, then **waits** for `spec.md` **plus** the approval marker (see below) before showing the **manual** Approve / Needs changes menu. Clarification = your session in Cursor/Copilot, following the same OPENING TURN rules in the injected prompt. |
+
+A **background watcher** polls for **non-empty `spec.md`** and **`.flowai/signals/spec.user_approved`**. When both exist, it emits **`spec.ready`** and Plan unblocks. Do **not** kill that wait early: paste-only tools used to drop straight into the gum menu; that is incorrect for the intended “clarify first, approve later” flow.
 
 ```mermaid
 flowchart TD
@@ -174,48 +199,48 @@ Two sub-scenarios:
 
 ---
 
-### 3. Tasks (Breakdown) — oneshot, Master-approved
+### 3. Tasks (Breakdown) — two-round Master review, then Master-approved
 
-The Tasks Agent breaks the plan into implementable tasks.
-**The Master Agent approves** — no human approval gate needed.
+The Tasks Agent breaks the plan into implementable tasks. **The Master Agent** runs a
+**two-round** review (velocity + fairness): round 1 is a non-binding opinion; the Tasks
+agent **AGREE**s or **CONTEST**s with a valid reason; round 2 is the **binding VERDICT**.
+No separate human approval gate for tasks.
 
 ```mermaid
 flowchart TD
     Wait["Waits for plan.ready"]
     AI["AI reads spec.md + plan.md<br/>→ produces tasks.md → exits"]
-    Event["Tasks emits<br/>'tasks_produced' event"]
-    MasterReview["👑 Master detects event<br/>and reviews tasks.md"]
+    Event["Tasks emits tasks_produced"]
+    R1["👑 Master round 1: opinion → tasks.master_opinion_r1.md"]
+    Disp["Tasks agent: DISPOSITION AGREE or CONTEST → disposition files"]
+    R2["👑 Master round 2: binding VERDICT"]
+    Approve["✅ VERDICT: APPROVED"]
+    Reject["❌ VERDICT: REJECTED"]
+    Signal["tasks.master_approved.ready → tasks.ready"]
+    Revise["tasks.rejection_context → Tasks revises"]
 
-    Approve["✅ 3.1 Tasks align<br/>with spec + plan"]
-    Reject["❌ 3.2 Tasks need changes"]
-
-    Signal["Master creates tasks.master_approved<br/>→ tasks.ready emitted<br/>Tasks Agent shuts down"]
-    Notify["Master tells user:<br/>'We are building… wait until done.'<br/>Focus → Impl pane"]
-    Revise["Master writes revision context<br/>Tasks re-runs → new tasks.md"]
-
-    Wait --> AI --> Event --> MasterReview
-    MasterReview --> Approve --> Signal --> Notify
-    MasterReview --> Reject --> Revise --> MasterReview
+    Wait --> AI --> Event --> R1 --> Disp --> R2
+    R2 --> Approve --> Signal
+    R2 --> Reject --> Revise --> AI
 ```
 
-**What happens on ✅ Approve (3.1):**
+**Round 1 — Master opinion (non-final):**
 
-1. Master detects `tasks_produced` event in the event log
-2. Master runs a **one-shot AI review** — sends spec.md, plan.md, and tasks.md to the
-   LLM and asks: _"Do all acceptance criteria have corresponding tasks? Does the task
-   decomposition align with the plan architecture?"_
-3. If the AI responds `APPROVED`: Master creates `tasks.master_approved.ready` signal
-   → Tasks Agent creates `tasks.ready`
-4. Tasks Agent shuts down
-5. Master notifies user: _"We are building… wait until it's done."_
-6. Focus stays on Master pane (user can interact with Master if needed)
+1. Master detects `tasks_produced`, clears prior review artifacts, runs a one-shot AI call that **must not** emit `VERDICT`; output is saved to `tasks.master_opinion_r1.md`.
 
-**What happens on ❌ Reject (3.2):**
+**Tasks disposition:**
 
-1. Master AI determines tasks don't properly decompose the plan
-2. Master writes rejection reason to `tasks.rejection_context`
-3. Tasks Agent re-runs, produces a revised `tasks.md`
-4. Master reviews again — loops until satisfied
+2. Tasks phase sees the opinion file and runs a one-shot call: last line `DISPOSITION: AGREE — …` or `DISPOSITION: CONTEST — …` (contest must cite spec/plan). Writes `tasks.task_disposition.md` and touches `tasks.task_disposition_done`.
+
+**Round 2 — Master final VERDICT:**
+
+3. Master runs a one-shot with round-1 opinion, disposition, and spec/plan/tasks. Last line: `VERDICT: APPROVED` or `VERDICT: REJECTED — …`.
+4. On **APPROVED**: Master creates `tasks.master_approved.ready` → Tasks touches `tasks.ready`, emits `phase_complete`, and the **Tasks** pane/window may **auto-close** (same mechanism as Plan) so Master + Implement keep space.
+5. On **REJECTED**: Master writes `tasks.rejection_context`; Tasks revises and emits a new `tasks_produced` — loop until approval.
+
+**Escalation (deadlock breaker):** If Master issues **REJECT** on round 2 repeatedly, FlowAI counts consecutive rejections in `tasks.dispute_round`. After **`FLOWAI_TASKS_MAX_DISPUTE_ROUNDS`** (default **3**) such verdicts, Master **force-approves** tasks: it touches `tasks.master_approved.ready`, appends a short “Master escalation” section to `tasks.md`, and emits `tasks_escalated` so Implement can proceed. Set the env var to raise or lower the threshold.
+
+If you **interrupt** the Tasks phase (e.g. Ctrl+C), run `touch .flowai/signals/tasks.master_approved.ready` after fixing `tasks.md`, or run `flowai run tasks` again; Master logs the same recovery hint when it sees a `phase_aborted` event.
 
 > **Why no human gate?** The user already approved the spec and plan, and Master
 > performs a genuine AI semantic review — not just an existence check. This keeps
@@ -232,51 +257,57 @@ so Master can request revisions without restarting.
 flowchart TD
     Wait["Waits for tasks.ready"]
     AI["AI implements code<br/>marks tasks complete (- [x])<br/>progress events every 10s"]
-    Done["Emits 'impl_produced' event"]
-    MasterReview["👑 Master reviews all changes"]
+    Done["Emits impl_produced +<br/>impl.code_complete.ready"]
+    QA["🔍 Review / QA runs"]
 
-    Issues["❌ 4.1 Master finds issues"]
-    OK["✅ 4.2 Master approves"]
+    IssuesQA["❌ QA finds issues"]
+    OKQA["✅ QA approves tasks.md"]
 
-    Fix["Master writes impl.rejection_context<br/>Impl re-runs focused fixes"]
-    UserGate["Master asks user<br/>for final sign-off"]
+    MasterFinal["👑 Master final sign-off<br/>(after QA)"]
 
-    UserApprove["✅ 4.2.1 User approves"]
-    UserReject["❌ 4.2.2 User asks changes"]
+    IssuesM["❌ Master finds gaps"]
+    OKM["✅ Master + user approve"]
 
-    ImplReady["Master creates impl.ready<br/>Impl Agent shuts down<br/>Focus → Review pane"]
-    UserFix["Master analyzes request<br/>writes revision context<br/>Impl re-runs"]
+    FixQA["impl.rejection_context<br/>Impl re-runs"]
+    UserGate["Master asks user for final sign-off"]
 
-    Wait --> AI --> Done --> MasterReview
-    MasterReview --> Issues --> Fix --> MasterReview
-    MasterReview --> OK --> UserGate
+    UserApprove["✅ User approves"]
+    UserReject["❌ User asks changes"]
+
+    ImplReady["Master creates impl.ready<br/>Impl Agent shuts down<br/>Focus → Implement pane"]
+    UserFix["Master writes revision context<br/>Impl re-runs"]
+
+    Wait --> AI --> Done --> QA
+    QA --> IssuesQA --> FixQA --> QA
+    QA --> OKQA --> MasterFinal
+    MasterFinal --> IssuesM --> FixQA
+    MasterFinal --> OKM --> UserGate
     UserGate --> UserApprove --> ImplReady
     UserGate --> UserReject --> UserFix --> UserGate
 ```
 
-**What happens on ✅ Master Approve → ✅ User Approve (4.2.1):**
+**Order:** Implement finishes → **Review (QA)** runs on `impl.code_complete.ready` → when QA approves, **Master** runs the **final** binding review (**oneshot** in the Master pane, so output appears without an empty REPL) → **gum** approval menu → `impl.ready` → Implement exits.
 
-1. Master AI reviews the code changes against spec/plan/tasks
-2. Master is satisfied → enters interactive REPL with user
-3. Master presents summary of changes and asks user to approve
-4. User says "approved" → Master creates `impl.ready`
-5. Impl Agent detects `impl.ready` → shuts down cleanly
-6. Focus switches to Review pane
+**What happens on ✅ Master final sign-off → ✅ User Approve:**
 
-**What happens on ❌ Master Reject (4.1):**
+1. After QA has approved (Review emits `phase_complete`), Master runs a **non-interactive** Gemini oneshot with the post-QA prompt (required headings: **`## Master — review plan`**, **`## Master — findings`**).
+2. The **terminal menu** (`flowai_phase_verify_artifact`) asks you to approve the implementation; on **Approve**, FlowAI touches `impl.ready`.
+3. Impl Agent detects `impl.ready` → shuts down cleanly
+4. Focus switches to the Implement pane (so you see the phase exit)
 
-1. Master finds issues (missing features, bugs, doesn't match spec)
-2. Master writes a revision list to `impl.rejection_context`
-3. Impl Agent detects the file → re-runs AI with only the failing items
-4. Impl emits `impl_produced` again → Master reviews again
-5. Loops until Master is satisfied → proceeds to user sign-off (4.2)
+**What happens on ❌ QA or Master revision (before `impl.ready`):**
 
-**What happens on ❌ User Reject (4.2.2):**
+1. Review AI or QA gate may write `impl.rejection_context`, or Master writes it after final review
+2. Impl Agent detects the file → re-runs AI with only the failing items
+3. Impl emits `impl_produced` again and re-touches `impl.code_complete.ready` → QA can run again
+4. Loops until QA then Master approve
+
+**What happens on ❌ User Reject at Master final gate:**
 
 1. User asks for changes: _"Also handle the edge case for X"_
 2. Master analyzes the request — asks user for clarification if unclear
 3. Master writes revision context → Impl Agent re-runs
-4. After revision → Master reviews again → asks user again
+4. After revision → QA then Master final review again
 5. Loops until user approves
 
 ---
@@ -285,9 +316,11 @@ flowchart TD
 
 The Review Agent performs a final quality check on all code changes.
 
+**Why does the gum menu mention `tasks.md`?** The Review AI works in the **repository** (e.g. `git diff`, tests, linters) per `reviewer.md` and the phase directive. The pipeline still needs **one concrete file path** for the human gate (`flowai_phase_run_loop` → `flowai_phase_verify_artifact`) and for “open in editor” — FlowAI uses **`tasks.md`** as that shared **checklist anchor** (the same file Implement tracks). You are **not** being asked to QA only the markdown task list; use the menu to confirm QA of the **implementation** after the agent has run.
+
 ```mermaid
 flowchart TD
-    Wait["Waits for impl.ready"]
+    Wait["Waits for impl.code_complete.ready"]
     AI["AI reviews: git diff,<br/>spec/plan/tasks cross-check,<br/>make test, make audit"]
     Gate["Human approval gate<br/>(terminal menu)"]
 
@@ -295,11 +328,13 @@ flowchart TD
     Review["👁️ Review output"]
     Reject["❌ Needs changes"]
 
+    MasterFinal["👑 Master final sign-off<br/>then impl.ready"]
     Complete["Pipeline complete ✅<br/>Master shows next steps:<br/>commit → graph update → push<br/>🎉 Happy FlowAI!"]
-    Cycle["Writes rejection to<br/>impl.rejection_context<br/>Master re-engages<br/>Impl re-runs → Review again"]
+    Cycle["Writes rejection to<br/>impl.rejection_context<br/>Impl re-runs → Review again"]
 
     Wait --> AI --> Gate
-    Gate --> Approve --> Complete
+    Gate --> Approve --> MasterFinal
+    MasterFinal --> Complete
     Gate --> Review --> Gate
     Gate --> Reject --> Cycle --> Wait
 ```
@@ -308,16 +343,9 @@ flowchart TD
 
 1. User selects "Approve" from the terminal menu
 2. `review.phase_complete` event is emitted
-3. Master detects completion
-4. Master shows next steps:
-   ```
-   1. Review changes:  git diff
-   2. Commit changes:  git add -A && git commit -m 'feat: ...'
-   3. Update graph:    flowai graph update
-   4. Push:            git push
-   ```
-5. Master says: _"🎉 Happy FlowAI! Feature complete."_
-6. Pipeline ends
+3. The **Review** pane/window may **auto-close** (dashboard/tabs), same as Plan — **Master** and **Implement** stay open.
+4. **Master** runs the post-QA binding review (**oneshot**), then the **gum** menu for final implementation approval → `impl.ready`.
+5. After `impl.ready`, Master shows next steps and _"🎉 Happy FlowAI! Feature complete."_
 
 > **Why not auto-update the graph here?** The knowledge graph mines **git history**
 > (commit messages, file hashes, provenance). Updating before commit would index
@@ -346,6 +374,10 @@ flowchart TD
 
 ## Communication Mechanisms
 
+### Event log: canonical `phase` field
+
+JSONL events use the **pipeline phase id** (lowercase: `plan`, `tasks`, `review`, …), not the human display label (`Plan`). This keeps `grep` filters, `plan.revision.ready`, and Master orchestration aligned on all platforms (case-sensitive filesystems included).
+
 ### 1. Signal Files (`.flowai/signals/*.ready`)
 
 Signals are the primary inter-phase synchronisation mechanism. Each downstream
@@ -356,8 +388,13 @@ phase blocks on its upstream signal before starting.
 | `spec.ready`                  | Master (after user approves spec in REPL)                    | Plan phase                                |
 | `plan.ready`                  | Plan phase (after user approves `plan.md` via gum gate)      | Tasks phase                               |
 | `tasks.ready`                 | Tasks phase (after **Master Agent** AI review approves)      | Implement phase                           |
-| `tasks.master_approved.ready` | Master Agent (one-shot AI review against spec+plan)          | Tasks phase (via `flowai_phase_wait_for`) |
-| `impl.ready`                  | Master (after Master reviews + user approves through Master) | Review phase                              |
+| `tasks.master_approved.ready` | Master Agent (round-2 binding VERDICT APPROVED)               | Tasks phase (poll)                      |
+| `tasks.master_opinion_r1.md`  | Master Agent (round-1 opinion text)                           | Tasks phase (disposition prompt)         |
+| `tasks.task_disposition.md`   | Tasks phase (AGREE/CONTEST response)                          | Master Agent (round-2 prompt)            |
+| `tasks.task_disposition_done` | Tasks phase (touch after disposition)                         | Master Agent (triggers round 2)          |
+| `tasks.r2_complete`           | Master Agent (after round-2 VERDICT processed)                | Internal (idempotency)                   |
+| `impl.code_complete.ready`    | Implement (when implementation output is ready for QA)      | Review phase                              |
+| `impl.ready`                  | Master (after QA + Master final sign-off + user approval)    | Implement phase (exit)                    |
 | `spec.user_approved`          | AI agent (when user says "approved" in REPL)                 | Master watcher                            |
 
 **Rejection & revision signals:**
@@ -392,9 +429,10 @@ flowai_phase_wait_for "spec" "Plan Phase"
 #   → touch "$SIGNALS_DIR/${signal}.ready"
 ```
 
-Signals are **always** created by `flowai_phase_verify_artifact()` in
-`src/core/phase.sh`. No phase script, role file, or tool plugin creates
-signals directly.
+Most approval signals are created by `flowai_phase_verify_artifact()` in
+`src/core/phase.sh`. **Exception:** Implement touches `impl.code_complete.ready`
+when code is ready for QA so Review does not block on `impl.ready` (which is only
+created after QA and Master final sign-off).
 
 ### 2. Artifact Files (`specs/<branch>/*.md`)
 
@@ -609,7 +647,7 @@ Implement runs once then waits for Master's lifecycle signals:
 ┌─────────────────────────────────────────────────────┐
 │ 1. Wait for tasks.ready                             │
 │ 2. AI implements code, marks tasks complete         │
-│ 3. Emit "impl_produced" event                       │
+│ 3. Emit "impl_produced" + touch impl.code_complete  │
 │ 4. Stay alive — poll for:                           │
 │    ┌───────────────────────────────────────────┐    │
 │    │ → impl.ready exists? → exit cleanly       │    │
@@ -637,9 +675,9 @@ Implement runs once then waits for Master's lifecycle signals:
 │ 5. Monitor event log every 5 seconds                    │
 │    → plan.phase_complete → focus to Tasks pane          │
 │    → tasks_produced → Master one-shot AI review       │
-│    → impl_produced → Master reviews → user gate         │
+│    → review.phase_complete → Master final sign-off →    │
+│      impl.ready → pipeline_complete / celebration       │
 │    → rejection → re-engage AI with context              │
-│    → review.phase_complete → show next steps → goodbye  │
 └─────────────────────────────────────────────────────────┘
 ```
 

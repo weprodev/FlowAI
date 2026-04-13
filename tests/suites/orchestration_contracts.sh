@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# Orchestration regression contracts — behavioral tests that caught real production bugs.
+#
+# Why this file exists:
+# - Grep-only "SIG-*" checks prove strings exist; they do not prove the protocol works.
+# - Bugs we guard here: wrong JSON `phase` casing (Plan vs plan → deadlocks on Linux),
+#   false-positive task verdict parsing (NOT APPROVED), tasks retry deleting context too early,
+#   Master writing the wrong revision filename, Gemini stderr noise masking real output,
+#   bash printf formats starting with --- (macOS), OSC/ANSI leaking into Master status line,
+#   scrollback corruption from \\r redraws (mitigated by FLOWAI_PLAIN_TERMINAL).
+#
+# Add tests here when a defect slips through — each case should state which incident it prevents.
+# shellcheck shell=bash
+
+source "$FLOWAI_HOME/src/core/log.sh"
+
+# ─── ORCH-001: flowai_event_emit stores canonical lowercase phase in JSON ───
+# Prevents: Master touching Plan.revision.ready while Plan waits on plan.revision.ready.
+flowai_test_s_orch_001() {
+  local id="ORCH-001"
+  if flowai_test_skip_if_missing_jq "$id" "event JSON phase id contract"; then
+    return 0
+  fi
+  local scratch
+  scratch="$(mktemp -d)"
+  mkdir -p "$scratch/.flowai"
+  printf '{}' > "$scratch/.flowai/config.json"
+  (
+    export FLOWAI_DIR="$scratch/.flowai"
+    export FLOWAI_HOME="$FLOWAI_HOME"
+    cd "$scratch" || exit 1
+    # shellcheck source=src/core/eventlog.sh
+    source "$FLOWAI_HOME/src/core/eventlog.sh"
+    flowai_event_emit "plan" "rejected" "human"
+  )
+  local last
+  last="$(tail -n 1 "$scratch/.flowai/events.jsonl")"
+  if echo "$last" | jq -e '.phase == "plan" and .event == "rejected"' >/dev/null 2>&1; then
+    flowai_test_pass "$id" "event JSON uses canonical phase id (plan)"
+  else
+    printf 'FAIL %s: expected .phase==plan, line=%s\n' "$id" "$last" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+  rm -rf "$scratch"
+}
+
+# ─── ORCH-002 / 003: Master task verdict — same regex as master.sh ───────────
+# Prevents: VERDICT: NOT APPROVED wrongly counted as approved (substring APPROVED).
+flowai_test_s_orch_002() {
+  local id="ORCH-002"
+  local verdict_line='VERDICT: NOT APPROVED'
+  local is_approved=false
+  if [[ "$verdict_line" =~ ^[[:space:]]*VERDICT:[[:space:]]*APPROVED[[:space:]]*$ ]]; then
+    is_approved=true
+  fi
+  if ! $is_approved; then
+    flowai_test_pass "$id" "verdict line NOT APPROVED does not match strict APPROVED regex"
+  else
+    printf 'FAIL %s: NOT APPROVED must not approve\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+flowai_test_s_orch_003() {
+  local id="ORCH-003"
+  local verdict_line='VERDICT: APPROVED'
+  local is_approved=false
+  if [[ "$verdict_line" =~ ^[[:space:]]*VERDICT:[[:space:]]*APPROVED[[:space:]]*$ ]]; then
+    is_approved=true
+  fi
+  if $is_approved; then
+    flowai_test_pass "$id" "verdict line APPROVED matches strict regex"
+  else
+    printf 'FAIL %s: APPROVED should match\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-004: Master lowercases rej_phase before touch revision.ready ───────
+flowai_test_s_orch_004() {
+  local id="ORCH-004"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+  if grep -qF "tr '[:upper:]' '[:lower:]'" "$master" 2>/dev/null \
+    && grep -qF '${rej_phase}.revision.ready' "$master" 2>/dev/null; then
+    flowai_test_pass "$id" "Master normalizes rejection phase id for revision signal path"
+  else
+    printf 'FAIL %s: master.sh must lowercase .phase before revision.ready touch\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-005: verify_artifact emits events with phase_id not display label ─
+flowai_test_s_orch_005() {
+  local id="ORCH-005"
+  local phase="$FLOWAI_HOME/src/core/phase.sh"
+  if grep -q 'flowai_event_emit "$phase_id" "rejected"' "$phase" 2>/dev/null \
+    && grep -q 'flowai_event_emit "$phase_id" "approved"' "$phase" 2>/dev/null; then
+    flowai_test_pass "$id" "verify_artifact emits JSON phase from canonical id"
+  else
+    printf 'FAIL %s: phase.sh must use phase_id for reject/approve events\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-006: tasks retry must not rm rejection file before cat (regression) ─
+flowai_test_s_orch_006() {
+  local id="ORCH-006"
+  local tasks="$FLOWAI_HOME/src/phases/tasks.sh"
+  if grep -q 'Do NOT delete tasks.rejection_context before' "$tasks" 2>/dev/null \
+    && grep -q 'local_revision="$(cat "$TASKS_REJECTION_FILE"' "$tasks" 2>/dev/null; then
+    flowai_test_pass "$id" "tasks.sh documents and reads rejection context before rm"
+  else
+    printf 'FAIL %s: tasks retry contract broken\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-007: Gemini stderr filter drops LocalAgentExecutor noise only ──────
+flowai_test_s_orch_007() {
+  local id="ORCH-007"
+  # shellcheck source=src/tools/gemini.sh
+  source "$FLOWAI_HOME/src/tools/gemini.sh"
+  local out
+  out="$(
+    {
+      printf '%s\n' '[LocalAgentExecutor] Skipping subagent tool x'
+      printf '%s\n' 'gemini: real error on stderr'
+    } | _flowai_gemini_filter_executor_noise
+  )"
+  if [[ "$out" == *'real error'* ]] && [[ "$out" != *'LocalAgentExecutor'* ]]; then
+    flowai_test_pass "$id" "Gemini stderr filter removes LocalAgentExecutor only"
+  else
+    printf 'FAIL %s: filter output wrong: %q\n' "$id" "$out" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-008: plan.revision.ready unblocks flowai_phase_wait_for ───────────
+# Prevents: typo in signal name so Plan waits forever after Master guidance.
+flowai_test_s_orch_008() {
+  local id="ORCH-008"
+  local scratch rc=0
+  scratch="$(mktemp -d)"
+  mkdir -p "$scratch/.flowai/signals"
+  printf '{}' > "$scratch/.flowai/config.json"
+  ( sleep 0.25; touch "$scratch/.flowai/signals/plan.revision.ready" ) &
+  env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$FLOWAI_HOME" bash -s <<'EOS' || rc=$?
+source "$FLOWAI_HOME/src/core/phase.sh"
+flowai_phase_wait_for "plan.revision" "orch-wait"
+EOS
+  wait || true
+  if [[ "$rc" -eq 0 ]]; then
+    flowai_test_pass "$id" "wait_for unblocks when plan.revision.ready appears"
+  else
+    printf 'FAIL %s: wait_for expected rc=0, got %s\n' "$id" "${rc:-}" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+  rm -rf "$scratch"
+}
+
+# ─── ORCH-010: Master prompt build + status line — no printf --- bug, no ESC leak ─
+# Prevents: printf '--- spec.md ---' → "printf: --: invalid option" (bash); OSC 11 garbage on Pipeline:
+flowai_test_s_orch_010() {
+  local id="ORCH-010"
+  local master="$FLOWAI_HOME/src/phases/master.sh"
+  if ! grep -qF "printf '%s\n' '--- spec.md ---'" "$master" 2>/dev/null; then
+    printf 'FAIL %s: master.sh must use printf %%s for --- spec.md header (bash/macOS)\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return
+  fi
+  if ! grep -qF 'flowai_sanitize_display_text' "$FLOWAI_HOME/src/core/log.sh" 2>/dev/null; then
+    printf 'FAIL %s: log.sh must define flowai_sanitize_display_text\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return
+  fi
+  local dirty clean
+  dirty=$'plain\e[31m\e]11;rgb:00/00/00\e\\tail'
+  clean="$(flowai_sanitize_display_text "$dirty")"
+  if [[ "$clean" == *$'\e'* ]]; then
+    printf 'FAIL %s: sanitize left ESC in %q\n' "$id" "$clean" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  elif [[ "$clean" != *plain*tail* ]]; then
+    printf 'FAIL %s: sanitize stripped too much: %q\n' "$id" "$clean" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  else
+    flowai_test_pass "$id" "Master safe --- printf + display text sanitizes ANSI/OSC"
+  fi
+}
+
+# ─── ORCH-011: FLOWAI_PLAIN_TERMINAL disables wait_ui redraw (scroll-safe) ───
+flowai_test_s_orch_011() {
+  local id="ORCH-011"
+  local wu="$FLOWAI_HOME/src/core/wait_ui.sh"
+  if grep -qF 'FLOWAI_PLAIN_TERMINAL' "$wu" 2>/dev/null \
+    && grep -qF "flowai_terminal_plain_enabled" "$FLOWAI_HOME/src/core/log.sh" 2>/dev/null; then
+    flowai_test_pass "$id" "plain terminal env wired in wait_ui + log"
+  else
+    printf 'FAIL %s: PLAIN_TERMINAL must gate wait_ui redraw\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── ORCH-009: Plan UI closes in dashboard (kill-pane) not only tabs ─────────
+flowai_test_s_orch_009() {
+  local id="ORCH-009"
+  local phase="$FLOWAI_HOME/src/core/phase.sh"
+  if grep -qF '== "dashboard"' "$phase" 2>/dev/null \
+    && grep -qF 'tmux kill-pane' "$phase" 2>/dev/null \
+    && grep -qF 'flowai_phase_schedule_close_phase_ui' "$phase" 2>/dev/null \
+    && grep -qF 'flowai_phase_schedule_close_plan_ui' "$phase" 2>/dev/null; then
+    flowai_test_pass "$id" "Phase completion closes pane in dashboard layout (plan/tasks/review)"
+  else
+    printf 'FAIL %s: phase.sh must kill-pane for dashboard after plan approve\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}

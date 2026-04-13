@@ -7,6 +7,8 @@ set -euo pipefail
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/config.sh"
 source "$FLOWAI_HOME/src/core/session.sh"
+# shellcheck source=src/core/spec-readiness.sh
+source "$FLOWAI_HOME/src/core/spec-readiness.sh"
 source "$FLOWAI_HOME/src/core/mcp-json.sh"
 source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 source "$FLOWAI_HOME/src/core/graph.sh"
@@ -14,19 +16,24 @@ source "$FLOWAI_HOME/src/graph/build.sh"
 source "$FLOWAI_HOME/src/core/phases.sh"
 source "$FLOWAI_HOME/src/core/version-check.sh"
 source "$FLOWAI_HOME/src/os/platform.sh"
+source "$FLOWAI_HOME/src/core/ai.sh"
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
 HEADLESS=false
 SKIP_GRAPH=false
+SKIP_SPEC_READINESS=false
 [[ "${FLOWAI_START_HEADLESS:-}" == "1" ]] && HEADLESS=true
 [[ "${FLOWAI_SKIP_GRAPH:-}" == "1" ]] && SKIP_GRAPH=true
+[[ "${FLOWAI_SKIP_SPEC_READINESS:-}" == "1" ]] && SKIP_SPEC_READINESS=true
 for _fa in "$@"; do
   case "$_fa" in
-    --headless)    HEADLESS=true ;;
-    --skip-graph)  SKIP_GRAPH=true ;;
+    --headless)            HEADLESS=true ;;
+    --skip-graph)          SKIP_GRAPH=true ;;
+    --skip-spec-readiness) SKIP_SPEC_READINESS=true ;;
   esac
 done
+[[ "$SKIP_SPEC_READINESS" == true ]] && export FLOWAI_SKIP_SPEC_READINESS=1
 
 if ! command -v tmux >/dev/null 2>&1; then
   log_error "tmux is not installed. Install: $(flowai_os_install_hint tmux)"
@@ -211,40 +218,19 @@ if [[ "$SKIP_GRAPH" != "true" ]] && flowai_graph_is_enabled; then
   fi
 fi
 
-# ── Feature Branching (Interactive) ──────────────────────────────────────────
-if [[ "$HEADLESS" != "true" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
-  current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
-  if [[ "$current_branch" == "main" || "$current_branch" == "master" ]]; then
-    printf '\n'
-    log_info "You are on $current_branch. Let's create a feature branch."
-
-    feature_desc=""
-    if command -v gum >/dev/null 2>&1; then
-      feature_desc="$(gum input --placeholder "Briefly describe what you are building...")"
-    else
-      read -r -p "  Briefly describe what you are building: " feature_desc < /dev/tty || true
+# ── Spec workspace (feature branch + non-empty specs/<branch>/spec.md) ────────
+# Blocks trunk (main/master/develop) and empty/missing spec.md before tmux.
+# Interactive: wizard creates branch + template; headless: fail with clear error unless skipped.
+if [[ "${FLOWAI_SKIP_SPEC_READINESS:-0}" != "1" ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+  if ! flowai_spec_snapshot_ready "$PWD"; then
+    if [[ "$HEADLESS" == "true" ]]; then
+      log_error "Spec workspace not ready: use a feature branch with non-empty specs/<branch>/spec.md (not main, master, or develop)."
+      log_info "Create a branch and spec locally, then re-run. Or run interactively (without --headless) to use the guided setup."
+      log_info "Bypass (CI only): FLOWAI_SKIP_SPEC_READINESS=1 or flowai start --skip-spec-readiness"
+      exit 1
     fi
-
-    if [[ -n "$feature_desc" ]]; then
-      slug="$(echo "$feature_desc" | tr '[:upper:]' '[:lower:]' | sed -E -e 's/[^a-z0-9]+/-/g' -e 's/^-+|-+$//g')"
-      if [[ -n "$slug" ]]; then
-        latest_num=$(git branch --format="%(refname:short)" | grep '^[0-9]\{3\}-' | sort | tail -n 1 | grep -o '^[0-9]\{3\}' || echo "000")
-        next_num=$(printf "%03d" $((10#$latest_num + 1)))
-        suggested="${next_num}-${slug}"
-
-        branch_name=""
-        if command -v gum >/dev/null 2>&1; then
-          branch_name="$(gum input --value "$suggested" --prompt "Branch name: ")"
-        else
-          read -r -p "  Branch name [$suggested]: " branch_name < /dev/tty || true
-          branch_name="${branch_name:-$suggested}"
-        fi
-
-        if [[ -n "$branch_name" ]]; then
-          git checkout -b "$branch_name"
-          mkdir -p "specs/$branch_name"
-        fi
-      fi
+    if ! flowai_spec_ensure_before_session "$PWD"; then
+      exit 1
     fi
   fi
 fi
@@ -278,6 +264,10 @@ rm -f "$FLOWAI_DIR/signals"/*.ready 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals"/*.reject 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals"/*.rejection_context 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals"/*.user_approved 2>/dev/null || true
+# Clean stale temp files from interrupted Gemini runs
+rm -f "$FLOWAI_DIR"/gemini_sys_* 2>/dev/null || true
+rm -f "$FLOWAI_DIR/signals/tasks.dispute_round" 2>/dev/null || true
+rm -f "$FLOWAI_DIR/gemini_slow_auth_hint_shown" 2>/dev/null || true
 
 # Initialize the shared event log for cross-agent visibility
 source "$FLOWAI_HOME/src/core/eventlog.sh"
@@ -302,10 +292,14 @@ EOF
 flowai_write_phase_launcher "master" "master"
 
 tmux new-session -d -s "$SESSION" -n "master" -x 260 -y 60
+tmux set-option -t "$SESSION" status-right " #[bold]FlowAI v$(cat "$FLOWAI_HOME/VERSION" 2>/dev/null || echo 'dev')#[default] | %H:%M "
+
+# Setup Master pane
+master_res="$(flowai_ai_resolve_tool_and_model_for_phase "master")"
 tmux set-window-option -t "${SESSION}:master" pane-border-status top
 tmux set-window-option -t "${SESSION}:master" pane-border-format " #[bold]#{pane_title}#[default] "
 tmux send-keys -t "${SESSION}:master" "bash '$FLOWAI_DIR/launch/tmux_master.sh'" Enter
-tmux select-pane -t "${SESSION}:master" -T "👑 Master Agent"
+tmux select-pane -t "${SESSION}:master" -T "👑 Master Agent [${master_res%%:*}: ${master_res#*:}]"
 
 # Pipeline phases to launch in tmux windows (skip spec — master handles it interactively)
 pipelines=("${FLOWAI_PIPELINE_PHASES[@]:1}")
@@ -313,16 +307,22 @@ win_index=1
 
 for phase in "${pipelines[@]}"; do
   flowai_write_phase_launcher "phase_${win_index}" "$phase"
+  
+  phase_res="$(flowai_ai_resolve_tool_and_model_for_phase "$phase")"
+  phase_title="🤖 Phase: ${phase} [${phase_res%%:*}: ${phase_res#*:}]"
+
   if [[ "$layout" == "dashboard" ]]; then
     tmux split-window -t "${SESSION}:0" -v
     tmux send-keys -t "${SESSION}:0.${win_index}" "bash '$FLOWAI_DIR/launch/tmux_phase_${win_index}.sh'" Enter
-    tmux select-pane -t "${SESSION}:0.${win_index}" -T "🤖 Phase: ${phase}"
+    tmux select-pane -t "${SESSION}:0.${win_index}" -T "$phase_title"
   else
     tmux new-window -t "${SESSION}:${win_index}" -n "$phase"
     tmux set-window-option -t "${SESSION}:${win_index}" pane-border-status top
     tmux set-window-option -t "${SESSION}:${win_index}" pane-border-format " #[bold]#{pane_title}#[default] "
+    # Auto-close pane when phase completes (frees screen space for remaining phases)
+    tmux set-option -t "${SESSION}:${win_index}" remain-on-exit off 2>/dev/null || true
     tmux send-keys -t "${SESSION}:${win_index}" "bash '$FLOWAI_DIR/launch/tmux_phase_${win_index}.sh'" Enter
-    tmux select-pane -t "${SESSION}:${win_index}" -T "🤖 Phase: ${phase}"
+    tmux select-pane -t "${SESSION}:${win_index}" -T "$phase_title"
   fi
   win_index=$((win_index + 1))
 done

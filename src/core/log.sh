@@ -10,6 +10,28 @@ YELLOW=$'\033[33m'
 RED=$'\033[31m'
 RESET=$'\033[0m'
 
+# Strip CSI/OSC sequences from strings before printing (Master status line, etc.).
+# Prevents leaked terminal responses (e.g. OSC 11 color query) from polluting output when
+# redraw (\r) races with tool subprocesses writing to the same tty.
+flowai_sanitize_display_text() {
+  local s="$1"
+  [[ -n "$s" ]] || { printf ''; return 0; }
+  if command -v perl >/dev/null 2>&1; then
+    printf '%s' "$s" | LC_ALL=C perl -pe 's/\e\[[0-9:;?]*[A-Za-z]//g; s/\e\][^\a\e]*(\a|\e\\)//g'
+    return 0
+  fi
+  printf '%s' "$s" | LC_ALL=C sed \
+    -e $'s/\033\[[0-9:;?]*[A-Za-z]//g' \
+    -e $'s/\033\][^\033\x07]*[\x07]//g' \
+    -e $'s/\033\][^\033]*\033\\\\//g'
+}
+
+# FLOWAI_PLAIN_TERMINAL=1 — disable carriage-return / erase-line redraws (pipeline line, wait spinner).
+# Without this, tmux/Terminal scrollback often shows mangled escape sequences after long sessions.
+flowai_terminal_plain_enabled() {
+  [[ "${FLOWAI_PLAIN_TERMINAL:-0}" == "1" ]]
+}
+
 log_info() {
     printf "${CYAN}ℹ ${BOLD}%s${RESET}\n" "$1"
 }

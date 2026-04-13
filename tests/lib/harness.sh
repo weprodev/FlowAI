@@ -54,7 +54,7 @@ flowai_test_invoke_in_dir() {
   err="$(mktemp)"
   set +e
   (cd "$workdir" || exit 99
-   "$FLOWAI_BIN" "$@") >"$out" 2>"$err"
+   FLOWAI_DIR="$workdir/.flowai" "$FLOWAI_BIN" "$@") >"$out" 2>"$err"
   local rc=$?
   set -e
   FLOWAI_TEST_STDOUT="$(cat "$out")"
@@ -73,7 +73,7 @@ flowai_test_invoke_in_dir_env() {
   err="$(mktemp)"
   set +e
   (cd "$workdir" || exit 99
-   env "$@") >"$out" 2>"$err"
+   env FLOWAI_DIR="$workdir/.flowai" "$@") >"$out" 2>"$err"
   local rc=$?
   set -e
   FLOWAI_TEST_STDOUT="$(cat "$out")"

@@ -9,6 +9,8 @@
 source "$FLOWAI_HOME/src/core/config.sh"
 # shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
+# shellcheck source=src/core/debug_session.sh
+source "$FLOWAI_HOME/src/core/debug_session.sh"
 # shellcheck source=src/core/skills.sh
 source "$FLOWAI_HOME/src/core/skills.sh"
 # shellcheck source=src/bootstrap/specify.sh
@@ -62,11 +64,9 @@ flowai_ai_resolve_model_for_tool() {
   printf '%s' "$raw"
 }
 
-flowai_ai_run() {
+# Helper: resolve exactly which tool and model will run for a specific phase
+flowai_ai_resolve_tool_and_model_for_phase() {
   local phase="$1"
-  local prompt_file="$2"
-  local run_interactive="$3"
-
   local tool="" model="" role=""
 
   if [[ "$phase" == "master" ]]; then
@@ -81,12 +81,40 @@ flowai_ai_run() {
     fi
   fi
   model="$(flowai_ai_resolve_model_for_tool "$tool" "$model")"
+  echo "$tool:$model"
+}
+
+# Tools with no in-tmux REPL — only print a prompt for paste into an IDE (Cursor, Copilot Chat, etc.).
+flowai_ai_tool_is_paste_only() {
+  case "$1" in
+    cursor|copilot) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+flowai_ai_run() {
+  local phase="$1"
+  local prompt_file="$2"
+  local run_interactive="$3"
+
+  local resolved
+  resolved="$(flowai_ai_resolve_tool_and_model_for_phase "$phase")"
+  local tool="${resolved%%:*}"
+  local model="${resolved#*:}"
 
   local auto_approve
   auto_approve="$(flowai_cfg_auto_approve)"
 
   local sys_prompt=""
+  # region agent log
+  local _t_skills_0 _t_skills_1 _skills_ms
+  _t_skills_0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   sys_prompt="$(flowai_skills_build_prompt "$phase" "$prompt_file")"
+  _t_skills_1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _skills_ms=$((_t_skills_1 - _t_skills_0))
+  flowai_debug_session_log "H-A" "ai.sh:flowai_ai_run" "after_flowai_skills_build_prompt" \
+    "{\"phase\":\"${phase}\",\"tool\":\"${tool}\",\"model\":\"${model}\",\"prompt_build_ms\":${_skills_ms},\"prompt_chars\":${#sys_prompt}}"
+  # endregion
 
   log_header "Phase: $phase | Tool: $tool | Model: $model"
 

@@ -10,10 +10,107 @@ export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export SIGNALS_DIR="${FLOWAI_DIR}/signals"
 export SPECS_DIR="${PWD}/specs"
 
+# shellcheck source=src/core/wait_ui.sh
+source "$FLOWAI_HOME/src/core/wait_ui.sh"
+# shellcheck source=src/core/session.sh
+source "$FLOWAI_HOME/src/core/session.sh"
+
 if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]]; then
   log_error "Not a FlowAI project here — run: flowai init"
   exit 1
 fi
+
+# Gum reads the keyboard via stdin. When bash stdin is not the user terminal (nested
+# pipelines, some tmux layouts), menus hang or leak OSC noise unless we attach /dev/tty.
+flowai_gum_choose() {
+  if [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    gum choose "$@" </dev/tty
+  else
+    gum choose "$@"
+  fi
+}
+
+flowai_gum_pager_file() {
+  local f="$1"
+  if [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    gum pager "$f" </dev/tty
+  else
+    gum pager "$f"
+  fi
+}
+
+# Kill every tmux pane in this FlowAI session except the current pane (typically Master).
+flowai_tmux_kill_other_panes() {
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n "${TMUX:-}" ]] || return 0
+  local session me w p
+  session="$(tmux display-message -p '#S' 2>/dev/null)" || return 0
+  me="${TMUX_PANE}"
+  local -a kill_list=()
+  while IFS= read -r w; do
+    [[ -n "$w" ]] || continue
+    while IFS= read -r p; do
+      [[ -n "$p" && "$p" != "$me" ]] && kill_list+=("$p")
+    done < <(tmux list-panes -t "${session}:$w" -F '#{pane_id}' 2>/dev/null)
+  done < <(tmux list-windows -t "$session" -F '#{window_index}' 2>/dev/null)
+  for p in "${kill_list[@]}"; do
+    tmux kill-pane -t "$p" 2>/dev/null || true
+  done
+}
+
+# After pipeline success: close other agent panes, wait for Enter, confirm quit → kill tmux session.
+# Skipped in tests (FLOWAI_TESTING=1) or when FLOWAI_SESSION_END=0.
+flowai_session_prompt_end() {
+  if [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
+    return 0
+  fi
+  if [[ "${FLOWAI_SESSION_END:-1}" == "0" ]]; then
+    return 0
+  fi
+
+  printf '\n'
+  log_header "Session wrap-up"
+  log_info "Next steps are listed above."
+  printf '\n'
+  log_info "Press Enter when you have finished reading…"
+  if [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    read -r _ </dev/tty || true
+  else
+    read -r _ || true
+  fi
+
+  log_info "Closing other agent panes…"
+  flowai_phase_focus "master" 2>/dev/null || true
+  flowai_tmux_kill_other_panes
+
+  printf '\n'
+  local do_kill=0
+  if command -v gum >/dev/null 2>&1 && [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    if gum confirm "Quit FlowAI and close this tmux session (all windows)?" </dev/tty; then
+      do_kill=1
+    fi
+  else
+    local ans=""
+    if [[ -r /dev/tty ]]; then
+      read -r -p "Quit FlowAI and close this tmux session? [y/N]: " ans </dev/tty || true
+    else
+      read -r -p "Quit FlowAI and close this tmux session? [y/N]: " ans || true
+    fi
+    if [[ "$ans" =~ ^[yY]([eE][sS])?$ ]]; then
+      do_kill=1
+    fi
+  fi
+
+  if [[ "$do_kill" -eq 1 ]]; then
+    local sess
+    sess="$(flowai_session_name "$PWD")"
+    if tmux has-session -t "$sess" 2>/dev/null; then
+      exec tmux kill-session -t "$sess"
+    fi
+    exit 0
+  fi
+  log_info "Session left running. When finished:  flowai kill"
+}
 
 # Block until <signal>.ready exists. Respects SIGINT (exit 130) and
 # FLOWAI_PHASE_TIMEOUT_SEC (0 = unlimited, the default).
@@ -22,6 +119,9 @@ flowai_phase_wait_for() {
   local my_phase="$2"
 
   [[ -f "$SIGNALS_DIR/${signal}.ready" ]] && return 0
+
+  local _wu_rank
+  _wu_rank="$(flowai_wait_ui_resolve_rank "$my_phase")"
 
   flowai_event_emit "$my_phase" "waiting" "Blocked on ${signal}.ready"
   printf "\n${YELLOW}⏳ [%s] Waiting for '%s'...${RESET}\n" "$my_phase" "$signal"
@@ -34,20 +134,29 @@ flowai_phase_wait_for() {
   while [[ ! -f "$SIGNALS_DIR/${signal}.ready" ]]; do
     if [[ "$_interrupted" -eq 1 ]]; then
       trap - INT TERM
+      flowai_wait_ui_clear_line
+      flowai_wait_ui_release_if_owner "$_wu_rank"
       log_warn "Wait interrupted — exiting ${my_phase}."
       exit 130
     fi
     if [[ "$_timeout" -gt 0 && "$_elapsed" -ge "$_timeout" ]]; then
       trap - INT TERM
+      flowai_wait_ui_clear_line
+      flowai_wait_ui_release_if_owner "$_wu_rank"
       log_error "Timed out after ${_timeout}s waiting for '${signal}.ready' (${my_phase})."
       log_error "Set FLOWAI_PHASE_TIMEOUT_SEC=0 to wait indefinitely."
       exit 1
     fi
     sleep 2
     _elapsed=$(( _elapsed + 2 ))
+    if flowai_wait_ui_claim_or_skip "$_wu_rank"; then
+      flowai_wait_ui_pulse_line "$_elapsed" 2 "${signal}.ready"
+    fi
   done
 
   trap - INT TERM
+  flowai_wait_ui_clear_line
+  flowai_wait_ui_release_if_owner "$_wu_rank"
   printf "${GREEN}✓ '%s' ready — starting %s.${RESET}\n" "$signal" "$my_phase"
 }
 
@@ -62,6 +171,17 @@ flowai_phase_resolve_feature_dir() {
     [[ -n "$d" ]] && dirs+=("$d")
   done < <(find "$SPECS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
 
+  # Unambiguous: when specs/<git-branch>/ exists, use it (avoids gum-choosing develop vs feature).
+  local _cur_branch=""
+  _cur_branch="$(git -C "${PWD}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -n "$_cur_branch" && "$_cur_branch" != "HEAD" ]]; then
+    local _preferred="${SPECS_DIR}/${_cur_branch}"
+    if [[ -d "$_preferred" ]]; then
+      printf '%s' "$_preferred"
+      return 0
+    fi
+  fi
+
   case "${#dirs[@]}" in
     0) return 0 ;;
     1) printf '%s' "${dirs[0]}" ;;
@@ -69,7 +189,7 @@ flowai_phase_resolve_feature_dir() {
       if [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
         printf '%s' "${dirs[0]}"
       elif command -v gum >/dev/null 2>&1; then
-        gum choose "${dirs[@]}"
+        flowai_gum_choose "${dirs[@]}"
       else
         local i=1
         printf '\nMultiple feature directories found:\n' >/dev/tty
@@ -90,18 +210,19 @@ flowai_phase_resolve_feature_dir() {
 }
 
 # Prompt the human to approve a phase artifact.
+# Args: target_file, artifact_label (human), phase_id (canonical — MUST match pipeline id for events, e.g. plan)
 # Returns: 0 = approved, 1 = retry agent, 2 = needs changes (reject).
 flowai_phase_verify_artifact() {
   local target_file="$1"
-  local phase_name="$2"
-  local current_signal="$3"
+  local artifact_label="$2"
+  local phase_id="$3"
 
   while [[ ! -f "$target_file" ]]; do
     log_error "Required output not found: $target_file"
 
     local action=""
     if command -v gum >/dev/null 2>&1; then
-      action="$(gum choose 'Wait (I saved it)' 'Retry Agent' 'Create empty')"
+      action="$(flowai_gum_choose 'Wait (I saved it)' 'Retry Agent' 'Create empty')"
     else
       read -r -p "Not found. [w]ait / [r]etry / [e]mpty: " action < /dev/tty || true
     fi
@@ -116,13 +237,20 @@ flowai_phase_verify_artifact() {
     esac
   done
 
-  flowai_event_emit "$phase_name" "artifact_produced" "$target_file"
-  log_success "$phase_name artifact ready: $target_file"
+  flowai_event_emit "$phase_id" "artifact_produced" "$target_file"
+  log_success "Human sign-off: $artifact_label — $target_file"
+
+  printf '\n'
+  log_info "🔍 Human checkpoint — $artifact_label"
+  log_info "   $target_file"
+  log_info "Then use the menu below: Approve, Needs changes, or Review artifact."
+  printf '\n'
 
   while true; do
     local decision=""
     if command -v gum >/dev/null 2>&1; then
-      decision="$(gum choose 'Approve' 'Needs changes' 'Review artifact')"
+      log_info "⏸️  Waiting on you — interactive menu (read keyboard from terminal)…"
+      decision="$(flowai_gum_choose --header "  How would you like to proceed?" 'Approve' 'Needs changes' 'Review artifact')"
     else
       read -r -p "Approve / Needs changes / Review? [a/n/r]: " decision < /dev/tty || true
       case "$decision" in
@@ -136,12 +264,12 @@ flowai_phase_verify_artifact() {
       local my_editor="${EDITOR:-cursor}"
       if command -v gum >/dev/null 2>&1; then
         local mode
-        mode="$(gum choose 'Read here (Terminal)' 'Open in Editor')"
+        mode="$(flowai_gum_choose 'Read here (Terminal)' 'Open in Editor')"
         if [[ "$mode" == "Open in Editor" ]]; then
           command -v "$my_editor" >/dev/null 2>&1 || my_editor="vi"
           "$my_editor" "$target_file" </dev/tty >/dev/tty 2>&1 || true
         else
-          gum pager < "$target_file"
+          flowai_gum_pager_file "$target_file"
         fi
       else
         read -r -p "Read in [t]erminal or [e]ditor?: " mode < /dev/tty || true
@@ -158,16 +286,63 @@ flowai_phase_verify_artifact() {
     fi
 
     if [[ "$decision" == "Approve" ]]; then
-      touch "$SIGNALS_DIR/${current_signal}.ready"
-      flowai_event_emit "$phase_name" "approved" "$target_file"
+      touch "$SIGNALS_DIR/${phase_id}.ready"
+      flowai_event_emit "$phase_id" "approved" "$target_file"
       return 0
     fi
 
-    touch "$SIGNALS_DIR/${current_signal}.reject" 2>/dev/null || true
-    flowai_event_emit "$phase_name" "rejected" "Human rejected artifact"
+    touch "$SIGNALS_DIR/${phase_id}.reject" 2>/dev/null || true
+    flowai_event_emit "$phase_id" "rejected" "Human rejected artifact"
     log_warn "Phase rejected — coordinate with Master, then resume."
     return 2
   done
+}
+
+# After a phase completes: remove this UI so remaining panes (Master / Implement) get space.
+# Phases: plan | tasks | review
+# - dashboard: one window, multiple panes → kill this pane (TMUX_PANE).
+# - tabs: one phase per window → kill this window.
+flowai_phase_schedule_close_phase_ui() {
+  local phase_name="${1:-}"
+  case "$phase_name" in
+    plan|tasks|review) ;;
+    *) return 0 ;;
+  esac
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n "${TMUX:-}" ]] || return 0
+  local layout
+  layout="$(flowai_cfg_layout)"
+
+  local label="Phase"
+  case "$phase_name" in
+    plan)   label="Plan" ;;
+    tasks)  label="Tasks" ;;
+    review) label="Review (QA)" ;;
+  esac
+
+  if [[ "$layout" == "dashboard" ]]; then
+    local pane_id="${TMUX_PANE:-}"
+    [[ -n "$pane_id" ]] || return 0
+    log_info "✅ ${label} complete — closing this pane shortly (dashboard layout). Master + Implement stay open."
+    ( sleep 0.5; tmux kill-pane -t "$pane_id" 2>/dev/null || true ) &
+    return 0
+  fi
+
+  if [[ "$layout" == "tabs" ]]; then
+    local sess win
+    sess="$(tmux display-message -p '#S' 2>/dev/null)" || return 0
+    win="$(tmux display-message -p '#I' 2>/dev/null)" || return 0
+    log_info "✅ ${label} complete — closing this window shortly (tabs layout). Master + Implement stay open."
+    ( sleep 0.5; tmux kill-window -t "${sess}:${win}" 2>/dev/null || true ) &
+    return 0
+  fi
+
+  return 0
+}
+
+# Backward-compatible name (Plan-only callers historically).
+flowai_phase_schedule_close_plan_ui() {
+  flowai_phase_schedule_close_phase_ui "$1"
 }
 
 # Compose the injected prompt file: role content + phase directive.
@@ -195,11 +370,16 @@ flowai_phase_run_loop() {
   flowai_event_emit "$phase_name" "started" "Beginning AI run"
 
   while true; do
+    log_info "⏳ $artifact_label: AI agent is working (stream output appears below as the tool runs)..."
     flowai_ai_run "$phase_name" "$prompt_file" "false"
-    flowai_phase_verify_artifact "$artifact_file" "$artifact_label" "$signal_name"
-    local rc=$?
+    log_success "✅ $artifact_label: AI agent finished. Verifying output..."
+    log_info "📄 Expected artifact: $artifact_file"
+    local rc=0
+    flowai_phase_verify_artifact "$artifact_file" "$artifact_label" "$signal_name" || rc=$?
+    
     if [[ "$rc" -eq 0 ]]; then
       flowai_event_emit "$phase_name" "phase_complete" "Approved and signalled"
+      flowai_phase_schedule_close_phase_ui "$phase_name"
       break
     fi
     if [[ "$rc" -eq 2 ]]; then

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # FlowAI test suite — phase signal coordination
 # Tests the signal protocol, role resolution, and prompt composition.
+# For behavioral regressions (event JSON, verdict logic, async signals), see
+# orchestration_contracts.sh — prefer adding there when a bug escaped CI.
 # shellcheck shell=bash
 #
 # Temp projects: env FLOWAI_DIR=… bash -s <<'EOS' … EOS (avoids SC2030/SC2031 on export-in-subshell).
@@ -333,30 +335,34 @@ flowai_test_s_sig_013() {
   fi
 }
 
-# SIG-014 — Implement phase stays alive: polls impl.ready + rejection_context
-# Docs §4: After impl_produced, Impl polls for Master signals (no flowai_phase_run_loop)
+# SIG-014 — Implement phase stays alive: touches impl.code_complete + polls impl.ready
+# Docs §4: After impl_produced, Review unblocks; Impl polls for impl.ready (no flowai_phase_run_loop)
 flowai_test_s_sig_014() {
   local id="SIG-014"
   local impl="$FLOWAI_HOME/src/phases/implement.sh"
 
-  local has_stay_alive has_ready_poll has_rejection_poll has_no_run_loop has_impl_produced
+  local has_stay_alive has_ready_poll has_rejection_poll has_no_run_loop has_impl_produced has_code_complete
   has_stay_alive=false
   has_ready_poll=false
   has_rejection_poll=false
   has_no_run_loop=true
   has_impl_produced=false
+  has_code_complete=false
 
   grep -q 'while true' "$impl" 2>/dev/null && has_stay_alive=true
   grep -q 'impl.ready' "$impl" 2>/dev/null && has_ready_poll=true
   grep -q 'impl.rejection_context\|REJECTION_CONTEXT_FILE' "$impl" 2>/dev/null && has_rejection_poll=true
   grep -q 'flowai_phase_run_loop' "$impl" 2>/dev/null && has_no_run_loop=false
   grep -q 'impl_produced' "$impl" 2>/dev/null && has_impl_produced=true
+  grep -q 'impl.code_complete.ready' "$impl" 2>/dev/null && has_code_complete=true
+  local has_focus_review=false
+  grep -q 'flowai_phase_focus "review"' "$impl" 2>/dev/null && has_focus_review=true
 
-  if $has_stay_alive && $has_ready_poll && $has_rejection_poll && $has_no_run_loop && $has_impl_produced; then
-    flowai_test_pass "$id" "Implement stays alive: polls impl.ready + rejection_context"
+  if $has_stay_alive && $has_ready_poll && $has_rejection_poll && $has_no_run_loop && $has_impl_produced && $has_code_complete && $has_focus_review; then
+    flowai_test_pass "$id" "Implement: impl.code_complete + focus Review + polls impl.ready"
   else
-    printf 'FAIL %s: implement.sh contract broken (alive=%s ready=%s reject=%s no_loop=%s produced=%s)\n' \
-      "$id" "$has_stay_alive" "$has_ready_poll" "$has_rejection_poll" "$has_no_run_loop" "$has_impl_produced" >&2
+    printf 'FAIL %s: implement.sh contract broken (alive=%s ready=%s reject=%s no_loop=%s produced=%s code_complete=%s focus_review=%s)\n' \
+      "$id" "$has_stay_alive" "$has_ready_poll" "$has_rejection_poll" "$has_no_run_loop" "$has_impl_produced" "$has_code_complete" "$has_focus_review" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
@@ -373,12 +379,13 @@ flowai_test_s_sig_015() {
 
   grep -q 'flowai_phase_run_loop' "$review" 2>/dev/null && has_run_loop=true
   grep -q 'impl.rejection_context' "$review" 2>/dev/null && has_rejection_path=true
+  grep -q 'impl.code_complete' "$review" 2>/dev/null && has_code_complete_wait=true || has_code_complete_wait=false
 
-  if $has_run_loop && $has_rejection_path; then
-    flowai_test_pass "$id" "Review uses gum gate + writes impl.rejection_context"
+  if $has_run_loop && $has_rejection_path && $has_code_complete_wait; then
+    flowai_test_pass "$id" "Review waits impl.code_complete + gum gate + impl.rejection_context"
   else
-    printf 'FAIL %s: review.sh contract broken (run_loop=%s rejection=%s)\n' \
-      "$id" "$has_run_loop" "$has_rejection_path" >&2
+    printf 'FAIL %s: review.sh contract broken (run_loop=%s rejection=%s code_complete=%s)\n' \
+      "$id" "$has_run_loop" "$has_rejection_path" "$has_code_complete_wait" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }

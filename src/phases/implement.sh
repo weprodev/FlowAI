@@ -2,10 +2,9 @@
 # FlowAI — Implement phase
 #
 # Implements code based on spec + plan + tasks.
-# After completion, emits 'impl_produced' and stays alive until Master
-# signals approval or requests changes. This allows the Master Agent to
-# review the implementation, ask for fixes, and get user sign-off before
-# advancing to Review.
+# After completion, emits 'impl_produced', touches impl.code_complete.ready
+# (unblocks Review / QA), and stays alive until Master final sign-off
+# (impl.ready). Master or Review may request changes via impl.rejection_context.
 # shellcheck shell=bash
 
 set -euo pipefail
@@ -89,14 +88,16 @@ trap 'kill $_PROGRESS_PID 2>/dev/null || true' EXIT
 flowai_event_emit "impl" "started" "Beginning AI run"
 flowai_ai_run "impl" "$INJECTED_PROMPT" "false"
 
-# Signal completion to Master
-flowai_event_emit "impl" "impl_produced" "Implementation complete — waiting for Master review"
-log_info "Implementation complete. Waiting for Master Agent review..."
+# Signal completion — QA (Review) runs next; Master final sign-off is last
+flowai_event_emit "impl" "impl_produced" "Implementation complete — QA (Review) next, then Master final sign-off"
+touch "${FLOWAI_DIR}/signals/impl.code_complete.ready"
+log_info "Implementation complete. Next: Review (QA) — Master final sign-off only after QA."
+flowai_phase_focus "review" 2>/dev/null || true
 
-# ─── Stay Alive: Wait for Master instructions or approval ───────────────────
+# ─── Stay Alive: wait for Master final approval (after QA) or revision ────
 # Master will either:
-#   1. Write impl.ready → we exit cleanly
-#   2. Write impl.revision_context → we re-run with changes
+#   1. Write impl.ready (after QA + Master final sign-off) → exit cleanly
+#   2. Write impl.rejection_context → re-run with changes
 while true; do
   if [[ -f "${FLOWAI_DIR}/signals/impl.ready" ]]; then
     log_success "Implementation approved by Master + User. Phase complete."
@@ -108,19 +109,24 @@ while true; do
   if [[ -f "$REJECTION_CONTEXT_FILE" ]]; then
     log_warn "Master requested changes. Re-running implementation..."
     flowai_event_emit "impl" "revision_requested" "Master requested changes"
-    REJECTION_CONTEXT="
 
---- [MASTER REVISION REQUEST] ---
-$(cat "$REJECTION_CONTEXT_FILE")
----"
+    # Merge via temp file so arbitrary rejection text cannot break quoting (set -euo pipefail).
+    _impl_dir_merge="$(mktemp "${TMPDIR:-/tmp}/flowai_impl_directive_merge_XXXXXX")"
+    {
+      printf '%s\n' "$DIRECTIVE"
+      printf '\n--- [MASTER REVISION REQUEST] ---\n'
+      cat "$REJECTION_CONTEXT_FILE"
+      printf '\n---\n'
+    } > "$_impl_dir_merge"
     rm -f "$REJECTION_CONTEXT_FILE"
 
-    # Rebuild directive with revision context
-    DIRECTIVE_REV="${DIRECTIVE}${REJECTION_CONTEXT}"
-    INJECTED_PROMPT="$(flowai_phase_write_prompt "impl" "$ROLE_FILE" "$DIRECTIVE_REV")"
+    INJECTED_PROMPT="$(flowai_phase_write_prompt "impl" "$ROLE_FILE" "$(cat "$_impl_dir_merge")")"
+    rm -f "$_impl_dir_merge"
     flowai_ai_run "impl" "$INJECTED_PROMPT" "false"
-    flowai_event_emit "impl" "impl_produced" "Revised implementation — waiting for Master review"
-    log_info "Revised implementation complete. Waiting for Master review..."
+    flowai_event_emit "impl" "impl_produced" "Revised implementation — QA (Review) next, then Master final sign-off"
+    touch "${FLOWAI_DIR}/signals/impl.code_complete.ready"
+    log_info "Revised implementation complete. Next: Review (QA) — Master final sign-off only after QA."
+    flowai_phase_focus "review" 2>/dev/null || true
   fi
 
   sleep 3

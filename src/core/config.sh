@@ -56,6 +56,9 @@ flowai_cfg_read() {
 flowai_cfg_auto_approve() { flowai_cfg_read '.auto_approve' 'false'; }
 flowai_cfg_layout()       { flowai_cfg_read '.layout' 'dashboard'; }
 
+# Git integration branch chosen at `flowai init` (main / master / develop).
+flowai_cfg_default_branch() { flowai_cfg_read '.default_branch' 'main'; }
+
 # Role keys may contain hyphens — use jq --arg for safe lookup.
 flowai_cfg_pipeline_role() {
   local phase="$1"
