@@ -328,33 +328,24 @@ flowai_test_s_cli_023() {
   flowai_test_invoke_in_dir "$tmp" init
   flowai_test_assert_rc 0 "UC-CLI-023" || return
 
-  # shellcheck disable=SC2016
-  eff="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
-    source "$FLOWAI_HOME/src/core/skills.sh"
-    flowai_skills_effective_role_for_phase plan
-  ')"
+  eff="$(env "FLOWAI_DIR=$tmp/.flowai" bash -c 'source "'"$FLOWAI_HOME"'/src/core/skills.sh"
+    flowai_skills_effective_role_for_phase plan')"
   if [[ "$eff" != "team-lead" ]]; then
     printf 'FAIL UC-CLI-023: plan phase should map to team-lead, got %q\n' "$eff" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
     return 1
   fi
 
-  # shellcheck disable=SC2016
-  eff="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
-    source "$FLOWAI_HOME/src/core/skills.sh"
-    flowai_skills_effective_role_for_phase impl
-  ')"
+  eff="$(env "FLOWAI_DIR=$tmp/.flowai" bash -c 'source "'"$FLOWAI_HOME"'/src/core/skills.sh"
+    flowai_skills_effective_role_for_phase impl')"
   if [[ "$eff" != "backend-engineer" ]]; then
     printf 'FAIL UC-CLI-023: impl phase should map to backend-engineer, got %q\n' "$eff" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
     return 1
   fi
 
-  # shellcheck disable=SC2016
-  match="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
-    source "$FLOWAI_HOME/src/core/skills.sh"
-    flowai_skills_list_for_role team-lead
-  ' | grep -c '^writing-plans$' || true)"
+  match="$(env "FLOWAI_DIR=$tmp/.flowai" bash -c 'source "'"$FLOWAI_HOME"'/src/core/skills.sh"
+    flowai_skills_list_for_role team-lead' | grep -c '^writing-plans$' || true)"
   if [[ "$match" -lt 1 ]]; then
     printf 'FAIL UC-CLI-023: team-lead skills should include writing-plans\n' >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
@@ -401,12 +392,9 @@ flowai_test_s_cli_026() {
   trap 'rm -rf "$tmp"' RETURN
   mkdir -p "$tmp/.flowai"
   printf '{}\n' >"$tmp/.flowai/config.json"
-  # shellcheck disable=SC2016
-  out="$(env FLOWAI_HOME="$FLOWAI_HOME" "FLOWAI_DIR=$tmp/.flowai" bash -c '
-    source "$FLOWAI_HOME/src/core/config.sh"
-    source "$FLOWAI_HOME/src/core/ai.sh"
-    flowai_ai_resolve_model_for_tool gemini "not-a-real-model-xyz"
-  ' 2>/dev/null)"
+  out="$(env "FLOWAI_DIR=$tmp/.flowai" bash -c 'source "'"$FLOWAI_HOME"'/src/core/config.sh"
+    source "'"$FLOWAI_HOME"'/src/core/ai.sh"
+    flowai_ai_resolve_model_for_tool gemini "not-a-real-model-xyz"' 2>/dev/null)"
   if [[ "$out" != *"gemini-2.5-pro"* ]]; then
     printf 'FAIL UC-CLI-026: expected catalog fallback gemini-2.5-pro in stdout, got %q\n' "$out" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))

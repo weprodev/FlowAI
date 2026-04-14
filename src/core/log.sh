@@ -48,6 +48,36 @@ log_error() {
     printf "${RED}✗ ${BOLD}%s${RESET}\n" "$1" >&2
 }
 
+# Terminal width for carriage-return redraws. A fixed 120-column pad wraps on
+# narrow tmux panes, so Master’s poll loop looked like “blank lines every few seconds.”
+_flowai_terminal_width() {
+  local w="${COLUMNS:-}"
+  if [[ -z "$w" ]] || [[ ! "$w" =~ ^[0-9]+$ ]] || [[ "$w" -lt 1 ]]; then
+    w="$(tput cols 2>/dev/null)" || w=80
+  fi
+  if [[ ! "$w" =~ ^[0-9]+$ ]] || [[ "$w" -lt 1 ]]; then
+    w=80
+  fi
+  [[ "$w" -gt 200 ]] && w=200
+  [[ "$w" -lt 16 ]] && w=80
+  printf '%s' "$w"
+}
+
+# Overwrite the current line with space-padding (scrollback-safe).
+# Uses spaces instead of CSI erase (\033[K / \033[2K) to avoid garbled
+# ^[[K noise in tmux scrollback buffers.
+flowai_overwrite_line() {
+  local w
+  w="$(_flowai_terminal_width)"
+  printf '\r%*s\r%s' "$w" '' "$1"
+}
+
+flowai_clear_line() {
+  local w
+  w="$(_flowai_terminal_width)"
+  printf '\r%*s\r' "$w" ''
+}
+
 log_header() {
     printf '\n%b%b━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%b\n' "$BOLD" "$CYAN" "$RESET"
     printf " %b%s%b\n" "$BOLD" "$1" "$RESET"

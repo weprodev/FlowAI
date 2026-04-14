@@ -263,6 +263,12 @@ _master_approval_watcher() {
   done
 }
 
+# If spec was already approved during session resume, skip the interactive session entirely.
+if [[ -f "${FLOWAI_DIR}/signals/spec.ready" ]]; then
+  log_success "Spec already approved (resumed). Skipping interactive session."
+  _watcher_pid=""
+else
+
 _master_approval_watcher "$SPEC_FILE" "$APPROVAL_MARKER" "$$" &
 _watcher_pid=$!
 
@@ -348,11 +354,13 @@ if [[ ! -f "${FLOWAI_DIR}/signals/spec.ready" ]]; then
   done
 fi
 
-kill "$_watcher_pid" 2>/dev/null || true
-wait "$_watcher_pid" 2>/dev/null || true
+kill "${_watcher_pid:-}" 2>/dev/null || true
+[[ -n "${_watcher_pid:-}" ]] && wait "$_watcher_pid" 2>/dev/null || true
 
 # Clean up the approval marker for potential re-runs
 rm -f "$APPROVAL_MARKER" 2>/dev/null || true
+
+fi  # end spec resume guard
 
 # ─── Phase 2: Active Pipeline Orchestration ─────────────────────────────────
 # The Master is now the central brain. It actively monitors phase transitions,
@@ -368,6 +376,12 @@ _master_last_processed_line=0
 _master_last_pipeline_line=""
 _master_interrupted=0
 _master_post_qa_signoff=0
+_master_orchestration_start_sec=$SECONDS
+# Phase timing + scope flags (indexed arrays — Bash 3.2–safe; no declare -A).
+# Parallel: _master_phase_keys[i] ↔ _master_phase_starts[i] ↔ _master_scope_flags[i]
+_master_phase_keys=()
+_master_phase_starts=()
+_master_scope_flags=()
 trap '_master_interrupted=1' INT TERM
 
 _master_display_status() {
@@ -387,7 +401,7 @@ _master_display_status() {
     return 0
   fi
   # Clear full line then draw — live line; avoid when plain (scrollback-safe mode above).
-  printf "\r\033[2K${CYAN}Pipeline: %s${RESET}" "$line"
+  flowai_overwrite_line "$(printf '%sPipeline: %s%s' "$CYAN" "$line" "$RESET")"
 }
 
 _master_emit_pipeline_complete_message() {
@@ -471,6 +485,96 @@ _master_handle_phase_errors_from_batch() {
   return 0
 }
 
+# ── Scope/time monitoring ─────────────────────────────────────────────────────
+# Track when phases start (via "started" events) and run a scope check if a
+# phase exceeds FLOWAI_PHASE_EXPECTED_DURATION_SEC (default: 300s / 5 min).
+# The check runs once per phase per session.
+
+_master_record_phase_start() {
+  local new_events="$1"
+  local _evt_line _evt_phase _evt_event i idx
+  while IFS= read -r _evt_line; do
+    [[ -z "$_evt_line" ]] && continue
+    _evt_event="$(jq -r '.event // empty' <<< "$_evt_line" 2>/dev/null)" || continue
+    [[ "$_evt_event" == "started" ]] || continue
+    _evt_phase="$(jq -r '.phase // empty' <<< "$_evt_line" 2>/dev/null)" || continue
+    [[ -n "$_evt_phase" ]] || continue
+    idx=-1
+    for i in "${!_master_phase_keys[@]}"; do
+      if [[ "${_master_phase_keys[$i]}" == "$_evt_phase" ]]; then
+        idx=$i
+        break
+      fi
+    done
+    if [[ "$idx" -ge 0 ]]; then
+      _master_phase_starts[idx]=$SECONDS
+    else
+      _master_phase_keys+=("$_evt_phase")
+      _master_phase_starts+=("$SECONDS")
+      _master_scope_flags+=("0")
+    fi
+  done < <(printf '%s\n' "$new_events")
+}
+
+_master_run_scope_check() {
+  local phase="$1"
+  local elapsed="$2"
+
+  local scope_prompt
+  scope_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_scope_XXXXXX")"
+  {
+    printf 'You are the Master Agent performing a scope check.\n'
+    printf 'The "%s" phase has been running for %ds, which exceeds the expected %ds.\n\n' \
+      "$phase" "$elapsed" "${FLOWAI_PHASE_EXPECTED_DURATION_SEC:-300}"
+    printf 'Read the spec:\n  %s/spec.md\n\n' "$FEATURE_DIR"
+    printf 'Check what the %s phase should be doing vs what it appears to be doing.\n' "$phase"
+    printf 'Is the agent doing ONLY what is expected for this phase, or has it gone beyond scope?\n\n'
+    printf 'Reply with ONE line:\n'
+    printf '  SCOPE: ON_TRACK — <brief reason>\n'
+    printf '  SCOPE: OVER_SCOPE — <what extra work the agent appears to be doing>\n'
+    printf 'This is a VERBAL check — do NOT create any files.\n'
+    flowai_phase_artifact_boundary "master"
+  } > "$scope_prompt"
+
+  local scope_result
+  scope_result="$(flowai_ai_run_oneshot "master" "$scope_prompt" 2>/dev/null || echo 'SCOPE: UNKNOWN — AI check failed')"
+  rm -f "$scope_prompt"
+
+  if printf '%s' "$scope_result" | grep -qi 'OVER_SCOPE'; then
+    log_warn "Scope check: $phase appears OVER SCOPE"
+    printf '%s\n' "$scope_result"
+    flowai_event_emit "master" "scope_warning" "Phase $phase may be exceeding its mandate"
+  else
+    log_info "Scope check: $phase is ON TRACK (just slow)"
+    flowai_event_emit "master" "scope_ok" "Phase $phase on track despite long runtime"
+  fi
+}
+
+_master_check_phase_durations() {
+  [[ "${FLOWAI_TESTING:-0}" != "1" ]] || return 0
+  local max_sec="${FLOWAI_PHASE_EXPECTED_DURATION_SEC:-300}"
+  local i phase start_sec elapsed n
+
+  n=${#_master_phase_keys[@]}
+  for (( i = 0; i < n; i++ )); do
+    phase="${_master_phase_keys[$i]}"
+    start_sec="${_master_phase_starts[$i]}"
+    [[ -n "$start_sec" && "$start_sec" =~ ^[0-9]+$ ]] || continue
+
+    # Skip if already scope-checked or phase is complete
+    [[ "${_master_scope_flags[$i]}" == "1" ]] && continue
+    [[ ! -f "${FLOWAI_DIR}/signals/${phase}.ready" ]] || continue
+
+    elapsed=$(( SECONDS - start_sec ))
+    if [[ "$elapsed" -gt "$max_sec" ]]; then
+      _master_scope_flags[i]=1
+      log_warn "Phase '$phase' has been running for ${elapsed}s (threshold: ${max_sec}s). Running scope check..."
+      flowai_event_emit "master" "scope_check" "Phase $phase exceeded ${max_sec}s (elapsed: ${elapsed}s)"
+      _master_run_scope_check "$phase" "$elapsed"
+    fi
+  done
+}
+
 _master_check_events() {
   [[ -f "$FLOWAI_EVENTS_FILE" ]] || return 0
 
@@ -490,6 +594,9 @@ _master_check_events() {
   local new_events
   new_events="$(tail -n +"$((_master_last_processed_line + 1))" "$FLOWAI_EVENTS_FILE")"
   _master_last_processed_line="$total_lines"
+
+  # Record phase start times for scope monitoring
+  _master_record_phase_start "$new_events"
 
   local _err_rc=0
   _master_handle_phase_errors_from_batch "$new_events" || _err_rc=$?
@@ -555,20 +662,31 @@ _master_check_events() {
     fi
     printf '\n'
 
+    # Capture review output to detect NEEDS_FOLLOW_UP verdict
+    local _review_output_file
+    _review_output_file="$(mktemp "${TMPDIR:-/tmp}/flowai_master_review_output_XXXXXX")"
+
     local review_prompt
     review_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_review_XXXXXX")"
     {
       cat "$ROLE_FILE"
       printf '\n%s\n' "$DIRECTIVE"
       printf '\n\n--- [POST-QA MASTER SIGN-OFF] ---\n'
-      printf 'Review (QA) has already approved tasks.md in the Review pane.\n'
+      printf 'Review (QA) has already approved in the Review pane.\n'
       printf 'You are performing the **final** Master orchestration review before the\n'
       printf 'implementation phase may exit (impl.ready).\n'
-      printf 'The human has already seen `git diff --stat` above — do not ask them to run it.\n'
-      printf 'Review the following artifacts:\n'
-      printf '  spec.md:  %s\n' "$FEATURE_DIR/spec.md"
-      printf '  plan.md:  %s\n' "$FEATURE_DIR/plan.md"
+      printf "The human has already seen \`git diff --stat\` above — do not ask them to run it.\n"
+      printf '\nReview the following artifacts:\n'
+      printf '  spec.md:   %s\n' "$FEATURE_DIR/spec.md"
+      printf '  plan.md:   %s\n' "$FEATURE_DIR/plan.md"
       printf '  tasks.md:  %s\n' "$FEATURE_DIR/tasks.md"
+      # Include the QA report so Master has the Review agent's findings
+      if [[ -f "$FEATURE_DIR/review.md" ]]; then
+        printf '  review.md: %s\n' "$FEATURE_DIR/review.md"
+        printf '\n--- review.md (QA report) ---\n'
+        cat "$FEATURE_DIR/review.md"
+        printf '\n---\n'
+      fi
       printf '\nReview the code changes (tests/linters as appropriate).\n'
       printf '\nIMPORTANT: This is a VERBAL review only. Do NOT create any files.\n'
       printf 'Do NOT create plan files, review documents, or any other artifacts.\n'
@@ -578,8 +696,10 @@ _master_check_events() {
       printf '2) ## Master — findings (Spec compliance | Plan alignment | Tasks | Quality | Risks)\n'
       printf '3) ## Master — verdict\n'
       printf '   - One line: READY_FOR_HUMAN_SIGNOFF | NEEDS_FOLLOW_UP\n'
-      printf '   - If NEEDS_FOLLOW_UP: say which phase or agent should act next (plan / tasks / impl / review)\n'
-      printf '     and what must change. If READY_FOR_HUMAN_SIGNOFF: say so clearly.\n'
+      printf '   - If NEEDS_FOLLOW_UP: say which phase should act next (impl / review)\n'
+      printf '     and describe EXACTLY what must change — this text will be sent directly\n'
+      printf '     to the Implement agent as revision context.\n'
+      printf '   - If READY_FOR_HUMAN_SIGNOFF: say so clearly.\n'
       printf '4) Short recommendation for the human.\n'
       printf '\nProduce the full review in this one response. Do NOT write it to a file.\n---\n'
       flowai_phase_artifact_boundary "master"
@@ -588,10 +708,10 @@ _master_check_events() {
     flowai_event_emit "master" "reviewing_impl" "Master final sign-off after QA"
     log_info "── Master AI — binding review (oneshot; output streams live to this pane) ──"
     log_info "    (If nothing prints for a while, the CLI may still be working — with Gemini, stderr shows a heartbeat every ${FLOWAI_GEMINI_ONESHOT_HEARTBEAT_SEC:-8}s.)"
-    # Do not wrap in $() — that buffers all CLI output until exit and looks \"stuck\" in tmux.
+    # Tee output to both terminal (live streaming) and capture file (verdict detection)
     set +e
-    flowai_ai_run_oneshot "master" "$review_prompt"
-    local _review_oneshot_rc=$?
+    flowai_ai_run_oneshot "master" "$review_prompt" | tee "$_review_output_file"
+    local _review_oneshot_rc=${PIPESTATUS[0]}
     set -e
     rm -f "$review_prompt"
     if [[ "$_review_oneshot_rc" -ne 0 ]]; then
@@ -599,18 +719,76 @@ _master_check_events() {
     fi
     printf '\n'
 
-    log_info "── Human approval gate (not AI) — choose in the menu below ──"
-    log_info "    Use ↑/↓ and Enter. If the screen looks noisy (OSC codes), the menu is still active — pick an option."
-    # omit_git_stat=1: diff stat was already printed above (avoid duplicate + never use a tty pager)
-    flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation (post-QA Master sign-off)" "impl" "1"
-    local impl_rc=$?
-    if [[ "$impl_rc" -eq 0 ]]; then
-      flowai_event_emit "master" "impl_approved" "Implementation approved after post-QA Master review"
-      log_success "Implementation approved! Unblocking Implement phase."
-      flowai_phase_focus "master" 2>/dev/null || true
-      _master_emit_pipeline_complete_message
-      flowai_session_prompt_end
-      return 1
+    # Check if Master AI flagged NEEDS_FOLLOW_UP — auto-send revision to Implement
+    local _master_verdict_needs_followup=false
+    if grep -qiE 'NEEDS_FOLLOW_UP' "$_review_output_file" 2>/dev/null; then
+      _master_verdict_needs_followup=true
+    fi
+
+    if $_master_verdict_needs_followup; then
+      log_warn "Master AI verdict: NEEDS_FOLLOW_UP — sending revision context to Implement agent."
+      # Extract the findings + verdict as revision context for Implement
+      {
+        printf '## Master Post-QA Review — Revision Required\n\n'
+        printf 'The Master Agent reviewed the implementation after QA and found issues.\n'
+        printf 'Fix the issues below, then the pipeline will re-run QA and Master review.\n\n'
+        cat "$_review_output_file"
+      } > "${FLOWAI_DIR}/signals/impl.rejection_context"
+      rm -f "$_review_output_file"
+      flowai_event_emit "master" "impl_revision_needed" "Master post-QA review: NEEDS_FOLLOW_UP"
+      # Reset so we re-enter post-QA flow after impl + review cycle completes
+      _master_post_qa_signoff=0
+      # Also reset impl.code_complete so Review will re-run after impl finishes
+      rm -f "${FLOWAI_DIR}/signals/impl.code_complete.ready" 2>/dev/null || true
+      log_info "Revision context sent to Implement. Waiting for impl → review → Master cycle..."
+      flowai_phase_focus "impl" 2>/dev/null || true
+    else
+      rm -f "$_review_output_file"
+      log_info "── Human approval gate (not AI) — choose in the menu below ──"
+      log_info "    Use ↑/↓ and Enter. If the screen looks noisy (OSC codes), the menu is still active — pick an option."
+      # omit_git_stat=1: diff stat was already printed above (avoid duplicate + never use a tty pager)
+      flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation (post-QA Master sign-off)" "impl" "1"
+      local impl_rc=$?
+      if [[ "$impl_rc" -eq 0 ]]; then
+        flowai_event_emit "master" "impl_approved" "Implementation approved after post-QA Master review"
+        log_success "Implementation approved! Unblocking Implement phase."
+        # Close Implement/Review panes first, then show next steps only on Master (phase.sh).
+        flowai_session_close_non_master_panes
+        _master_emit_pipeline_complete_message
+        flowai_session_prompt_end
+        return 1
+      fi
+      # User chose "Needs changes" — collect feedback and send to Implement
+      if [[ "$impl_rc" -eq 2 ]]; then
+        printf '\n'
+        log_info "What changes are needed? (Type your feedback, then press Enter)"
+        local _user_feedback=""
+        if [[ -r /dev/tty ]]; then
+          read -r _user_feedback </dev/tty || true
+        else
+          read -r _user_feedback || true
+        fi
+        if [[ -n "$_user_feedback" ]]; then
+          {
+            printf '## User Revision Request (post-QA)\n\n'
+            printf 'The user reviewed the implementation after Master + QA approval and requested changes.\n\n'
+            printf '### User feedback:\n%s\n' "$_user_feedback"
+          } > "${FLOWAI_DIR}/signals/impl.rejection_context"
+          flowai_event_emit "master" "impl_revision_needed" "User requested changes: $_user_feedback"
+        else
+          {
+            printf '## User Revision Request (post-QA)\n\n'
+            printf 'The user reviewed the implementation and requested changes (no specific details provided).\n'
+            printf 'Review the spec, plan, and tasks for alignment.\n'
+          } > "${FLOWAI_DIR}/signals/impl.rejection_context"
+          flowai_event_emit "master" "impl_revision_needed" "User requested changes (no details)"
+        fi
+        # Reset so we re-enter post-QA flow after impl + review cycle completes
+        _master_post_qa_signoff=0
+        rm -f "${FLOWAI_DIR}/signals/impl.code_complete.ready" 2>/dev/null || true
+        log_info "Revision context sent to Implement. Waiting for impl → review → Master cycle..."
+        flowai_phase_focus "impl" 2>/dev/null || true
+      fi
     fi
   fi
 
@@ -681,6 +859,7 @@ while [[ "$_master_interrupted" -eq 0 ]]; do
     2) _master_interrupted=1; break ;; # User exited monitoring (e.g. error recovery menu)
     *) break ;;
   esac
+  _master_check_phase_durations
   sleep "${FLOWAI_MASTER_POLL_SEC:-2}"
 done
 

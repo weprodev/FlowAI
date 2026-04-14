@@ -20,16 +20,19 @@ source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 # reference FLOWAI_CONSTRAINT_REMINDER at runtime; Claude/Cursor/Gemini/Copilot use
 # the same text from ai.sh per DRY).
 readonly FLOWAI_CONSTRAINT_REMINDER="REMINDER — MANDATORY RULES (from PIPELINE COORDINATION):
-1. You may ONLY write to the OUTPUT FILE in your PIPELINE DIRECTIVE. Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files.
+1. You may ONLY write to the OUTPUT FILE in your PIPELINE DIRECTIVE. Do NOT create *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files.
 2. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE using search, find, or grep.
-3. spec.md is the single source of truth. Verify alignment before completing work."
+3. spec.md is the single source of truth. Verify alignment before completing work.
+4. Portable search regex: agent/IDE repo search (Gemini grep_search, Claude tool grep, ripgrep-backed search, etc.) usually uses a subset engine (Rust/RE2/limited JS), not full PCRE. Do NOT use PCRE-only inline flags such as (?i) unless that tool's docs explicitly support them — they often fail at runtime (e.g. Invalid group). Prefer plain substrings, [Ww] alternation, or the tool's own -i / case-fold option when available."
 
 for _flowai_tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
   [[ -f "$_flowai_tool_plugin" ]] || continue
-  # shellcheck disable=SC1090
   source "$_flowai_tool_plugin"
 done
 unset _flowai_tool_plugin
+
+# Ensure this file references the constant (plugins rely on it); avoids SC2034.
+: "${FLOWAI_CONSTRAINT_REMINDER}"
 
 # Resolve and validate the model id for a tool.
 # Falls back to the catalog default_id and logs a warning on mismatch.
@@ -135,7 +138,7 @@ the codebase. The graph already contains this information. Read the graph first.
 ## MANDATORY: Artifact Boundaries
 When operating inside a FlowAI pipeline phase:
 - You may ONLY write to the OUTPUT FILE specified in the PIPELINE DIRECTIVE
-- Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files
+- Do NOT create *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files
 - spec.md is the single source of truth — verify alignment before completing work
 RULES
 }

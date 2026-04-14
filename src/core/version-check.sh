@@ -14,9 +14,9 @@
 # GitHub coordinates
 FLOWAI_GITHUB_REPO="${FLOWAI_GITHUB_REPO:-weprodev/FlowAI}"
 FLOWAI_GITHUB_API="https://api.github.com/repos/${FLOWAI_GITHUB_REPO}/releases/latest"
-FLOWAI_UPDATE_CACHE_DIR="${HOME}/.flowai"
-FLOWAI_UPDATE_CACHE_FILE="${FLOWAI_UPDATE_CACHE_DIR}/update-check"
-FLOWAI_UPDATE_CACHE_TTL=86400  # 24 hours in seconds
+FLOWAI_UPDATE_CACHE_DIR="${FLOWAI_UPDATE_CACHE_DIR:-${HOME}/.flowai}"
+FLOWAI_UPDATE_CACHE_FILE="${FLOWAI_UPDATE_CACHE_FILE:-${FLOWAI_UPDATE_CACHE_DIR}/update-check}"
+FLOWAI_UPDATE_CACHE_TTL="${FLOWAI_UPDATE_CACHE_TTL:-86400}"  # 24 hours in seconds
 
 # ── Semver comparison ────────────────────────────────────────────────────────
 # Returns 0 if ver_a < ver_b (i.e. ver_a is outdated).

@@ -7,6 +7,95 @@ of the specific AI tool, role, or skill assigned to each phase.
 
 ---
 
+## Must Rules
+
+These are **non-negotiable rules** that govern how FlowAI works. Every contributor
+and every code change must respect them. They exist to keep the pipeline reliable,
+maintainable, and tool-agnostic.
+
+1. **Tool-agnostic at the core.** The pipeline coordination layer (`src/core/`,
+   `src/phases/`) must NEVER contain tool-specific logic. Each tool (Claude,
+   Gemini, Cursor, Copilot) has its own plugin at `src/tools/<name>.sh` — that
+   is the only place tool-specific commands, flags, or behaviors may live.
+   Shared behavior stays in `src/core/ai.sh` or `src/core/phase.sh`.
+
+2. **Agent behavior is defined by scripts, not by roles or skills.** All agent
+   coordination behavior (what to read, where to write, when to exit, how to
+   signal) is defined in `src/phases/*.sh` and `src/core/phase.sh`. Roles
+   (`src/roles/`) describe domain expertise only. Skills (`src/skills/`) add
+   capabilities. Neither roles nor skills may contain pipeline coordination
+   logic, signal paths, or artifact rules — those are injected by the framework.
+
+3. **Spec is the single source of truth.** `spec.md` is authoritative. Every
+   artifact (plan, tasks, code, review) must trace back to it. When artifacts
+   conflict with spec, the spec wins. Agents verify alignment before completion.
+
+4. **Artifact ownership is exclusive.** Each phase may ONLY write to its own
+   output file. The mapping is: `spec/master → spec.md`, `plan → plan.md`,
+   `tasks → tasks.md`, `impl → source code`, `review → review.md`. Violating
+   this breaks the pipeline. Enforced in three layers: artifact boundary rule,
+   pipeline coordination preamble, and constraint reminder sandwich.
+
+5. **Graph-first navigation.** When a knowledge graph exists, agents MUST
+   consult `GRAPH_REPORT.md` before using search/find/grep. The graph is a
+   compiled map; blind file exploration wastes tokens and produces worse results.
+
+---
+
+## Core Concepts
+
+### KISS, DRY, Clean Code
+
+FlowAI follows these principles strictly:
+
+- **KISS** — Each component does one thing. Phase scripts orchestrate; tool
+  plugins launch CLIs; roles describe expertise; skills add capabilities.
+  No component crosses its boundary.
+- **DRY** — Shared constants live in one place (`FLOWAI_CONSTRAINT_REMINDER`
+  in `ai.sh`). Shared logic lives in `phase.sh` (artifact boundary, approval
+  gate, wait/signal). Tool plugins reference the shared constant — they don't
+  duplicate it.
+- **Clean Code** — Functions are small and named for what they do. Side effects
+  are explicit. No magic globals. Plugin API is discoverable: `flowai_tool_<name>_run()`,
+  `flowai_tool_<name>_run_oneshot()`, `flowai_tool_<name>_print_models()`.
+
+### Domain-Driven Design (where applicable)
+
+The codebase maps concepts directly:
+
+| Domain Concept | Code Location | Responsibility |
+|---|---|---|
+| Pipeline phases | `src/phases/*.sh` | Orchestration: what to read, write, signal |
+| AI tools | `src/tools/*.sh` | CLI invocation: how to run the AI |
+| Agent roles | `src/roles/*.md` | Domain expertise: what the agent knows |
+| Agent skills | `src/skills/*/SKILL.md` | Capabilities: what the agent can do |
+| Core engine | `src/core/*.sh` | Shared infrastructure: config, logging, events, signals |
+
+### Review Flow
+
+The review cycle ensures quality through multiple feedback loops:
+
+```
+Implement → Review agent (creates review.md) → User approves/gives feedback
+  ↓ (if feedback)
+Review agent re-analyzes → Implement agent fixes → Review again
+  ↓ (if approved by user)
+Master agent final review (oneshot with review.md + all artifacts)
+  ↓
+  ├── NEEDS_FOLLOW_UP → feedback sent to Implement → cycle repeats
+  └── READY_FOR_HUMAN_SIGNOFF → User approve/needs changes
+        ├── Approve → impl.ready → pipeline complete
+        └── Needs changes → user feedback sent to Implement → cycle repeats
+```
+
+Key points:
+- Review agent writes a full QA report to `review.md` (not verbal-only)
+- Master reads `review.md` during its final review for full context
+- Both Master AI and the user can send revision context back to Implement
+- The cycle is self-healing: impl → review → master → (feedback) → impl → ...
+
+---
+
 ## Design Principles
 
 1. **Phase scripts own the contract.** Every inter-agent handoff is managed by
@@ -50,13 +139,13 @@ flowchart LR
 
 ### Who approves what?
 
-| Phase      | Artifact    | Approved by                 | How                                               |
-| ---------- | ----------- | --------------------------- | ------------------------------------------------- |
-| **Spec**   | `spec.md`   | 👤 **User**                 | Conversational — user says "approved" in the REPL |
-| **Plan**   | `plan.md`   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
-| **Tasks**  | `tasks.md`  | 👑 **Master Agent**         | One-shot AI review — validates coverage + alignment |
-| **Impl**   | source code | 👑 **Master** → 👤 **User** (after QA) | QA (Review) runs first; Master final sign-off last → `impl.ready` |
-| **Review** | QA report   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
+| Phase      | Artifact      | Approved by                 | How                                               |
+| ---------- | ------------- | --------------------------- | ------------------------------------------------- |
+| **Spec**   | `spec.md`     | 👤 **User**                 | Conversational — user says "approved" in the REPL |
+| **Plan**   | `plan.md`     | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
+| **Tasks**  | `tasks.md`    | 👑 **Master Agent**         | One-shot AI review — validates coverage + alignment |
+| **Impl**   | source code   | 👑 **Master** → 👤 **User** (after QA) | QA (Review) runs first; Master final sign-off last → `impl.ready` |
+| **Review** | `review.md`   | 👤 **User**                 | Terminal menu — Approve / Review / Needs changes  |
 
 ---
 
@@ -254,77 +343,92 @@ flowchart TD
     Wait["Waits for tasks.ready"]
     AI["AI implements code<br/>marks tasks complete (- [x])<br/>progress events every 10s"]
     Done["Emits impl_produced +<br/>impl.code_complete.ready"]
-    QA["🔍 Review / QA runs"]
+    QA["🔍 Review / QA runs<br/>(writes review.md)"]
 
     IssuesQA["❌ QA finds issues"]
-    OKQA["✅ QA approves tasks.md"]
+    OKQA["✅ QA + user approve"]
 
-    MasterFinal["👑 Master final sign-off<br/>(after QA)"]
+    MasterFinal["👑 Master final sign-off<br/>(reads review.md + all artifacts)"]
 
-    IssuesM["❌ Master finds gaps"]
-    OKM["✅ Master + user approve"]
+    NeedsFollowUp["❌ NEEDS_FOLLOW_UP<br/>Master auto-sends revision<br/>to Implement"]
+    ReadyForSignoff["✅ READY_FOR_HUMAN_SIGNOFF"]
 
-    FixQA["impl.rejection_context<br/>Impl re-runs"]
+    FixImpl["impl.rejection_context<br/>Impl re-runs → QA again"]
     UserGate["Master asks user for final sign-off"]
 
     UserApprove["✅ User approves"]
-    UserReject["❌ User asks changes"]
+    UserReject["❌ User asks changes<br/>+ types feedback"]
 
-    ImplReady["Master creates impl.ready<br/>Impl Agent shuts down<br/>Focus → Implement pane"]
-    UserFix["Master writes revision context<br/>Impl re-runs"]
+    ImplReady["Master creates impl.ready<br/>Impl Agent shuts down<br/>Pipeline complete 🎉"]
 
     Wait --> AI --> Done --> QA
-    QA --> IssuesQA --> FixQA --> QA
+    QA --> IssuesQA --> FixImpl --> AI
     QA --> OKQA --> MasterFinal
-    MasterFinal --> IssuesM --> FixQA
-    MasterFinal --> OKM --> UserGate
+    MasterFinal --> NeedsFollowUp --> FixImpl
+    MasterFinal --> ReadyForSignoff --> UserGate
     UserGate --> UserApprove --> ImplReady
-    UserGate --> UserReject --> UserFix --> UserGate
+    UserGate --> UserReject --> FixImpl
 ```
 
-**Order:** Implement finishes → **Review (QA)** runs on `impl.code_complete.ready` → when QA approves, **Master** runs the **final** binding review (**oneshot** in the Master pane, so output appears without an empty REPL) → **gum** approval menu → `impl.ready` → Implement exits.
+**Order:** Implement finishes → **Review (QA)** runs on `impl.code_complete.ready` (writes `review.md`) → user approves QA → **Master** runs the **final** binding review (**oneshot**, reads `review.md` + all artifacts) → if `READY_FOR_HUMAN_SIGNOFF` → **gum** approval menu → `impl.ready` → Implement exits. If `NEEDS_FOLLOW_UP` → Master auto-sends revision to Implement → cycle repeats.
 
 **What happens on ✅ Master final sign-off → ✅ User Approve:**
 
-1. After QA has approved (Review emits `phase_complete`), Master runs a **non-interactive** Gemini oneshot with the post-QA prompt (required headings: **`## Master — review checklist`**, **`## Master — findings`**). This is a **verbal review only** — Master does NOT create any files during this step.
-2. The **terminal menu** (`flowai_phase_verify_artifact`) asks you to approve the implementation; on **Approve**, FlowAI touches `impl.ready`.
+1. After QA has approved (Review emits `phase_complete`), Master runs a **non-interactive** oneshot with the post-QA prompt. Master reads **`review.md`** (the QA report) alongside spec/plan/tasks for full context. Required headings: **`## Master — review checklist`**, **`## Master — findings`**. This is a **verbal review only** — Master does NOT create any files during this step.
+2. If Master AI outputs `READY_FOR_HUMAN_SIGNOFF`, the **terminal menu** (`flowai_phase_verify_artifact`) asks you to approve the implementation; on **Approve**, FlowAI touches `impl.ready`.
 3. Impl Agent detects `impl.ready` → shuts down cleanly
-4. Focus switches to the Implement pane (so you see the phase exit)
+4. Master shows next steps and pipeline complete message
 
-**What happens on ❌ QA or Master revision (before `impl.ready`):**
+**What happens on ❌ Master AI finds issues (NEEDS_FOLLOW_UP):**
 
-1. Review AI or QA gate may write `impl.rejection_context`, or Master writes it after final review
-2. Impl Agent detects the file → re-runs AI with only the failing items
-3. Impl emits `impl_produced` again and re-touches `impl.code_complete.ready` → QA can run again
-4. Loops until QA then Master approve
+1. Master AI review outputs `NEEDS_FOLLOW_UP` in its verdict
+2. Master **automatically** writes the full review findings to `impl.rejection_context`
+3. Master resets the post-QA state — no user interaction needed for this path
+4. Impl Agent detects the rejection → re-runs with the revision context
+5. After revision → QA runs again (new `review.md`) → Master reviews again
+6. Loops until Master AI says `READY_FOR_HUMAN_SIGNOFF`
+
+**What happens when Master AI finds issues (NEEDS_FOLLOW_UP):**
+
+1. Master AI oneshot review detects issues and outputs `NEEDS_FOLLOW_UP`
+2. Master **automatically** writes the full review findings to `impl.rejection_context`
+3. Master resets the post-QA state and clears `impl.code_complete.ready`
+4. Implement agent detects the rejection → re-runs with the revision context
+5. Implement re-touches `impl.code_complete.ready` → Review (QA) runs again
+6. After QA approves again → Master runs final review again (full cycle)
 
 **What happens on ❌ User Reject at Master final gate:**
 
-1. User asks for changes: _"Also handle the edge case for X"_
-2. Master analyzes the request — asks user for clarification if unclear
-3. Master writes revision context → Impl Agent re-runs
-4. After revision → QA then Master final review again
-5. Loops until user approves
+1. User selects "Needs changes" — Master prompts for feedback
+2. User types what needs to change (or presses Enter for generic revision)
+3. Master writes the user's feedback to `impl.rejection_context`
+4. Master resets post-QA state → Implement re-runs → QA re-runs → Master reviews again
+5. Loops until both Master AI and user approve
 
 ---
 
-### 5. Review (QA) — oneshot
+### 5. Review (QA) — oneshot, writes review.md
 
-The Review Agent performs a final quality check on all code changes.
+The Review Agent performs a full quality check on all code changes and writes
+its findings to **`review.md`** in the feature directory. This artifact serves
+two purposes:
 
-**Why does the gum menu mention `tasks.md`?** The Review AI works in the **repository** (e.g. `git diff`, tests, linters) per `reviewer.md` and the phase directive. The pipeline still needs **one concrete file path** for the human gate (`flowai_phase_run_loop` → `flowai_phase_verify_artifact`) and for “open in editor” — FlowAI uses **`tasks.md`** as that shared **checklist anchor** (the same file Implement tracks). You are **not** being asked to QA only the markdown task list; use the menu to confirm QA of the **implementation** after the agent has run.
+1. **Human context** — the user opens `review.md` to understand what the Review
+   agent found before deciding to approve or reject
+2. **Master context** — the Master Agent reads `review.md` during its final
+   post-QA review, so it has the QA findings alongside spec/plan/tasks
 
 ```mermaid
 flowchart TD
     Wait["Waits for impl.code_complete.ready"]
-    AI["AI reviews: git diff,<br/>spec/plan/tasks cross-check,<br/>make test, make audit"]
+    AI["AI reviews: git diff,<br/>spec/plan/tasks cross-check,<br/>writes review.md"]
     Gate["Human approval gate<br/>(terminal menu)"]
 
     Approve["✅ Approve"]
-    Review["👁️ Review output"]
+    Review["👁️ Read review.md"]
     Reject["❌ Needs changes"]
 
-    MasterFinal["👑 Master final sign-off<br/>then impl.ready"]
+    MasterFinal["👑 Master final sign-off<br/>(reads review.md)"]
     Complete["Pipeline complete ✅<br/>Master shows next steps:<br/>commit → graph update → push<br/>🎉 Happy FlowAI!"]
     Cycle["Writes rejection to<br/>impl.rejection_context<br/>Impl re-runs → Review again"]
 
@@ -337,11 +441,12 @@ flowchart TD
 
 **What happens on ✅ Approve:**
 
-1. User selects "Approve" from the terminal menu
+1. User selects "Approve" from the terminal menu (after reading `review.md`)
 2. `review.phase_complete` event is emitted
 3. The **Review** pane/window may **auto-close** (dashboard/tabs), same as Plan — **Master** and **Implement** stay open.
-4. **Master** runs the post-QA binding review (**oneshot**), then the **gum** menu for final implementation approval → `impl.ready`.
-5. After `impl.ready`, Master shows next steps and _"🎉 Happy FlowAI! Feature complete."_
+4. **Master** runs the post-QA binding review (**oneshot**) — it reads `review.md` alongside all other artifacts for full QA context.
+5. If `READY_FOR_HUMAN_SIGNOFF` → **gum** menu → user approval → `impl.ready` → pipeline complete.
+6. If `NEEDS_FOLLOW_UP` → Master auto-sends revision to Implement → cycle repeats.
 
 > **Why not auto-update the graph here?** The knowledge graph mines **git history**
 > (commit messages, file hashes, provenance). Updating before commit would index
@@ -353,7 +458,7 @@ flowchart TD
 1. Review Agent writes structured rejection to `impl.rejection_context`
 2. Master detects the rejection event and provides guidance
 3. Impl Agent re-runs with only the failing items
-4. Review runs again after Impl completes
+4. Review runs again after Impl completes (new `review.md`)
 5. Loops until the user approves the review
 
 ---
@@ -446,11 +551,12 @@ no visibility into what changed or what they were signing off on.
 Phases communicate data by writing to and reading from shared artifact files in
 the feature directory.
 
-| Artifact   | Written By | Read By                   |
-| ---------- | ---------- | ------------------------- |
-| `spec.md`  | Master     | Plan, Tasks, Impl, Review |
-| `plan.md`  | Plan       | Tasks, Impl, Review       |
-| `tasks.md` | Tasks      | Impl, Review              |
+| Artifact     | Written By | Read By                        |
+| ------------ | ---------- | ------------------------------ |
+| `spec.md`    | Master     | Plan, Tasks, Impl, Review      |
+| `plan.md`    | Plan       | Tasks, Impl, Review            |
+| `tasks.md`   | Tasks      | Impl, Review                   |
+| `review.md`  | Review     | Master (post-QA final review)  |
 
 **Artifact ownership is exclusive.** Each phase may ONLY create or modify its
 own artifact. A phase must never create files that belong to another phase

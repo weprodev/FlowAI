@@ -24,7 +24,7 @@ flowai_test_s_tpl_001() {
       source "$FLOWAI_HOME/src/core/log.sh"
       # shellcheck source=../../src/core/config.sh
       source "$FLOWAI_HOME/src/core/config.sh"
-      # shellcheck disable=SC1090
+      # shellcheck source=../../src/tools/gemini.sh
       source "$plugin"
       declare -F "flowai_tool_${tool_name}_run" >/dev/null 2>&1 || { echo "MISSING:run"; exit 1; }
       declare -F "flowai_tool_${tool_name}_print_models" >/dev/null 2>&1 || { echo "MISSING:print_models"; exit 1; }
@@ -48,7 +48,7 @@ flowai_test_s_tpl_002() {
       source "$FLOWAI_HOME/src/core/log.sh"
       # shellcheck source=../../src/core/config.sh
       source "$FLOWAI_HOME/src/core/config.sh"
-      # shellcheck disable=SC1090
+      # shellcheck source=../../src/tools/gemini.sh
       source "$plugin"
       declare -F "flowai_tool_${tool_name}_run_oneshot" >/dev/null 2>&1 || exit 1
     ); then

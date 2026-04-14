@@ -5,7 +5,7 @@
 export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export FLOWAI_CONFIG="${FLOWAI_DIR}/config.json"
 
-# shellcheck disable=SC1091
+# shellcheck source=models-catalog.sh
 [[ -n "${FLOWAI_HOME:-}" ]] && source "$FLOWAI_HOME/src/core/models-catalog.sh"
 
 # Reject absolute paths and ".." segments so stored paths cannot escape $PWD at read time.

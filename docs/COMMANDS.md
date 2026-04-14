@@ -92,6 +92,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete
 | `FLOWAI_TESTING=1` | Enable CI mode: bypass gum, auto-select dirs, skip dependency checks. |
 | `FLOWAI_TEST_SKIP_AI=1` | Contract-test mode: phase scripts exit 0 before invoking AI. |
 | `FLOWAI_SKIP_GRAPH=1` | Skip graph enforcement in `flowai start` (same as `--skip-graph` flag). |
+| `FLOWAI_PHASE_EXPECTED_DURATION_SEC=N` | Master scope check threshold (seconds). When a phase exceeds this, Master AI verifies the agent is on track. Default: `300` (5 min). |
+| `FLOWAI_PANE_MIN_HEIGHT=N` | Minimum rows for inactive panes in dashboard layout. Default: `3`. |
 
 ### Event Log Configuration
 

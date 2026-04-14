@@ -69,6 +69,28 @@ source "$TESTS_ROOT/suites/phase_signals.sh"
 source "$TESTS_ROOT/suites/orchestration_contracts.sh"
 # shellcheck source=tests/suites/spec_readiness.sh
 source "$TESTS_ROOT/suites/spec_readiness.sh"
+# shellcheck source=tests/suites/wait_ui.sh
+source "$TESTS_ROOT/suites/wait_ui.sh"
+# shellcheck source=tests/suites/ai_resolution.sh
+source "$TESTS_ROOT/suites/ai_resolution.sh"
+# shellcheck source=tests/suites/version_check.sh
+source "$TESTS_ROOT/suites/version_check.sh"
+# shellcheck source=tests/suites/event_log_edge.sh
+source "$TESTS_ROOT/suites/event_log_edge.sh"
+# shellcheck source=tests/suites/orchestration_extended.sh
+source "$TESTS_ROOT/suites/orchestration_extended.sh"
+# shellcheck source=tests/suites/config_validate.sh
+source "$TESTS_ROOT/suites/config_validate.sh"
+# shellcheck source=tests/suites/logs_command.sh
+source "$TESTS_ROOT/suites/logs_command.sh"
+# shellcheck source=tests/suites/phase_execution.sh
+source "$TESTS_ROOT/suites/phase_execution.sh"
+# shellcheck source=tests/suites/master_orchestration.sh
+source "$TESTS_ROOT/suites/master_orchestration.sh"
+# shellcheck source=tests/suites/update_command.sh
+source "$TESTS_ROOT/suites/update_command.sh"
+# shellcheck source=tests/suites/graph_edge_cases.sh
+source "$TESTS_ROOT/suites/graph_edge_cases.sh"
 
 echo "FlowAI test run — FLOWAI_HOME=$FLOWAI_HOME"
 
@@ -278,6 +300,114 @@ flowai_test_s_sr_004
 flowai_test_s_sr_005
 flowai_test_s_sr_006
 flowai_test_s_sr_007
+# wait UI (rank resolution, spin lock, guard conditions)
+_test_banner "Wait UI"
+flowai_test_s_wui_001
+flowai_test_s_wui_002
+flowai_test_s_wui_003
+flowai_test_s_wui_004
+flowai_test_s_wui_005
+flowai_test_s_wui_006
+flowai_test_s_wui_007
+flowai_test_s_wui_008
+# AI tool/model resolution
+_test_banner "AI Tool & Model Resolution"
+flowai_test_s_air_001
+flowai_test_s_air_002
+flowai_test_s_air_003
+flowai_test_s_air_004
+flowai_test_s_air_005
+flowai_test_s_air_006
+flowai_test_s_air_007
+flowai_test_s_air_008
+flowai_test_s_air_009
+flowai_test_s_air_010
+# version check (semver, cache, notification)
+_test_banner "Version Check"
+flowai_test_s_ver_001
+flowai_test_s_ver_002
+flowai_test_s_ver_003
+flowai_test_s_ver_004
+flowai_test_s_ver_005
+flowai_test_s_ver_006
+flowai_test_s_ver_007
+flowai_test_s_ver_008
+# event log edge cases
+_test_banner "Event Log Edge Cases"
+flowai_test_s_evte_001
+flowai_test_s_evte_002
+flowai_test_s_evte_003
+flowai_test_s_evte_004
+flowai_test_s_evte_005
+flowai_test_s_evte_006
+# extended orchestration & signal protocol
+_test_banner "Extended Orchestration & Signal Protocol"
+flowai_test_s_orche_001
+flowai_test_s_orche_002
+flowai_test_s_orche_003
+flowai_test_s_orche_004
+flowai_test_s_orche_005
+flowai_test_s_orche_006
+flowai_test_s_orche_007
+flowai_test_s_orche_008
+# config validation
+_test_banner "Config Validation"
+flowai_test_s_cfgv_001
+flowai_test_s_cfgv_002
+flowai_test_s_cfgv_003
+flowai_test_s_cfgv_004
+flowai_test_s_cfgv_005
+flowai_test_s_cfgv_006
+# logs command
+_test_banner "Logs Command"
+flowai_test_s_logs_001
+flowai_test_s_logs_002
+flowai_test_s_logs_003
+flowai_test_s_logs_004
+flowai_test_s_logs_005
+flowai_test_s_logs_006
+# phase execution
+_test_banner "Phase Execution"
+flowai_test_s_phe_001
+flowai_test_s_phe_002
+flowai_test_s_phe_003
+flowai_test_s_phe_004
+flowai_test_s_phe_005
+flowai_test_s_phe_006
+flowai_test_s_phe_007
+flowai_test_s_phe_008
+flowai_test_s_phe_009
+flowai_test_s_phe_010
+# master orchestration
+_test_banner "Master Orchestration"
+flowai_test_s_mstr_001
+flowai_test_s_mstr_002
+flowai_test_s_mstr_003
+flowai_test_s_mstr_004
+flowai_test_s_mstr_005
+flowai_test_s_mstr_006
+flowai_test_s_mstr_007
+flowai_test_s_mstr_008
+flowai_test_s_mstr_009
+flowai_test_s_mstr_010
+# update command
+_test_banner "Update Command"
+flowai_test_s_upd_001
+flowai_test_s_upd_002
+flowai_test_s_upd_003
+flowai_test_s_upd_004
+flowai_test_s_upd_005
+flowai_test_s_upd_006
+# graph edge cases
+_test_banner "Graph Edge Cases"
+flowai_test_s_gredge_001
+flowai_test_s_gredge_002
+flowai_test_s_gredge_003
+flowai_test_s_gredge_004
+flowai_test_s_gredge_005
+flowai_test_s_gredge_006
+flowai_test_s_gredge_007
+flowai_test_s_gredge_008
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

@@ -22,7 +22,6 @@ source "$FLOWAI_HOME/src/os/platform.sh"
 # are available during the wizard without hardcoding tool names.
 for _init_tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
   [[ -f "$_init_tool_plugin" ]] || continue
-  # shellcheck disable=SC1090
   source "$_init_tool_plugin"
 done
 unset _init_tool_plugin
@@ -207,7 +206,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
       # ── Tool-specific dependency check (plugin hook) ──────────────────────
       # Each tool plugin can optionally define flowai_tool_<name>_check_deps()
       # to verify CLI availability and offer installation during the wizard.
-      local _dep_fn="flowai_tool_${wizard_tool}_check_deps"
+      _dep_fn="flowai_tool_${wizard_tool}_check_deps"
       if declare -F "$_dep_fn" >/dev/null 2>&1; then
         "$_dep_fn"
       fi
@@ -264,7 +263,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
           eval "_cfg_tool_${phase}=\"\$_sel_tool\""
 
           # Tool-specific dependency check for per-phase tool selection
-          local _phase_dep_fn="flowai_tool_${_sel_tool}_check_deps"
+          _phase_dep_fn="flowai_tool_${_sel_tool}_check_deps"
           if declare -F "$_phase_dep_fn" >/dev/null 2>&1; then
             "$_phase_dep_fn"
           fi

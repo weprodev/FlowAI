@@ -55,6 +55,7 @@ CONTEXT — read ALL upstream artifacts to understand the full picture:
 Implement the code required in tasks.md. Check off tasks as you complete them.
 Verify your work against the acceptance criteria in spec.md.
 Follow the architecture laid out in plan.md.
+When searching the codebase, assume the active tool's regex is not full PCRE (Gemini CLI, ripgrep, and other agent sandboxes often reject (?i) and similar). Use portable patterns: plain text, bracket classes, or documented case-insensitive flags — not inline PCRE flags unless the tool specifies support.
 When blockers remain, document them and exit.${REJECTION_CONTEXT}"
 
 INJECTED_PROMPT="$(flowai_phase_write_prompt "impl" "$ROLE_FILE" "$DIRECTIVE")"

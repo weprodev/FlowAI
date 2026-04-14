@@ -79,6 +79,8 @@ flowai_tool_gemini_run() {
     trap 'rm -f "$tmp_sys"' EXIT
     {
       printf '%s\n' "$sys_prompt"
+      # FLOWAI_CONSTRAINT_REMINDER rule 4 (ai.sh): portable regex — Gemini CLI
+      # grep_search uses a limited engine; PCRE (?i) etc. are not interchangeable with terminal grep -P.
       printf '\n%s\n' "${FLOWAI_CONSTRAINT_REMINDER:-}"
     } > "$tmp_sys"
     _flowai_gemini_slow_auth_hint_once
@@ -108,6 +110,7 @@ flowai_tool_gemini_run() {
   trap 'rm -f "$tmp_sys"' EXIT
   {
     printf '%s\n' "$sys_prompt"
+    # See interactive branch: CONSTRAINT_REMINDER rule 4 vs Gemini grep_search engine.
     printf '\n%s\n' "${FLOWAI_CONSTRAINT_REMINDER:-}"
   } > "$tmp_sys"
   _flowai_gemini_slow_auth_hint_once

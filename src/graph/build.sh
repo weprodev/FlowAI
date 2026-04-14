@@ -82,15 +82,15 @@ _graph_run_semantic_pass() {
     fi
     local rel
     rel="$(_graph_rel_path "$file")"
-    printf "\r  \033[36mℹ\033[0m \033[90mAnalyzing:\033[0m %s\033[K" "$rel" >&2
+    flowai_overwrite_line "$(printf '  %sℹ%s %sAnalyzing:%s %s' "$CYAN" "$RESET" $'\033[90m' "$RESET" "$rel")" >&2
 
     _graph_semantic_extract_file "$file" >/dev/null
     processed=$(( processed + 1 ))
   done < <(_graph_discover_files)
   
   # Clear the progress line completely
-  printf "\r\033[K" >&2
-  
+  flowai_clear_line >&2
+
   log_success "Semantic pass: ${processed} processed · ${skipped} skipped (unchanged)" >&2
 }
 
@@ -475,7 +475,7 @@ _graph_run_structural_pass() {
     rel="$(_graph_rel_path "$file")"
     
     # Progress visualization (updates in place)
-    printf "\r  \033[36mℹ\033[0m \033[90mExtracting:\033[0m %s\033[K" "$rel" >&2
+    flowai_overwrite_line "$(printf '  %sℹ%s %sExtracting:%s %s' "$CYAN" "$RESET" $'\033[90m' "$RESET" "$rel")" >&2
     
     local fragment_cache="$cache_dir/$(_graph_path_to_key "$rel").json"
 
@@ -506,8 +506,8 @@ _graph_run_structural_pass() {
   done < <(_graph_discover_files)
 
   # Clear the progress line completely
-  printf "\r\033[K" >&2
-  
+  flowai_clear_line >&2
+
   log_success "Structural pass: ${total} files (${processed} processed · ${cached} cached)" >&2
 
   # Convert JSONL accumulators to proper JSON arrays

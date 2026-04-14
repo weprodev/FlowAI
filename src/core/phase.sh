@@ -72,7 +72,27 @@ flowai_tmux_kill_other_panes() {
   done
 }
 
-# After pipeline success: close other agent panes, wait for Enter, confirm quit → kill tmux session.
+# Focus Master and close every other tmux pane (Implement, Review, Plan, …). Used right
+# after final human approval so only Master shows the completion + next-step hints.
+# No-op without tmux. Same skip rules as flowai_session_prompt_end.
+flowai_session_close_non_master_panes() {
+  if [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
+    return 0
+  fi
+  if [[ "${FLOWAI_SESSION_END:-1}" == "0" ]]; then
+    return 0
+  fi
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n "${TMUX:-}" ]] || return 0
+
+  log_info "Closing other agent panes (Implement, Review, …) — only Master stays open."
+  flowai_phase_focus "master" 2>/dev/null || true
+  flowai_tmux_kill_other_panes
+}
+
+# After pipeline success: wait for Enter on Master, then confirm quit → optional kill of the
+# whole tmux session. Caller should run flowai_session_close_non_master_panes first (when in
+# tmux) so Implement/Review panes are already gone before next-step hints + this wrap-up.
 # Skipped in tests (FLOWAI_TESTING=1) or when FLOWAI_SESSION_END=0.
 flowai_session_prompt_end() {
   if [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
@@ -84,18 +104,12 @@ flowai_session_prompt_end() {
 
   printf '\n'
   log_header "Session wrap-up"
-  log_info "Next steps are listed above."
-  printf '\n'
-  log_info "Press Enter when you have finished reading…"
+  log_info "Press Enter when you have finished reading the next steps above…"
   if [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
     read -r _ </dev/tty || true
   else
     read -r _ || true
   fi
-
-  log_info "Closing other agent panes…"
-  flowai_phase_focus "master" 2>/dev/null || true
-  flowai_tmux_kill_other_panes
 
   printf '\n'
   local do_kill=0
@@ -172,6 +186,7 @@ flowai_phase_wait_for() {
   flowai_wait_ui_clear_line
   flowai_wait_ui_release_if_owner "$_wu_rank"
   printf "${GREEN}✓ '%s' ready — starting %s.${RESET}\n" "$signal" "$my_phase"
+  flowai_phase_resize_panes "$my_phase"
 }
 
 # Return the most recently created feature directory under specs/, or empty.
@@ -455,7 +470,7 @@ ARTIFACT BOUNDARY (MANDATORY — applies to ALL phases and roles):
 You are the '${phase_name}' phase.
 ${allowed_line}
 PROHIBITED: Do NOT create any other files. Specifically:
-  - Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or similar
+  - Do NOT create *_PLAN.md, *_SUMMARY.md, *_REPORT.md or similar
   - Do NOT create files that belong to other phases
 The pipeline artifact ownership is:
   spec/master → spec.md | plan → plan.md | tasks → tasks.md
@@ -586,4 +601,55 @@ flowai_phase_focus() {
   if [[ -n "$pane_id" ]]; then
     tmux select-pane -t "$pane_id" 2>/dev/null || true
   fi
+
+  flowai_phase_resize_panes "$phase"
+}
+
+# Resize tmux panes in dashboard layout: maximize the active phase, minimize others.
+# No-ops gracefully in tabs layout, non-tmux, or FLOWAI_TESTING.
+flowai_phase_resize_panes() {
+  local active_phase="$1"
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n "${TMUX:-}" ]] || return 0
+  [[ "${FLOWAI_TESTING:-0}" != "1" ]] || return 0
+
+  local layout
+  layout="$(flowai_cfg_layout)"
+  [[ "$layout" == "dashboard" ]] || return 0
+
+  local session
+  session="$(tmux display-message -p '#S' 2>/dev/null)" || return 0
+
+  local total_height
+  total_height="$(tmux display-message -t "${session}:0" -p '#{window_height}' 2>/dev/null)" || return 0
+
+  local pane_count
+  pane_count="$(tmux list-panes -t "${session}:0" -F '#{pane_id}' 2>/dev/null | wc -l | tr -d ' ')"
+  [[ "$pane_count" -gt 1 ]] || return 0
+
+  local min_height="${FLOWAI_PANE_MIN_HEIGHT:-3}"
+  local border_overhead=$(( pane_count - 1 ))
+  local active_height=$(( total_height - (pane_count - 1) * min_height - border_overhead ))
+  [[ "$active_height" -lt "$min_height" ]] && active_height="$min_height"
+
+  # Find the pane matching the active phase by title
+  local active_pane_id=""
+  local _pid _ptitle
+  while IFS=$'\t' read -r _pid _ptitle; do
+    if printf '%s' "$_ptitle" | grep -qi "$active_phase"; then
+      active_pane_id="$_pid"
+      break
+    fi
+  done < <(tmux list-panes -t "${session}:0" -F '#{pane_id}	#{pane_title}' 2>/dev/null)
+
+  [[ -n "$active_pane_id" ]] || return 0
+
+  # Shrink all non-active panes first, then give active pane max height
+  while IFS=$'\t' read -r _pid _ptitle; do
+    if [[ "$_pid" != "$active_pane_id" ]]; then
+      tmux resize-pane -t "$_pid" -y "$min_height" 2>/dev/null || true
+    fi
+  done < <(tmux list-panes -t "${session}:0" -F '#{pane_id}	#{pane_title}' 2>/dev/null)
+
+  tmux resize-pane -t "$active_pane_id" -y "$active_height" 2>/dev/null || true
 }

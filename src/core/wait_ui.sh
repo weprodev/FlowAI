@@ -7,9 +7,6 @@ readonly FLOWAI_WAIT_UI_RANK_PLAN=10
 readonly FLOWAI_WAIT_UI_RANK_PLAN_REVISION=11
 readonly FLOWAI_WAIT_UI_RANK_TASKS=20
 readonly FLOWAI_WAIT_UI_RANK_TASKS_REVISION=21
-# Referenced from src/phases/tasks.sh (poll for Master); not used inside this file.
-# shellcheck disable=SC2034
-readonly FLOWAI_WAIT_UI_RANK_TASKS_MASTER=22
 readonly FLOWAI_WAIT_UI_RANK_IMPLEMENT=30
 readonly FLOWAI_WAIT_UI_RANK_REVIEW=40
 readonly FLOWAI_WAIT_UI_RANK_UNKNOWN=99
@@ -46,7 +43,7 @@ _flowai_wait_ui_spin_lock() {
   while ! mkdir "$d" 2>/dev/null; do
     sleep 0.05
     n=$((n + 1))
-    if [[ "$n" -gt 400 ]]; then
+    if [[ "$n" -gt "${FLOWAI_SPINLOCK_MAX_ITER:-400}" ]]; then
       return 1
     fi
   done

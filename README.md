@@ -87,6 +87,51 @@ flowai update --check     # check without installing
 
 ---
 
+## Design Principles
+
+These are the **non-negotiable rules** that govern how FlowAI works. Every code change must respect them.
+
+### Tool-Agnostic Core
+
+The pipeline coordination layer (`src/core/`, `src/phases/`) **never** contains tool-specific logic. Each AI tool (Claude, Gemini, Cursor, Copilot) has its own plugin at `src/tools/<name>.sh` — that is the **only** place tool-specific commands, flags, or behaviors may live. You can swap tools freely without touching orchestration code.
+
+### Behavior from Scripts, Not Roles or Skills
+
+All agent coordination behavior — what to read, where to write, when to exit, how to signal — is defined in `src/phases/*.sh` and `src/core/phase.sh`. Roles describe domain expertise only. Skills add capabilities only. **Neither roles nor skills may contain pipeline coordination logic, signal paths, or artifact rules.** This makes behavior reliable and consistent regardless of which role or skill is assigned.
+
+### KISS, DRY, Clean Code, DDD
+
+- **KISS** — Each component does one thing. Phase scripts orchestrate; tool plugins launch CLIs; roles describe expertise; skills add capabilities.
+- **DRY** — Shared constants and logic live in one place. Tool plugins reference shared constants — they don't duplicate them.
+- **Clean Code** — Functions are small and named for what they do. No magic globals. Plugin API is discoverable.
+- **DDD** — The codebase maps domain concepts directly: pipeline phases → `src/phases/`, AI tools → `src/tools/`, agent roles → `src/roles/`, agent skills → `src/skills/`, core engine → `src/core/`.
+
+### Review Cycle with Multiple Feedback Loops
+
+The review cycle ensures quality through structured feedback:
+
+```
+Implement → Review agent (creates review.md) → User approves or gives feedback
+  ↓ (if feedback)
+Review agent re-analyzes → Implement agent fixes → Review again
+  ↓ (if user approves review)
+Master agent final review (reads review.md + all artifacts)
+  ├── Needs follow-up → feedback sent to Implement → cycle repeats
+  └── Ready → User approve / needs changes
+        ├── Approve → pipeline complete
+        └── Needs changes → feedback to Implement → cycle repeats
+```
+
+Key points:
+- Review agent writes a full QA report to **`review.md`** — the user can read it before deciding
+- Master reads `review.md` during its final review for full context
+- Both Master AI and the user can send revision context back to Implement
+- The cycle is self-healing: impl → review → master → (feedback) → impl → ...
+
+> See [Agent Communication](docs/AGENT-COMMUNICATION.md) for the full approval matrix, signal protocol, and rejection flows.
+
+---
+
 ## Features
 
 ### 🤖 Multi-Agent Orchestration
@@ -216,9 +261,15 @@ The MCP config is written to `.flowai/mcp.json` and automatically loaded by supp
 
 ---
 
-### 🔄 Review Rejection Loop
+### 🔄 Review Cycle — Multi-Layer Quality Gates
 
-When the review phase rejects an implementation, the review agent writes structured rejection context — what failed, why, and what to fix. On re-run, the implement agent focuses **only on failed items**, not a full re-implementation. This dramatically reduces iteration time and token usage.
+The review cycle has **three feedback loops** to catch issues at different levels:
+
+1. **Review Agent** writes a full QA report to `review.md` — the user reads it and approves or provides feedback
+2. **Master Agent** runs a final sign-off reading `review.md` + all artifacts — catches cross-cutting issues the reviewer may miss
+3. **User** gets final approval with Master's opinion appended — approve to complete, or send changes back
+
+When any loop rejects, the implement agent receives structured rejection context — what failed, why, and what to fix — and focuses **only on failed items**, not a full re-implementation. This dramatically reduces iteration time and token usage.
 
 ---
 
@@ -301,7 +352,7 @@ git tag v0.2.0 && git push origin main --tags
 |-------|----------------|
 | [Architecture](docs/ARCHITECTURE.md) | Pipeline, signals, plugins, event log, master monitoring, resolution chains |
 | [Commands](docs/COMMANDS.md) | Every CLI command, environment variables, event log config |
-| [Agent Communication](docs/AGENT-COMMUNICATION.md) | FlowAI pipeline orchestration, approval matrix, adaptive memory protocol, failure handling |
+| [Agent Communication](docs/AGENT-COMMUNICATION.md) | Must rules, design principles, approval matrix, review cycle, rejection flows, adaptive memory |
 | [Knowledge Graph](docs/GRAPH.md) | Build passes, community detection, versioning, chronicle, configuration |
 | [Supported Tools](docs/TOOLS.md) | Tool plugin API, model catalog, config keys, vendor references |
 ---

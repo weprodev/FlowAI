@@ -13,6 +13,9 @@ source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
 source "$FLOWAI_HOME/src/core/phase.sh"
 
+# Wait-UI rank for Master verdict polling (between pipeline Tasks and Implement; matches wait_ui scale).
+readonly FLOWAI_WAIT_UI_RANK_TASKS_MASTER=22
+
 flowai_phase_wait_for "plan" "Tasks Phase"
 
 FEATURE_DIR="$(flowai_phase_resolve_feature_dir)"

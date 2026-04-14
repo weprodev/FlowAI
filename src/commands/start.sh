@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Pane-skip list for resume — must exist before any helper runs under `set -u`.
+declare -a _resume_skip_phases=()
+
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/config.sh"
 source "$FLOWAI_HOME/src/core/session.sh"
@@ -17,6 +20,234 @@ source "$FLOWAI_HOME/src/core/phases.sh"
 source "$FLOWAI_HOME/src/core/version-check.sh"
 source "$FLOWAI_HOME/src/os/platform.sh"
 source "$FLOWAI_HOME/src/core/ai.sh"
+
+# Wrappers: ShellCheck does not resolve log.sh across FLOWAI_HOME; these tie log_* to a local definition.
+_flowai_start_log_header() { log_header "$@"; }
+_flowai_start_log_info() { log_info "$@"; }
+
+# Resume helpers — functions before any top-level log_header/log_info (SC2218).
+_resume_skip_contains() {
+  local q="$1" p
+  ((${#_resume_skip_phases[@]})) || return 1
+  for p in "${_resume_skip_phases[@]}"; do
+    [[ "$p" == "$q" ]] && return 0
+  done
+  return 1
+}
+
+_resume_skip_add() {
+  local q="$1"
+  _resume_skip_contains "$q" && return 0
+  _resume_skip_phases+=("$q")
+}
+
+# Persist wizard "skip this pane" choices — survives any in-memory array issues.
+_resume_record_pane_skip() {
+  printf '%s\n' "$1" >> "$FLOWAI_DIR/.session_pane_skip"
+}
+
+_start_merge_session_pane_skip_file() {
+  [[ -f "$FLOWAI_DIR/.session_pane_skip" ]] || return 0
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    _resume_skip_add "$line"
+  done < "$FLOWAI_DIR/.session_pane_skip"
+}
+
+# If plan/tasks signals exist (resume wizard touched them, or manual touch), skip
+# panes — do NOT require plan.md/tasks.md under _start_resolve_feature_dir; that
+# path can mismatch specs/<branch> when multiple feature dirs exist.
+_start_sync_resume_skips_from_signals() {
+  if [[ -f "$FLOWAI_DIR/signals/plan.ready" ]]; then
+    _resume_skip_add "plan"
+  fi
+  if [[ -f "$FLOWAI_DIR/signals/tasks.ready" ]] && [[ -f "$FLOWAI_DIR/signals/tasks.master_approved.ready" ]]; then
+    _resume_skip_add "tasks"
+  fi
+}
+
+_start_resolve_feature_dir() {
+  local cur_branch
+  cur_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -n "$cur_branch" && -d "$PWD/specs/$cur_branch" ]]; then
+    printf '%s' "$PWD/specs/$cur_branch"
+    return 0
+  fi
+  local latest
+  latest="$(find "$PWD/specs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | head -1)"
+  [[ -n "$latest" ]] && printf '%s' "$latest"
+}
+
+_start_write_resume_next_steps() {
+  local feature_dir="$1"
+  local dest="$FLOWAI_DIR/RESUME_NEXT_STEPS.md"
+  cat > "$dest" <<EOF
+# FlowAI — next steps (resume)
+
+You approved an existing \`review.md\` as complete. **No tmux session** was started.
+
+Suggested follow-up:
+- Merge or open a PR when your branch is ready.
+- Run your full test suite, \`make audit\`, or CI before release.
+- Clear stale pipeline signals only when starting a truly fresh run: \`rm -f .flowai/signals/*.ready\` (know what you remove).
+
+Feature directory: \`${feature_dir}\`
+Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+  log_success "Wrote $dest"
+}
+
+_start_check_resume() {
+  local feature_dir
+  feature_dir="$(_start_resolve_feature_dir)"
+  [[ -n "$feature_dir" && -d "$feature_dir" ]] || return 0
+
+  local cancel_rest=false
+
+  # Pipeline order is fixed: spec → plan → tasks → review (do not jump to tasks if plan was never asked).
+  log_info "Resume wizard order: spec → plan → tasks → review"
+
+  # 1/4 — spec
+  log_info "Resume step 1/4 — Specification (spec.md)"
+  if [[ -f "${feature_dir}/spec.md" && -s "${feature_dir}/spec.md" ]]; then
+    log_info "Found existing artifact: spec.md"
+    if gum confirm "  Approve spec and skip specification handoff (reuse spec.md)?"; then
+      touch "$FLOWAI_DIR/signals/spec.ready"
+      _resume_skip_phases+=("spec")
+      _resume_record_pane_skip "spec"
+      flowai_event_emit "spec" "resumed" "Artifact approved from previous session"
+      log_success "  Skipping spec phase signal (artifact reused)"
+    else
+      log_info "  Will redo specification — remaining resume prompts skipped."
+      rm -f "${feature_dir}/spec.md"
+      cancel_rest=true
+    fi
+  else
+    log_info "  No spec.md in ${feature_dir} — Master will produce the specification in this session."
+  fi
+
+  if [[ "$cancel_rest" == true ]]; then
+    return 0
+  fi
+
+  # 2/4 — plan (always after spec step; never skip ahead to tasks)
+  log_info "Resume step 2/4 — Plan (plan.md)"
+  if [[ -f "${feature_dir}/plan.md" && -s "${feature_dir}/plan.md" ]]; then
+    log_info "Found existing artifact: plan.md"
+    if gum confirm "  Approve plan and skip plan phase (reuse plan.md)?"; then
+      touch "$FLOWAI_DIR/signals/plan.ready"
+      _resume_skip_phases+=("plan")
+      _resume_record_pane_skip "plan"
+      flowai_event_emit "plan" "resumed" "Artifact approved from previous session"
+      log_success "  Skipping plan phase (artifact reused)"
+    else
+      log_info "  Will redo plan — remaining resume prompts skipped. Plan pane will run (Master stays active)."
+      rm -f "${feature_dir}/plan.md"
+      if [[ -f "${feature_dir}/spec.md" && -s "${feature_dir}/spec.md" ]]; then
+        touch "$FLOWAI_DIR/signals/spec.ready"
+      fi
+      cancel_rest=true
+    fi
+  else
+    log_info "  No plan.md — cannot resume tasks/review without a plan artifact. Remaining resume prompts skipped."
+    cancel_rest=true
+  fi
+
+  if [[ "$cancel_rest" == true ]]; then
+    return 0
+  fi
+
+  # 3/4 — tasks (only after plan.md exists; prerequisite enforced above)
+  log_info "Resume step 3/4 — Tasks (tasks.md)"
+  if [[ -f "${feature_dir}/tasks.md" && -s "${feature_dir}/tasks.md" ]]; then
+    log_info "Found existing artifact: tasks.md"
+    if gum confirm "  Approve tasks and skip tasks phase (reuse tasks.md + Master task review)?"; then
+      touch "$FLOWAI_DIR/signals/tasks.ready"
+      touch "$FLOWAI_DIR/signals/tasks.master_approved.ready"
+      _resume_skip_phases+=("tasks")
+      _resume_record_pane_skip "tasks"
+      flowai_event_emit "tasks" "resumed" "Artifact approved from previous session"
+      log_success "  Skipping tasks phase (artifact reused)"
+    else
+      log_info "  Will redo tasks — remaining resume prompts skipped."
+      rm -f "${feature_dir}/tasks.md"
+      touch "$FLOWAI_DIR/signals/spec.ready" 2>/dev/null || true
+      touch "$FLOWAI_DIR/signals/plan.ready" 2>/dev/null || true
+      cancel_rest=true
+    fi
+  else
+    log_info "  No tasks.md — cannot resume review/git prompts without a tasks artifact. Remaining resume prompts skipped."
+    cancel_rest=true
+  fi
+
+  if [[ "$cancel_rest" == true ]]; then
+    return 0
+  fi
+
+  # 4/4 — review (only after tasks.md exists; prerequisite enforced above)
+  log_info "Resume step 4/4 — Review (review.md)"
+  if [[ -f "${feature_dir}/review.md" && -s "${feature_dir}/review.md" ]]; then
+    log_info "Found existing artifact: review.md"
+    if gum confirm "  Approve review.md as final (no new agent session)?"; then
+      _start_write_resume_next_steps "$feature_dir"
+      _FLOWAI_RESUME_PIPELINE_COMPLETE_EXIT=1
+      flowai_event_emit "review" "resumed" "User marked review complete — skipping tmux start"
+      return 0
+    fi
+    log_info "  Continuing with implementation + QA — Plan/Tasks panes omitted; Master + Implement + Review only."
+    rm -f "${feature_dir}/review.md"
+    touch "$FLOWAI_DIR/signals/spec.ready"
+    touch "$FLOWAI_DIR/signals/plan.ready"
+    touch "$FLOWAI_DIR/signals/tasks.ready"
+    touch "$FLOWAI_DIR/signals/tasks.master_approved.ready"
+    rm -f "$FLOWAI_DIR/signals/impl.code_complete.ready" "$FLOWAI_DIR/signals/impl.ready" 2>/dev/null || true
+    _FLOWAI_RESUME_MINIMAL_IMPL=1
+    _resume_record_pane_skip "plan"
+    _resume_record_pane_skip "tasks"
+    cancel_rest=true
+  else
+    log_info "  No review.md yet — Review runs after Implement completes."
+  fi
+
+  if [[ "$cancel_rest" == true ]]; then
+    return 0
+  fi
+
+  # Optional: existing git changes → skip implementation AI run
+  local git_changes
+  git_changes="$(git --no-pager diff --stat HEAD 2>/dev/null || true)"
+  if [[ -n "$git_changes" ]]; then
+    log_info "Found existing code changes:"
+    printf '%s\n' "$git_changes"
+    if gum confirm "  Keep these changes and skip implementation phase?"; then
+      touch "$FLOWAI_DIR/signals/impl.code_complete.ready"
+      _resume_skip_phases+=("impl")
+      _resume_record_pane_skip "impl"
+      flowai_event_emit "impl" "resumed" "Code changes approved from previous session"
+      log_success "  Skipping impl phase (code reused)"
+    fi
+  fi
+}
+
+flowai_write_phase_launcher() {
+  local name="$1"
+  local phase="$2"
+  cat > "$FLOWAI_DIR/launch/tmux_${name}.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export FLOWAI_HOME="$FLOWAI_HOME"
+export FLOWAI_DIR="$FLOWAI_DIR"
+cd "$REPO_ROOT"
+exec "\$FLOWAI_HOME/bin/flowai" run $phase
+EOF
+  chmod +x "$FLOWAI_DIR/launch/tmux_${name}.sh"
+}
+
+# Setup-check helpers (file scope — declared before downstream log_*; satisfies ShellCheck SC2218).
+_dep_ok()   { printf '  %-14s %s\n' "$1" "${GREEN}✓${RESET} ok"; }
+_dep_warn() { printf '  %-14s %s\n' "$1" "${YELLOW}⚠${RESET}  $2"; }
+_dep_fail() { printf '  %-14s %s\n' "$1" "${RED}✗${RESET}  $2"; }
 
 # Headless: create the tmux layout but do not attach (CI / no TTY). Gum is not required —
 # phase scripts use gum for approval; headless start does not attach to those UIs.
@@ -100,10 +331,6 @@ if [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
 
   # Non-blocking update check (cached 24h, 3s timeout)
   flowai_version_check_notify || true
-
-  _dep_ok()   { printf '  %-14s %s\n' "$1" "${GREEN}✓${RESET} ok"; }
-  _dep_warn() { printf '  %-14s %s\n' "$1" "${YELLOW}⚠${RESET}  $2"; }
-  _dep_fail() { printf '  %-14s %s\n' "$1" "${RED}✗${RESET}  $2"; }
 
   for dep in tmux jq gum; do
     if command -v "$dep" >/dev/null 2>&1; then
@@ -239,6 +466,7 @@ SESSION="$(flowai_session_name "$PWD")"
 export SESSION
 
 REPO_ROOT="$PWD"
+export REPO_ROOT
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
   log_warn "Session '$SESSION' is already running."
@@ -255,7 +483,7 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 0
 fi
 
-log_header "Spinning up FlowAI: $SESSION"
+_flowai_start_log_header "Spinning up FlowAI: $SESSION"
 
 mkdir -p "$FLOWAI_DIR/signals"
 mkdir -p "$FLOWAI_DIR/launch"
@@ -268,6 +496,7 @@ rm -f "$FLOWAI_DIR/signals"/*.user_approved 2>/dev/null || true
 rm -f "$FLOWAI_DIR"/gemini_sys_* 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals/tasks.dispute_round" 2>/dev/null || true
 rm -f "$FLOWAI_DIR/gemini_slow_auth_hint_shown" 2>/dev/null || true
+rm -f "$FLOWAI_DIR/.session_pane_skip" 2>/dev/null || true
 
 # ── Inject tool project configs for subagent propagation ────────────────────
 # Most AI tools' --system-prompt or equivalent does NOT propagate to subagents.
@@ -284,73 +513,118 @@ rm -f "$FLOWAI_DIR/gemini_slow_auth_hint_shown" 2>/dev/null || true
 # <!-- FLOWAI:START/END --> markers to preserve user content.
 if flowai_graph_is_enabled && flowai_graph_exists; then
   flowai_ai_inject_all_tool_configs
-  log_info "Injected graph navigation rules into tool project configs (subagent propagation)"
+  _flowai_start_log_info "Injected graph navigation rules into tool project configs (subagent propagation)"
 fi
 
 # Initialize the shared event log for cross-agent visibility
 source "$FLOWAI_HOME/src/core/eventlog.sh"
 flowai_event_reset
 
-layout="$(flowai_cfg_layout)"
+# ── Session resume: existing artifacts — sequential approve / reject (no cascade) ─
+# Yes → touch signals & skip that phase's pane where applicable.
+# No  → stop asking further questions; start session tailored to the rejection.
+# review.md Yes → exit without tmux (next-steps file only).
+# review.md No  → Master + Implement + Review only (upstream phases skipped as panes).
+_resume_skip_phases=()
+_FLOWAI_RESUME_PIPELINE_COMPLETE_EXIT=0
+_FLOWAI_RESUME_MINIMAL_IMPL=0
 
-flowai_write_phase_launcher() {
-  local name="$1"
-  local phase="$2"
-  cat > "$FLOWAI_DIR/launch/tmux_${name}.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-export FLOWAI_HOME="$FLOWAI_HOME"
-export FLOWAI_DIR="$FLOWAI_DIR"
-cd "$REPO_ROOT"
-exec "\$FLOWAI_HOME/bin/flowai" run $phase
-EOF
-  chmod +x "$FLOWAI_DIR/launch/tmux_${name}.sh"
-}
+if [[ "$HEADLESS" != true ]] && [[ "${FLOWAI_TESTING:-0}" != "1" ]]; then
+  _start_check_resume
+fi
+
+if [[ "${_FLOWAI_RESUME_PIPELINE_COMPLETE_EXIT:-0}" -eq 1 ]]; then
+  log_header "Resume: workflow complete"
+  log_info "No tmux session started. See: $FLOWAI_DIR/RESUME_NEXT_STEPS.md"
+  exit 0
+fi
+
+_start_sync_resume_skips_from_signals
+_start_merge_session_pane_skip_file
+if [[ ${#_resume_skip_phases[@]} -gt 0 ]]; then
+  log_info "Tmux pane skip (resumed upstream): ${_resume_skip_phases[*]}"
+fi
+
+layout="$(flowai_cfg_layout)"
 
 flowai_write_phase_launcher "master" "master"
 
 tmux new-session -d -s "$SESSION" -n "master" -x 260 -y 60
 tmux set-option -t "$SESSION" status-right " #[bold]FlowAI v$(cat "$FLOWAI_HOME/VERSION" 2>/dev/null || echo 'dev')#[default] | %H:%M "
+tmux set-option -t "$SESSION" mouse on
+tmux set-option -t "$SESSION" history-limit 10000
 
-# Setup Master pane
+# ─── Phase 1: Create panes/windows and finalize layout ────────────────────
+# ALL pane creation, layout changes, and resizing happens BEFORE any send-keys.
+# This prevents cursor movement escape codes (^[[B, ^[OB) from being injected
+# into running shells when tmux adjusts pane sizes.
+
 master_res="$(flowai_ai_resolve_tool_and_model_for_phase "master")"
 tmux set-window-option -t "${SESSION}:master" pane-border-status top
 tmux set-window-option -t "${SESSION}:master" pane-border-format " #[bold]#{pane_title}#[default] "
-tmux send-keys -t "${SESSION}:master" "bash '$FLOWAI_DIR/launch/tmux_master.sh'" Enter
 tmux select-pane -t "${SESSION}:master" -T "👑 Master Agent [${master_res%%:*}: ${master_res#*:}]"
 
 # Pipeline phases to launch in tmux windows (skip spec — master handles it interactively)
-pipelines=("${FLOWAI_PIPELINE_PHASES[@]:1}")
+if [[ "${_FLOWAI_RESUME_MINIMAL_IMPL:-0}" -eq 1 ]]; then
+  log_info "Resume layout: Master + Implement + Review only (upstream artifact phases skipped as panes)."
+  pipelines=(impl review)
+else
+  pipelines=("${FLOWAI_PIPELINE_PHASES[@]:1}")
+fi
 win_index=1
 
+# Collect phase info for send-keys in phase 2
+declare -a _phase_targets=()
+declare -a _phase_cmds=()
+
+_phase_targets+=("${SESSION}:master")
+_phase_cmds+=("bash '$FLOWAI_DIR/launch/tmux_master.sh'")
+
 for phase in "${pipelines[@]}"; do
+  # Skip phases that were approved during resume.
+  # Do NOT increment win_index here — it tracks actual tmux panes/windows. Skipped
+  # phases must not advance the index, or select-pane targets a non-existent pane
+  # (e.g. "can't find pane: 4" when only the master pane exists).
+  if _resume_skip_contains "$phase"; then
+    log_info "Skipping pane for resumed phase: $phase"
+    continue
+  fi
+
   flowai_write_phase_launcher "phase_${win_index}" "$phase"
-  
+
   phase_res="$(flowai_ai_resolve_tool_and_model_for_phase "$phase")"
   phase_title="🤖 Phase: ${phase} [${phase_res%%:*}: ${phase_res#*:}]"
 
   if [[ "$layout" == "dashboard" ]]; then
     tmux split-window -t "${SESSION}:0" -v
-    tmux send-keys -t "${SESSION}:0.${win_index}" "bash '$FLOWAI_DIR/launch/tmux_phase_${win_index}.sh'" Enter
     tmux select-pane -t "${SESSION}:0.${win_index}" -T "$phase_title"
+    _phase_targets+=("${SESSION}:0.${win_index}")
   else
     tmux new-window -t "${SESSION}:${win_index}" -n "$phase"
     tmux set-window-option -t "${SESSION}:${win_index}" pane-border-status top
     tmux set-window-option -t "${SESSION}:${win_index}" pane-border-format " #[bold]#{pane_title}#[default] "
-    # Auto-close pane when phase completes (frees screen space for remaining phases)
     tmux set-option -t "${SESSION}:${win_index}" remain-on-exit off 2>/dev/null || true
-    tmux send-keys -t "${SESSION}:${win_index}" "bash '$FLOWAI_DIR/launch/tmux_phase_${win_index}.sh'" Enter
     tmux select-pane -t "${SESSION}:${win_index}" -T "$phase_title"
+    _phase_targets+=("${SESSION}:${win_index}")
   fi
+  _phase_cmds+=("bash '$FLOWAI_DIR/launch/tmux_phase_${win_index}.sh'")
   win_index=$((win_index + 1))
 done
 
+# Finalize layout BEFORE starting any shells
 if [[ "$layout" == "dashboard" ]]; then
   tmux select-layout -t "${SESSION}:0" main-vertical
   tmux set-window-option -t "${SESSION}:0" main-pane-width 100
   tmux select-layout -t "${SESSION}:0" main-vertical
   tmux select-pane -t "${SESSION}:0.0"
 fi
+
+# ─── Phase 2: Send commands to start shells ───────────────────────────────
+# Layout is now stable — no more tmux resizing. Safe to start shells without
+# cursor escape code noise.
+for i in "${!_phase_targets[@]}"; do
+  tmux send-keys -t "${_phase_targets[$i]}" "${_phase_cmds[$i]}" Enter
+done
 
 log_success "Session started."
 

@@ -132,13 +132,12 @@ pipeline for all agents.
 
 ## HARD CONSTRAINTS (read these first)
 1. FILE CREATION: You may ONLY write to the OUTPUT FILE specified in your
-   PIPELINE DIRECTIVE. Do NOT create any other files. No review documents,
-   no plan files, no summary files, no temporary analysis files. If your
-   output is not a file (e.g., verbal review), say it in the conversation.
-   PROHIBITED file patterns: *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md
+   PIPELINE DIRECTIVE. Do NOT create any other files. No plan files, no
+   summary files, no temporary analysis files.
+   PROHIBITED file patterns: *_PLAN.md, *_SUMMARY.md, *_REPORT.md
    The ONLY files you may create or modify:
-     spec/master phase → spec.md | plan phase → plan.md | tasks phase → tasks.md
-     impl phase → source code files | review phase → NO files (verbal only)
+     spec/master → spec.md | plan → plan.md | tasks → tasks.md
+     impl → source code files | review → review.md (+ rejection context when blocking)
 2. GRAPH FIRST: If a knowledge graph is available (see [FLOWAI KNOWLEDGE GRAPH]
    below), you MUST read GRAPH_REPORT.md BEFORE using any search, find, grep,
    or file exploration tools. Do NOT explore the codebase with search tools
