@@ -542,7 +542,17 @@ _master_check_events() {
     printf '\n'
     flowai_phase_focus "master" 2>/dev/null || true
     log_header "QA Complete — Master Final Sign-off"
-    log_info "Review (QA) approved tasks.md. Running Master binding review now (automated oneshot — no empty REPL)."
+    log_info "Review (QA) approved. Showing change summary, then Master binding review, then your approval."
+    printf '\n'
+
+    log_info "── Code changes (summary) — printed here so you can scroll in tmux (no pager) ──"
+    local _diff_sum
+    _diff_sum="$(flowai_git_diff_stat_head)"
+    if [[ -n "${_diff_sum}" ]]; then
+      printf '%s\n' "${_diff_sum}"
+    else
+      log_warn "(git diff unavailable or no tracked changes vs HEAD)"
+    fi
     printf '\n'
 
     local review_prompt
@@ -554,25 +564,30 @@ _master_check_events() {
       printf 'Review (QA) has already approved tasks.md in the Review pane.\n'
       printf 'You are performing the **final** Master orchestration review before the\n'
       printf 'implementation phase may exit (impl.ready).\n'
+      printf 'The human has already seen `git diff --stat` above — do not ask them to run it.\n'
       printf 'Review the following artifacts:\n'
       printf '  spec.md:  %s\n' "$FEATURE_DIR/spec.md"
       printf '  plan.md:  %s\n' "$FEATURE_DIR/plan.md"
       printf '  tasks.md:  %s\n' "$FEATURE_DIR/tasks.md"
-      printf '\nReview the code changes (conceptually: git diff, tests/linters as appropriate).\n'
+      printf '\nReview the code changes (tests/linters as appropriate).\n'
       printf '\nIMPORTANT: This is a VERBAL review only. Do NOT create any files.\n'
       printf 'Do NOT create plan files, review documents, or any other artifacts.\n'
       printf 'Output your review directly in the conversation.\n'
       printf '\n--- [REQUIRED OUTPUT SHAPE — single response, in conversation only] ---\n'
       printf '1) ## Master — review checklist (bullets: checks vs spec/plan/tasks)\n'
       printf '2) ## Master — findings (Spec compliance | Plan alignment | Tasks | Quality | Risks)\n'
-      printf '3) Short recommendation: ready for human sign-off or list gaps.\n'
+      printf '3) ## Master — verdict\n'
+      printf '   - One line: READY_FOR_HUMAN_SIGNOFF | NEEDS_FOLLOW_UP\n'
+      printf '   - If NEEDS_FOLLOW_UP: say which phase or agent should act next (plan / tasks / impl / review)\n'
+      printf '     and what must change. If READY_FOR_HUMAN_SIGNOFF: say so clearly.\n'
+      printf '4) Short recommendation for the human.\n'
       printf '\nProduce the full review in this one response. Do NOT write it to a file.\n---\n'
       flowai_phase_artifact_boundary "master"
     } > "$review_prompt"
 
     flowai_event_emit "master" "reviewing_impl" "Master final sign-off after QA"
     log_info "── Master AI — binding review (oneshot; output streams live to this pane) ──"
-    log_info "    (If nothing prints for a while, Gemini is still working — stderr shows a heartbeat every ${FLOWAI_GEMINI_ONESHOT_HEARTBEAT_SEC:-8}s.)"
+    log_info "    (If nothing prints for a while, the CLI may still be working — with Gemini, stderr shows a heartbeat every ${FLOWAI_GEMINI_ONESHOT_HEARTBEAT_SEC:-8}s.)"
     # Do not wrap in $() — that buffers all CLI output until exit and looks \"stuck\" in tmux.
     set +e
     flowai_ai_run_oneshot "master" "$review_prompt"
@@ -584,12 +599,10 @@ _master_check_events() {
     fi
     printf '\n'
 
-    log_info "Code changes summary:"
-    git diff --stat 2>/dev/null || log_warn "(git diff unavailable)"
-    printf '\n'
     log_info "── Human approval gate (not AI) — choose in the menu below ──"
     log_info "    Use ↑/↓ and Enter. If the screen looks noisy (OSC codes), the menu is still active — pick an option."
-    flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation (post-QA Master sign-off)" "impl"
+    # omit_git_stat=1: diff stat was already printed above (avoid duplicate + never use a tty pager)
+    flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Implementation (post-QA Master sign-off)" "impl" "1"
     local impl_rc=$?
     if [[ "$impl_rc" -eq 0 ]]; then
       flowai_event_emit "master" "impl_approved" "Implementation approved after post-QA Master review"

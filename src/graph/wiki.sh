@@ -48,6 +48,10 @@ flowai_wiki_ingest() {
 
   mkdir -p "$FLOWAI_WIKI_DIR"
 
+  local wiki_rel report_rel
+  wiki_rel="$(_graph_rel_path "$FLOWAI_WIKI_DIR")"
+  report_rel="$(_graph_rel_path "$(flowai_graph_report_path)")"
+
   # Build the ingest prompt
   local prompt_file
   prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_ingest_XXXXXX")"
@@ -56,7 +60,7 @@ flowai_wiki_ingest() {
   cat > "$prompt_file" <<INGEST_PROMPT
 # Knowledge Wiki — Ingest Operation
 
-You are maintaining the FlowAI project knowledge wiki at: .flowai/wiki/
+You are maintaining the FlowAI project knowledge wiki at: ${wiki_rel}/
 
 ## Task
 
@@ -67,10 +71,10 @@ Read the source document below and integrate its knowledge into the wiki:
 
 2. **Update or create wiki pages**: Each important concept should either update
    an existing wiki page (if one covers that topic) or create a new one.
-   Wiki pages live at: .flowai/wiki/<concept-name>.md
+   Wiki pages live at: ${wiki_rel}/<concept-name>.md
 
 3. **Update the index**: Append or update the entry for each touched page in
-   .flowai/wiki/index.md (format: "- **[title](path)** — one-line summary")
+   ${wiki_rel}/index.md (format: "- **[title](path)** — one-line summary")
 
 4. **Note contradictions**: If the source contradicts something already in the
    wiki, flag it clearly with a "⚡ Contradiction:" note.
@@ -109,6 +113,10 @@ flowai_wiki_query() {
 
   mkdir -p "$FLOWAI_WIKI_DIR"
 
+  local wiki_rel report_rel
+  wiki_rel="$(_graph_rel_path "$FLOWAI_WIKI_DIR")"
+  report_rel="$(_graph_rel_path "$(flowai_graph_report_path)")"
+
   # Build the query prompt
   local prompt_file
   prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_query_XXXXXX")"
@@ -129,8 +137,8 @@ You are answering a question about this project using the compiled knowledge bas
 ## Navigation Protocol
 
 First, read these files in order:
-1. .flowai/wiki/GRAPH_REPORT.md — for architectural orientation
-2. .flowai/wiki/index.md — to find relevant wiki pages
+1. ${report_rel} — for architectural orientation
+2. ${wiki_rel}/index.md — to find relevant wiki pages
 3. The specific wiki pages relevant to the question
 
 Then synthesize a comprehensive answer.
@@ -191,6 +199,10 @@ flowai_wiki_lint() {
 
   mkdir -p "$FLOWAI_WIKI_DIR"
 
+  local wiki_rel report_rel
+  wiki_rel="$(_graph_rel_path "$FLOWAI_WIKI_DIR")"
+  report_rel="$(_graph_rel_path "$(flowai_graph_report_path)")"
+
   local prompt_file
   prompt_file="$(mktemp "${TMPDIR:-/tmp}/flowai_lint_XXXXXX")"
   trap 'rm -f "${prompt_file:-}" 2>/dev/null' RETURN
@@ -202,14 +214,14 @@ You are performing a health check on the FlowAI project knowledge wiki.
 
 ## Wiki Location
 
-All wiki pages are in: .flowai/wiki/
+All wiki pages are in: ${wiki_rel}/
 
 ## Lint Checklist
 
 Systematically check each of the following and report findings:
 
 ### 1. Orphan Pages
-List all wiki pages in .flowai/wiki/ that have no inbound links from other wiki pages.
+List all wiki pages in ${wiki_rel}/ that have no inbound links from other wiki pages.
 These are isolated knowledge islands that may indicate poor cross-referencing.
 
 ### 2. Contradictions
@@ -218,10 +230,10 @@ Flag with: "⚡ Contradiction: page-a.md vs page-b.md — [nature of conflict]"
 
 ### 3. Stale Claims
 Identify claims in wiki pages that reference files or APIs that no longer exist
-in the codebase. Cross-reference against: .flowai/wiki/graph.json (nodes.path fields).
+in the codebase. Cross-reference against: ${wiki_rel}/graph.json (nodes.path fields).
 
 ### 4. Missing God Node Pages
-Check .flowai/wiki/GRAPH_REPORT.md for god nodes. For each god node, verify a wiki
+Check ${report_rel} for god nodes. For each god node, verify a wiki
 page exists covering it. List any god nodes missing wiki coverage.
 
 ### 5. Undocumented Concepts
@@ -238,7 +250,7 @@ Produce a lint report with sections matching the checklist above.
 For each issue found, suggest a concrete fix.
 Conclude with a health score: HEALTHY / NEEDS-ATTENTION / CRITICAL.
 
-End by appending the lint summary to .flowai/wiki/log.md:
+End by appending the lint summary to ${wiki_rel}/log.md:
 ## [$(date +%Y-%m-%d)] lint | <health-score>
 LINT_PROMPT
 

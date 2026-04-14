@@ -66,6 +66,7 @@ _graph_build_in() {
 }
 
 # Minimal .flowai/config.json with graph enabled.
+# Pin wiki_dir to .flowai/wiki so isolated fixtures match paths used in this suite.
 _graph_write_config() {
   local dir="$1"
   mkdir -p "$dir/.flowai"
@@ -73,6 +74,7 @@ _graph_write_config() {
 {
   "graph": {
     "enabled": true,
+    "wiki_dir": ".flowai/wiki",
     "scan_paths": ["src", "specs"],
     "ignore_patterns": [],
     "max_age_hours": 24

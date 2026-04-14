@@ -48,7 +48,7 @@ _scaffold_header() {
 
 - **\`.flowai/config.json\`** — FlowAI configuration (tools, models, roles, pipeline phases)
 - **\`specs/\`** — Feature specifications (business intent, acceptance criteria)
-- **\`.flowai/wiki/graph.json\`** — Knowledge graph (run \`flowai graph build\`)
+- **\`.flowai/wiki/graph.json\`** — Knowledge graph (run \`flowai graph build\`; override with \`graph.wiki_dir\`)
 - **\`.flowai/roles/\`** — Local role prompt overrides
 EOF
 }

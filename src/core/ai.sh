@@ -16,6 +16,14 @@ source "$FLOWAI_HOME/src/core/skills.sh"
 # shellcheck source=src/bootstrap/specify.sh
 source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 
+# Shared "sandwich" tail (must be defined before sourcing tool plugins — they may
+# reference FLOWAI_CONSTRAINT_REMINDER at runtime; Claude/Cursor/Gemini/Copilot use
+# the same text from ai.sh per DRY).
+readonly FLOWAI_CONSTRAINT_REMINDER="REMINDER — MANDATORY RULES (from PIPELINE COORDINATION):
+1. You may ONLY write to the OUTPUT FILE in your PIPELINE DIRECTIVE. Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files.
+2. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE using search, find, or grep.
+3. spec.md is the single source of truth. Verify alignment before completing work."
+
 for _flowai_tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
   [[ -f "$_flowai_tool_plugin" ]] || continue
   # shellcheck disable=SC1090
@@ -85,21 +93,20 @@ flowai_ai_resolve_tool_and_model_for_phase() {
 }
 
 # Tools with no in-tmux REPL — only print a prompt for paste into an IDE.
-# Cursor is paste-only ONLY when cursor-agent CLI is not installed; with the
-# CLI present it behaves like Claude/Gemini (interactive REPL + headless).
+# Plugin API: each tool can define flowai_tool_<name>_is_paste_only() to
+# report whether it currently operates in paste-only mode. This keeps ai.sh
+# tool-agnostic — new tools with conditional CLI availability implement the
+# function in their own plugin without editing this file.
 flowai_ai_tool_is_paste_only() {
-  case "$1" in
-    copilot) return 0 ;;
-    cursor)
-      if declare -F _flowai_cursor_cli_available >/dev/null 2>&1 && _flowai_cursor_cli_available; then
-        return 1
-      fi
-      return 0
-      ;;
-    *) return 1 ;;
-  esac
+  local tool="$1"
+  local probe_fn="flowai_tool_${tool}_is_paste_only"
+  if declare -F "$probe_fn" >/dev/null 2>&1; then
+    "$probe_fn"
+    return $?
+  fi
+  # Default: not paste-only (Claude, Gemini, and any CLI-native tool)
+  return 1
 }
-
 
 # ─── Tool Project Config Injection ───────────────────────────────────────────
 # Tool-agnostic content for project config injection. This is the SHARED content
@@ -113,12 +120,12 @@ flowai_ai_project_config_content() {
 # FlowAI Pipeline Rules (auto-generated — do not edit between markers)
 
 ## MANDATORY: Knowledge Graph Navigation
-A compiled knowledge graph of this codebase is available at `.flowai/wiki/`.
+A compiled knowledge graph of this codebase is available under the wiki directory (`graph.wiki_dir` in `.flowai/config.json`; default **`.flowai/wiki/`**).
 
 **You MUST follow this order:**
-1. BEFORE any file search, grep, find, or Bash exploration: READ `.flowai/wiki/GRAPH_REPORT.md`
-2. Use `.flowai/wiki/index.md` to locate the exact wiki page for any concept
-3. Use `.flowai/wiki/graph.json` for multi-hop reasoning (dependencies, call chains)
+1. BEFORE any file search, grep, find, or Bash exploration: READ **`docs/GRAPH_REPORT.md`** (default dashboard; override with `graph.report_path`)
+2. Use **`<wiki_dir>/index.md`** to locate the exact wiki page for any concept
+3. Use **`<wiki_dir>/graph.json`** for multi-hop reasoning (dependencies, call chains)
 4. ONLY after the graph points you to a specific file should you read that file
 5. Do NOT explore the codebase blindly — the graph exists to prevent that
 

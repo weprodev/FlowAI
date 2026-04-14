@@ -60,14 +60,49 @@ _flowai_cursor_cli_available() {
   _flowai_cursor_resolve_executable >/dev/null
 }
 
-# Brief constraint reminder appended to the END of the prompt context.
-# Combined with HARD CONSTRAINTS at the TOP of the system prompt, this
-# creates a "sandwich" reinforcement — LLMs weight both the beginning and end
-# of the context window more heavily than the middle.
-readonly _FLOWAI_CURSOR_CONSTRAINT_REMINDER="REMINDER — MANDATORY RULES (from PIPELINE COORDINATION):
-1. You may ONLY write to the OUTPUT FILE in your PIPELINE DIRECTIVE. Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files.
-2. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE using search, find, or grep.
-3. spec.md is the single source of truth. Verify alignment before completing work."
+# Plugin API: tell the dispatcher whether Cursor is currently paste-only.
+# When cursor-agent is installed → not paste-only (full CLI mode).
+# When missing → paste-only (user must paste prompts into the IDE).
+flowai_tool_cursor_is_paste_only() {
+  _flowai_cursor_cli_available && return 1 || return 0
+}
+
+# Plugin API: called by the init wizard after tool selection.
+# If cursor-agent is missing, offers to install it interactively.
+# Non-interactive (testing) environments skip the prompt.
+flowai_tool_cursor_check_deps() {
+  _flowai_cursor_cli_available && return 0
+
+  log_warn "cursor-agent CLI is not installed."
+  log_info "Without it, Cursor runs in paste-only mode (you manually paste prompts into the IDE)."
+  log_info "With cursor-agent, FlowAI orchestrates Cursor directly from the terminal — same experience as Claude/Gemini."
+  printf "\n"
+
+  if [[ ! -t 0 ]] || [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
+    log_info "Install cursor-agent:  curl https://cursor.com/install -fsSL | bash"
+    return 0
+  fi
+
+  read -r -p "Install cursor-agent now? [Y/n]: " _ans_cursor
+  if [[ ! "$_ans_cursor" =~ ^[nN] ]]; then
+    log_info "Installing cursor-agent..."
+    if curl https://cursor.com/install -fsSL | bash; then
+      log_success "cursor-agent installed."
+    else
+      log_warn "cursor-agent install failed. You can install manually later:"
+      printf '  curl https://cursor.com/install -fsSL | bash\n'
+      log_info "FlowAI will fall back to paste-only mode until cursor-agent is available."
+    fi
+  else
+    log_info "Skipped cursor-agent install. FlowAI will use paste-only mode for Cursor."
+    log_info "Install later:  curl https://cursor.com/install -fsSL | bash"
+  fi
+  printf "\n"
+}
+
+# Cursor uses the shared FLOWAI_CONSTRAINT_REMINDER from ai.sh for sandwich
+# reinforcement. Unlike Claude (which has its own --append-system-prompt constant),
+# Cursor writes it directly into the session prompt file.
 
 # ─── Paste-Only Fallback ─────────────────────────────────────────────────────
 # When cursor-agent is not installed, print the prompt for manual paste into Cursor.
@@ -83,7 +118,7 @@ _flowai_cursor_paste_only_run() {
   fi
   log_warn "Paste the following prompt into Cursor Composer (Agent tab):"
   printf '\n%s\n' "$sys_prompt"
-  printf '\n%s\n' "$_FLOWAI_CURSOR_CONSTRAINT_REMINDER"
+  printf '\n%s\n' "${FLOWAI_CONSTRAINT_REMINDER:-}"
   return 0
 }
 
@@ -118,7 +153,7 @@ flowai_tool_cursor_run() {
   trap 'rm -f "$tmp_prompt"' EXIT
   {
     printf '%s\n\n' "$sys_prompt"
-    printf '%s\n' "$_FLOWAI_CURSOR_CONSTRAINT_REMINDER"
+    printf '%s\n' "${FLOWAI_CONSTRAINT_REMINDER:-}"
   } > "$tmp_prompt"
 
   local abs_prompt
@@ -130,11 +165,9 @@ flowai_tool_cursor_run() {
     cmd+=(--model "$model")
   fi
 
-  # Review: Ask mode (no edits) — parity with Claude review restrictions.
-  # Else: --yolo when non-interactive or auto-approve (no stdin to approve).
-  if [[ "${FLOWAI_CURRENT_PHASE:-}" == "review" ]]; then
-    cmd+=(--mode ask)
-  elif [[ "$run_interactive" == "false" ]] || [[ "$auto_approve" == "true" ]]; then
+  # Non-interactive or auto-approve: --yolo lets cursor-agent apply edits without
+  # per-change confirmation (no stdin in tmux phase panes).
+  if [[ "$run_interactive" == "false" ]] || [[ "$auto_approve" == "true" ]]; then
     cmd+=(--yolo)
   fi
 
@@ -142,20 +175,35 @@ flowai_tool_cursor_run() {
 
 You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as written — begin with step 1 now. Do NOT deviate from the directive."
 
+  # region agent log
+  local _c0 _c1 _cw _sz _rc=0
+  _sz="$(wc -c < "$tmp_prompt" | tr -d ' ')"
+  _c0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+
   if [[ "$run_interactive" == "true" ]]; then
-    "${cmd[@]}" "$_initial_prompt" || return $?
+    "${cmd[@]}" "$_initial_prompt" || _rc=$?
+    _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+    _cw=$((_c1 - _c0))
+    flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "interactive_cursor_finished" \
+      "{\"model\":\"${model}\",\"interactive\":true,\"cursor_wall_ms\":${_cw},\"prompt_bytes\":${_sz},\"exit\":${_rc}}"
     rm -f "$tmp_prompt"
     trap - EXIT
-    return 0
+    return "$_rc"
   fi
 
   # Non-interactive: -p print mode; < /dev/null so the agent exits after work.
   # Per Cursor docs, combine --print with --yolo (added above) so edits are applied.
   # --trust and explicit --workspace are only valid with --print; interactive Master
   # uses the REPL path without -p and must not pass --trust (CLI error otherwise).
-  "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || return $?
+  "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || _rc=$?
+  _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _cw=$((_c1 - _c0))
+  flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "oneshot_phase_cursor_finished" \
+    "{\"model\":\"${model}\",\"interactive\":false,\"cursor_wall_ms\":${_cw},\"prompt_bytes\":${_sz},\"exit\":${_rc}}"
+  # endregion
   rm -f "$tmp_prompt"
   trap - EXIT
+  return "$_rc"
 }
 
 # ─── Oneshot Function ────────────────────────────────────────────────────────
@@ -182,5 +230,18 @@ flowai_tool_cursor_run_oneshot() {
     cmd+=(--model "$model")
   fi
 
-  "${cmd[@]}" -p "$prompt" < /dev/null 2>/dev/null || echo '{}'
+  # region agent log
+  local _c0 _c1 _cw _plen _rc=0
+  _plen="${#prompt}"
+  _c0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  "${cmd[@]}" -p "$prompt" < /dev/null 2>/dev/null || _rc=$?
+  if [[ "$_rc" -ne 0 ]]; then
+    echo '{}'
+  fi
+  _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _cw=$((_c1 - _c0))
+  flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run_oneshot" "oneshot_cursor_finished" \
+    "{\"model\":\"${model}\",\"cursor_wall_ms\":${_cw},\"prompt_chars\":${_plen},\"exit\":${_rc}}"
+  # endregion
+  return "$_rc"
 }

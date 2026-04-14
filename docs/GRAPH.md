@@ -16,15 +16,21 @@ knowledge graph** that agents read as their primary navigation layer.
 
 ## What the Graph Contains
 
+Machine graph output (JSON, index, incremental cache) lives under a **wiki directory**
+(default **`.flowai/wiki/`**, alongside other FlowAI machine state). Override with:
+
+- **`graph.wiki_dir`** in `.flowai/config.json` (repo-relative path, e.g. `docs/custom-graph` if you must), or
+- **`FLOWAI_GRAPH_WIKI_DIR`** (absolute path or path relative to project root).
+
 ```
-.flowai/wiki/
+<wiki_dir>/
 ├── graph.json       ← Full graph: nodes, edges, provenance, metadata
 ├── index.md         ← Content catalog: every wiki page with a one-line summary
 ├── log.md           ← Append-only log of all graph operations
 └── cache/           ← SHA256 per-file hashes for incremental builds
 ```
 
-Additionally, outside the internal cache, FlowAI automatically generates a human-readable dashboard. It dynamically places this in your `docs/` folder if it exists, or directly in your project root identically (e.g., `./GRAPH_REPORT.md`). You can also manually configure this path via the `"report_path"` key under `"graph"` in `.flowai/config.json`, or override it temporarily via the `FLOWAI_GRAPH_REPORT_PATH` environment variable.
+Additionally, FlowAI generates a human-readable **GRAPH_REPORT.md** outside that cache tree. It is placed under **`docs/GRAPH_REPORT.md`** when a `docs/` directory exists, otherwise at the repository root. Configure explicitly with **`graph.report_path`** in `.flowai/config.json`, or override with **`FLOWAI_GRAPH_REPORT_PATH`**.
 ```
 docs/
 └── GRAPH_REPORT.md  ← Start here: god nodes, communities, suggested queries

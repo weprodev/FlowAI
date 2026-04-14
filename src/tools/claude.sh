@@ -34,43 +34,9 @@ flowai_tool_claude_print_models() {
   _flowai_print_tool_block "claude"
 }
 
-# Brief constraint reminder appended to the END of Claude's context window.
-# Combined with the HARD CONSTRAINTS at the TOP of the system prompt, this
-# creates a "sandwich" reinforcement — LLMs weight both the beginning and end
-# of the context window more heavily than the middle.
-readonly _FLOWAI_CLAUDE_CONSTRAINT_REMINDER="REMINDER — MANDATORY RULES (from PIPELINE COORDINATION):
-1. You may ONLY write to the OUTPUT FILE in your PIPELINE DIRECTIVE. Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files.
-2. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE using search, find, or grep.
-3. spec.md is the single source of truth. Verify alignment before completing work."
-
-# Phase-aware tool restrictions for Claude Code.
-# Prompt-only constraints aren't 100% reliable — Claude Code's built-in "helpful
-# assistant" behavior can override system prompt instructions (e.g., creating
-# DEEP_REVIEW_PLAN.md when told not to). This function adds --disallowed-tools
-# flags as a hard guardrail that Claude Code cannot bypass.
-#
-# Reads: FLOWAI_CURRENT_PHASE (set by flowai_ai_run)
-_flowai_claude_phase_tool_restrictions() {
-  local phase="${FLOWAI_CURRENT_PHASE:-}"
-  case "$phase" in
-    review)
-      # Review phase: verbal only — no file creation allowed
-      echo "--disallowed-tools Write"
-      ;;
-    plan|tasks)
-      # Plan/tasks: can only write their one artifact — but Claude Code
-      # --disallowed-tools doesn't support path patterns, so we rely on
-      # prompt enforcement for these. The sandwich reinforcement + HARD
-      # CONSTRAINTS at top handle this case.
-      ;;
-    # master: needs Write for spec.md + approval marker — cannot restrict
-    # impl: needs Write/Edit for source code — no restrictions
-  esac
-}
-
 # Execute a prompt against the Claude Code CLI.
 # Args: $1=model  $2=auto_approve  $3=run_interactive  $4=sys_prompt
-# Reads: FLOWAI_DIR (for optional mcp.json), FLOWAI_CURRENT_PHASE (for tool restrictions)
+# Reads: FLOWAI_DIR (for optional mcp.json)
 flowai_tool_claude_run() {
   local model="$1"
   local auto_approve="$2"
@@ -96,15 +62,7 @@ flowai_tool_claude_run() {
   fi
 
   # Append constraint reminder to the end of Claude's context (sandwich reinforcement)
-  cmd+=(--append-system-prompt "$_FLOWAI_CLAUDE_CONSTRAINT_REMINDER")
-
-  # Phase-aware tool restrictions (hard guardrail)
-  local restrictions
-  restrictions="$(_flowai_claude_phase_tool_restrictions)"
-  if [[ -n "$restrictions" ]]; then
-    # shellcheck disable=SC2086
-    cmd+=($restrictions)
-  fi
+  cmd+=(--append-system-prompt "${FLOWAI_CONSTRAINT_REMINDER:-}")
 
   # Initial prompt that anchors the agent to the pipeline workflow.
   # Without this, Claude ignores the system prompt and responds to user input freely.

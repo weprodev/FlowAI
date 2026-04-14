@@ -361,8 +361,8 @@ Usage:
   flowai graph ${CYAN}rollback${RESET}                 Restore graph.json to the previous version
   flowai graph ${CYAN}report${RESET}                  Read GRAPH_REPORT.md in terminal pager
 
-The knowledge graph lives at: .flowai/wiki/
-  GRAPH_REPORT.md  ← start here: god nodes, spec status dashboard, SDD coverage
+The compiled graph lives under graph.wiki_dir (default: .flowai/wiki/)
+  GRAPH_REPORT.md  ← usually docs/GRAPH_REPORT.md — god nodes, spec status dashboard, SDD coverage
   index.md         ← full catalog with project timeline
   graph.json       ← full graph with provenance-tagged edges
   lint-report.md   ← coverage gaps, zombie specs, decision debt

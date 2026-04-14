@@ -77,7 +77,10 @@ flowai_tool_gemini_run() {
     local tmp_sys
     tmp_sys="$(mktemp "${FLOWAI_DIR:-$PWD/.flowai}/gemini_sys_XXXXXX")"
     trap 'rm -f "$tmp_sys"' EXIT
-    echo "$sys_prompt" > "$tmp_sys"
+    {
+      printf '%s\n' "$sys_prompt"
+      printf '\n%s\n' "${FLOWAI_CONSTRAINT_REMINDER:-}"
+    } > "$tmp_sys"
     _flowai_gemini_slow_auth_hint_once
     # region agent log
     local _g0 _g1 _gw _sz
@@ -103,7 +106,10 @@ flowai_tool_gemini_run() {
   local tmp_sys
   tmp_sys="$(mktemp "${FLOWAI_DIR:-$PWD/.flowai}/gemini_sys_XXXXXX")"
   trap 'rm -f "$tmp_sys"' EXIT
-  echo "$sys_prompt" > "$tmp_sys"
+  {
+    printf '%s\n' "$sys_prompt"
+    printf '\n%s\n' "${FLOWAI_CONSTRAINT_REMINDER:-}"
+  } > "$tmp_sys"
   _flowai_gemini_slow_auth_hint_once
   # region agent log
   local _g0 _g1 _gw _sz _rc=0
@@ -166,7 +172,8 @@ flowai_tool_gemini_run_oneshot() {
     kill "$_hb_pid" 2>/dev/null || true
     wait "$_hb_pid" 2>/dev/null || true
   fi
-  # Match historical behavior: on failure emit '{}' on stdout and exit 0 (graph + callers rely on this).
+  # Graph semantic pass: on failure emit '{}' on stdout (best-effort JSON). Exit code
+  # still reflects CLI status so Master oneshot / callers can detect tool errors.
   if [[ "$_rc" -ne 0 ]]; then
     echo '{}'
   fi

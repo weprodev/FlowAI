@@ -18,6 +18,15 @@ source "$FLOWAI_HOME/src/bootstrap/editor-scaffold.sh"
 # shellcheck source=src/os/platform.sh
 source "$FLOWAI_HOME/src/os/platform.sh"
 
+# Load tool plugins so their optional hooks (_check_deps, _is_paste_only)
+# are available during the wizard without hardcoding tool names.
+for _init_tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
+  [[ -f "$_init_tool_plugin" ]] || continue
+  # shellcheck disable=SC1090
+  source "$_init_tool_plugin"
+done
+unset _init_tool_plugin
+
 if ! command -v jq >/dev/null 2>&1; then
   log_error "jq is required. Install: $(flowai_os_install_hint jq)"
   exit 1
@@ -195,27 +204,12 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
       fi
       printf "\n"
 
-      # ── Cursor: ensure cursor-agent CLI is available ──────────────────────
-      if [[ "$wizard_tool" == "cursor" ]] && ! command -v cursor-agent >/dev/null 2>&1; then
-        log_warn "cursor-agent CLI is not installed."
-        log_info "Without it, Cursor runs in paste-only mode (you manually paste prompts into the IDE)."
-        log_info "With cursor-agent, FlowAI orchestrates Cursor directly from the terminal — same experience as Claude/Gemini."
-        printf "\n"
-        read -r -p "Install cursor-agent now? [Y/n]: " _ans_cursor
-        if [[ ! "$_ans_cursor" =~ ^[nN] ]]; then
-          log_info "Installing cursor-agent..."
-          if curl https://cursor.com/install -fsSL | bash; then
-            log_success "cursor-agent installed."
-          else
-            log_warn "cursor-agent install failed. You can install manually later:"
-            printf '  curl https://cursor.com/install -fsSL | bash\n'
-            log_info "FlowAI will fall back to paste-only mode until cursor-agent is available."
-          fi
-        else
-          log_info "Skipped cursor-agent install. FlowAI will use paste-only mode for Cursor."
-          log_info "Install later:  curl https://cursor.com/install -fsSL | bash"
-        fi
-        printf "\n"
+      # ── Tool-specific dependency check (plugin hook) ──────────────────────
+      # Each tool plugin can optionally define flowai_tool_<name>_check_deps()
+      # to verify CLI availability and offer installation during the wizard.
+      local _dep_fn="flowai_tool_${wizard_tool}_check_deps"
+      if declare -F "$_dep_fn" >/dev/null 2>&1; then
+        "$_dep_fn"
       fi
 
       # 3. Auto Approve
@@ -269,10 +263,10 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
           fi
           eval "_cfg_tool_${phase}=\"\$_sel_tool\""
 
-          # Warn if cursor selected for a phase but cursor-agent CLI is not available
-          if [[ "$_sel_tool" == "cursor" ]] && ! command -v cursor-agent >/dev/null 2>&1; then
-            log_warn "    cursor-agent CLI not found — '$phase' will use paste-only mode."
-            log_info "    Install:  curl https://cursor.com/install -fsSL | bash"
+          # Tool-specific dependency check for per-phase tool selection
+          local _phase_dep_fn="flowai_tool_${_sel_tool}_check_deps"
+          if declare -F "$_phase_dep_fn" >/dev/null 2>&1; then
+            "$_phase_dep_fn"
           fi
 
           # Model selection — show catalog for the chosen tool
@@ -366,6 +360,7 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
         skills: { role_assignments: $ra },
         graph: {
           enabled: true,
+          wiki_dir: ".flowai/wiki",
           scan_paths: ["src", "docs", "specs"],
           ignore_patterns: ["*.generated.*", "*.min.js", "*.min.css"],
           max_age_hours: 24,

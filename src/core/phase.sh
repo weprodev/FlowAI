@@ -18,6 +18,12 @@ flowai_phase_emit_error() {
   flowai_event_emit "$phase_id" "error" "$detail"
 }
 
+# Diff summary for human approval UIs. Uses stdout capture only — never invokes
+# Git's interactive pager (avoids less/(END) blocking tmux).
+flowai_git_diff_stat_head() {
+  git --no-pager diff --stat HEAD 2>/dev/null || true
+}
+
 # shellcheck source=src/core/wait_ui.sh
 source "$FLOWAI_HOME/src/core/wait_ui.sh"
 # shellcheck source=src/core/session.sh
@@ -220,10 +226,12 @@ flowai_phase_resolve_feature_dir() {
 # Print phase-specific context before the approval gate so the user knows
 # exactly what they are approving. Inspired by spec-kit's approval patterns:
 # show coverage metrics, change stats, and a clear "what approve means" line.
-# Args: phase_id, target_file
+# Args: phase_id, target_file, [omit_git_stat]
+# omit_git_stat=1 skips the git diff --stat block (caller already showed it).
 _flowai_phase_approval_context() {
   local phase_id="$1"
   local target_file="$2"
+  local omit_git_stat="${3:-0}"
 
   printf '\n'
   printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$CYAN" "$RESET"
@@ -239,16 +247,19 @@ _flowai_phase_approval_context() {
       ;;
     review|impl)
       printf '%s  IMPLEMENTATION REVIEW%s\n' "$BOLD" "$RESET"
+      printf '  Artifact: %s\n' "$target_file"
       printf '\n'
-      # Git diff summary
-      local diff_stat
-      diff_stat="$(git diff --stat HEAD 2>/dev/null || true)"
-      if [[ -n "$diff_stat" ]]; then
-        printf '  %sFiles changed:%s\n' "$BOLD" "$RESET"
-        printf '%s\n' "$diff_stat" | while IFS= read -r line; do
-          printf '    %s\n' "$line"
-        done
-        printf '\n'
+      # Git diff summary (--no-pager: never invoke less; scrollback stays in tmux)
+      if [[ "$omit_git_stat" != "1" ]]; then
+        local diff_stat
+        diff_stat="$(flowai_git_diff_stat_head)"
+        if [[ -n "$diff_stat" ]]; then
+          printf '  %sFiles changed:%s\n' "$BOLD" "$RESET"
+          printf '%s\n' "$diff_stat" | while IFS= read -r line; do
+            printf '    %s\n' "$line"
+          done
+          printf '\n'
+        fi
       fi
       # Task completion status from tasks.md
       local tasks_file
@@ -289,11 +300,13 @@ _flowai_phase_approval_context() {
 
 # Prompt the human to approve a phase artifact.
 # Args: target_file, artifact_label (human), phase_id (canonical — MUST match pipeline id for events, e.g. plan)
+#       [omit_git_stat] — if "1", skip git diff --stat in approval banner (already shown by caller).
 # Returns: 0 = approved, 1 = retry agent, 2 = needs changes (reject).
 flowai_phase_verify_artifact() {
   local target_file="$1"
   local artifact_label="$2"
   local phase_id="$3"
+  local omit_git_stat="${4:-0}"
 
   while [[ ! -f "$target_file" ]]; do
     log_error "Required output not found: $target_file"
@@ -318,7 +331,7 @@ flowai_phase_verify_artifact() {
   flowai_event_emit "$phase_id" "artifact_produced" "$target_file"
 
   # Show phase-specific approval context (git diff, task status, what "approve" means)
-  _flowai_phase_approval_context "$phase_id" "$target_file"
+  _flowai_phase_approval_context "$phase_id" "$target_file" "$omit_git_stat"
 
   printf '\n'
 
@@ -423,35 +436,45 @@ flowai_phase_schedule_close_plan_ui() {
 
 # Print the universal artifact boundary rule for a given phase.
 # This is the single source of truth for phase artifact ownership.
+# Args: $1=phase_name  [$2=secondary_output — extra sentence appended to ALLOWED line]
 # Usage: flowai_phase_artifact_boundary <phase_name>
+# Usage: flowai_phase_artifact_boundary "review" "When blocking impl, you may ALSO write the rejection file."
 flowai_phase_artifact_boundary() {
   local phase_name="$1"
+  local secondary="${2:-}"
+
+  local allowed_line="ALLOWED: You may ONLY write to the OUTPUT FILE specified above."
+  if [[ -n "$secondary" ]]; then
+    allowed_line="ALLOWED: You may write to the OUTPUT FILE specified above.
+  ${secondary}"
+  fi
+
   cat <<BOUNDARY
 
 ARTIFACT BOUNDARY (MANDATORY — applies to ALL phases and roles):
 You are the '${phase_name}' phase.
-ALLOWED: You may ONLY write to the OUTPUT FILE specified above.
+${allowed_line}
 PROHIBITED: Do NOT create any other files. Specifically:
   - Do NOT create *_REVIEW.md, *_PLAN.md, *_SUMMARY.md, *_REPORT.md or similar
   - Do NOT create files that belong to other phases
-  - If your output is verbal (e.g., review findings), say it in the conversation
 The pipeline artifact ownership is:
   spec/master → spec.md | plan → plan.md | tasks → tasks.md
-  impl → source code | review → verbal only (no files)
+  impl → source code | review → review.md (+ optional rejection context when blocking)
 Violating this rule breaks the pipeline for all downstream agents.
 BOUNDARY
 }
 
 # Compose the injected prompt file: role content + phase directive + artifact boundary.
 # Prints the path of the written file.
-# Usage: flowai_phase_write_prompt <phase_name> <role_file> <directive>
+# Usage: flowai_phase_write_prompt <phase_name> <role_file> <directive> [secondary_boundary]
 flowai_phase_write_prompt() {
   local phase_name="$1"
   local role_file="$2"
   local directive="$3"
+  local secondary_boundary="${4:-}"
   local out="${FLOWAI_DIR}/launch/${phase_name}_prompt.md"
   mkdir -p "${FLOWAI_DIR}/launch"
-  { cat "$role_file"; printf '\n%s\n' "$directive"; flowai_phase_artifact_boundary "$phase_name"; } > "$out"
+  { cat "$role_file"; printf '\n%s\n' "$directive"; flowai_phase_artifact_boundary "$phase_name" "$secondary_boundary"; } > "$out"
   printf '%s' "$out"
 }
 

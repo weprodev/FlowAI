@@ -759,58 +759,51 @@ flowai_test_s_sig_030() {
   fi
 }
 
-# SIG-031 — Non-interactive -p message reinforces constraints (not generic)
-# The user message sent via -p must reference HARD CONSTRAINTS and OUTPUT FILE
-# restrictions — a vague "begin immediately" lets Claude default to its own behaviors.
+# SIG-031 — All tools with CLI support have constraint reminder (sandwich reinforcement)
+# Each tool must have constraint reminder text — either via its own readonly constant
+# or via the shared FLOWAI_CONSTRAINT_REMINDER from ai.sh.
 flowai_test_s_sig_031() {
   local id="SIG-031"
-  local claude_sh="$FLOWAI_HOME/src/tools/claude.sh"
-  local gemini_sh="$FLOWAI_HOME/src/tools/gemini.sh"
 
-  local claude_ok=false gemini_ok=false
+  local claude_ok=false cursor_ok=false gemini_ok=false
 
-  if grep -q 'HARD CONSTRAINTS.*MANDATORY\|ONLY write to the OUTPUT FILE' "$claude_sh" 2>/dev/null; then
+  # Claude: uses shared FLOWAI_CONSTRAINT_REMINDER from ai.sh (--append-system-prompt)
+  if grep -q 'FLOWAI_CONSTRAINT_REMINDER' \
+    "$FLOWAI_HOME/src/tools/claude.sh" 2>/dev/null; then
     claude_ok=true
   fi
-  if grep -q 'HARD CONSTRAINTS.*MANDATORY\|ONLY write to the OUTPUT FILE' "$gemini_sh" 2>/dev/null; then
+  # Cursor: references the shared FLOWAI_CONSTRAINT_REMINDER from ai.sh
+  if grep -q 'FLOWAI_CONSTRAINT_REMINDER' \
+    "$FLOWAI_HOME/src/tools/cursor.sh" 2>/dev/null; then
+    cursor_ok=true
+  fi
+  # Gemini: FLOWAI_CONSTRAINT_REMINDER appended to GEMINI_SYSTEM_MD + positional anchors
+  if grep -q 'FLOWAI_CONSTRAINT_REMINDER\|HARD CONSTRAINTS.*MANDATORY' \
+    "$FLOWAI_HOME/src/tools/gemini.sh" 2>/dev/null; then
     gemini_ok=true
   fi
 
-  if $claude_ok && $gemini_ok; then
-    flowai_test_pass "$id" "Non-interactive -p message reinforces constraints in Claude and Gemini"
+  if $claude_ok && $cursor_ok && $gemini_ok; then
+    flowai_test_pass "$id" "All CLI tools have constraint reminder (sandwich reinforcement)"
   else
-    printf 'FAIL %s: -p message must reinforce constraints (claude=%s gemini=%s)\n' \
-      "$id" "$claude_ok" "$gemini_ok" >&2
+    printf 'FAIL %s: constraint reminder missing (claude=%s cursor=%s gemini=%s)\n' \
+      "$id" "$claude_ok" "$cursor_ok" "$gemini_ok" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }
 
-# SIG-032 — Claude tool applies phase-aware tool restrictions
-# The review phase must disallow Write to prevent Claude from creating files.
-# Other phases rely on prompt enforcement since Claude Code --disallowed-tools
-# doesn't support path-based patterns.
+# SIG-032 — Claude tool does not block Write for any phase
+# Review phase writes review.md, impl writes source, etc. Claude Code no longer
+# uses --disallowed-tools Write for any phase (prompt enforcement handles constraints).
 flowai_test_s_sig_032() {
   local id="SIG-032"
   local claude_sh="$FLOWAI_HOME/src/tools/claude.sh"
 
-  local has_phase_check has_review_disallow has_env_var
-  has_phase_check=false
-  has_review_disallow=false
-  has_env_var=false
-
-  grep -q 'FLOWAI_CURRENT_PHASE' "$claude_sh" 2>/dev/null && has_phase_check=true
-  # review case + disallowed-tools Write can be on separate lines in the case block
-  if grep -q 'review)' "$claude_sh" 2>/dev/null && grep -q 'disallowed-tools.*Write\|disallowed.*Write' "$claude_sh" 2>/dev/null; then
-    has_review_disallow=true
-  fi
-  grep -q 'FLOWAI_CURRENT_PHASE' "$FLOWAI_HOME/src/core/ai.sh" 2>/dev/null && has_env_var=true
-
-  if $has_phase_check && $has_review_disallow && $has_env_var; then
-    flowai_test_pass "$id" "Claude tool applies phase-aware tool restrictions (review disallows Write)"
-  else
-    printf 'FAIL %s: Missing phase restrictions (check=%s review=%s env=%s)\n' \
-      "$id" "$has_phase_check" "$has_review_disallow" "$has_env_var" >&2
+  if grep -q 'disallowed-tools.*Write' "$claude_sh" 2>/dev/null; then
+    printf 'FAIL %s: claude.sh still contains --disallowed-tools Write\n' "$id" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  else
+    flowai_test_pass "$id" "Claude tool does not block Write for any phase"
   fi
 }
 
@@ -867,12 +860,12 @@ flowai_test_s_sig_034() {
 }
 
 # SIG-035 — Interactive mode sends initial prompt to anchor agent behavior
-# Without an initial user message, Claude/Gemini open a blank session and
+# Without an initial user message, Claude/Gemini/Cursor open a blank session and
 # respond to whatever the user types — ignoring the pipeline directive.
 flowai_test_s_sig_035() {
   local id="SIG-035"
 
-  local claude_ok=false gemini_ok=false
+  local claude_ok=false gemini_ok=false cursor_ok=false
   # Claude: check for initial prompt in interactive path (not -p)
   if grep -q 'STAGED WORKFLOW.*step 1\|PIPELINE DIRECTIVE.*HARD CONSTRAINTS' \
     "$FLOWAI_HOME/src/tools/claude.sh" 2>/dev/null; then
@@ -883,12 +876,17 @@ flowai_test_s_sig_035() {
     "$FLOWAI_HOME/src/tools/gemini.sh" 2>/dev/null; then
     gemini_ok=true
   fi
+  # Cursor: check for initial prompt in interactive path
+  if grep -q 'STAGED WORKFLOW.*step 1\|PIPELINE DIRECTIVE.*HARD CONSTRAINTS' \
+    "$FLOWAI_HOME/src/tools/cursor.sh" 2>/dev/null; then
+    cursor_ok=true
+  fi
 
-  if $claude_ok && $gemini_ok; then
+  if $claude_ok && $gemini_ok && $cursor_ok; then
     flowai_test_pass "$id" "Interactive mode sends initial prompt to anchor agent behavior"
   else
-    printf 'FAIL %s: Missing initial prompt (claude=%s gemini=%s)\n' \
-      "$id" "$claude_ok" "$gemini_ok" >&2
+    printf 'FAIL %s: Missing initial prompt (claude=%s gemini=%s cursor=%s)\n' \
+      "$id" "$claude_ok" "$gemini_ok" "$cursor_ok" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
 }

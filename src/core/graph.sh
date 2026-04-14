@@ -6,39 +6,74 @@
 #   - Reading graph metadata (node/edge counts, build time)
 #   - Generating the context block injected into every agent's system prompt
 #
-# The knowledge graph lives at: .flowai/wiki/
-#   GRAPH_REPORT.md  — human+agent readable summary (god nodes, communities, questions)
-#   graph.json       — machine-readable graph (nodes, edges, provenance, metadata)
-#   index.md         — content catalog updated after every operation
-#   log.md           — append-only chronological operation log
-#   cache/           — SHA256 file hashes for incremental builds
+# Machine graph + cache live under the wiki directory (default `.flowai/wiki/`).
+# Override with `graph.wiki_dir` in `.flowai/config.json` or `FLOWAI_GRAPH_WIKI_DIR`.
+# `GRAPH_REPORT.md` is separate (default `docs/GRAPH_REPORT.md` if `docs/` exists).
 #
 # shellcheck shell=bash
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+# Default relative path for compiled graph data (kept under `.flowai/` with session state).
+FLOWAI_GRAPH_WIKI_DIR_DEFAULT=".flowai/wiki"
 
-FLOWAI_WIKI_DIR="${FLOWAI_DIR:-$PWD/.flowai}/wiki"
+# ─── Path resolution (run with cwd = project root) ───────────────────────────
 
-if [[ -n "${FLOWAI_GRAPH_REPORT_PATH:-}" ]]; then
-  FLOWAI_GRAPH_REPORT="${FLOWAI_GRAPH_REPORT_PATH}"
-else
-  _cfg_report_path=""
+# Sets: FLOWAI_WIKI_DIR, FLOWAI_GRAPH_REPORT, FLOWAI_GRAPH_JSON, FLOWAI_GRAPH_INDEX,
+#       FLOWAI_GRAPH_LOG, FLOWAI_GRAPH_CACHE_DIR
+flowai_graph_resolve_paths() {
+  local root
+  root="$(pwd -P 2>/dev/null || printf '%s' "$PWD")"
+  local fd="${FLOWAI_DIR:-$root/.flowai}"
+
+  if [[ -n "${FLOWAI_GRAPH_WIKI_DIR:-}" ]]; then
+    if [[ "${FLOWAI_GRAPH_WIKI_DIR}" == /* ]]; then
+      FLOWAI_WIKI_DIR="${FLOWAI_GRAPH_WIKI_DIR}"
+    else
+      FLOWAI_WIKI_DIR="${root}/${FLOWAI_GRAPH_WIKI_DIR}"
+    fi
+  else
+    local wiki_rel="$FLOWAI_GRAPH_WIKI_DIR_DEFAULT"
+    if type flowai_cfg_read >/dev/null 2>&1 && [[ -f "${fd}/config.json" ]]; then
+      wiki_rel="$(flowai_cfg_read '.graph.wiki_dir' "$FLOWAI_GRAPH_WIKI_DIR_DEFAULT")"
+      [[ -z "$wiki_rel" || "$wiki_rel" == "null" ]] && wiki_rel="$FLOWAI_GRAPH_WIKI_DIR_DEFAULT"
+    fi
+    if [[ "$wiki_rel" == /* ]]; then
+      FLOWAI_WIKI_DIR="$wiki_rel"
+    else
+      FLOWAI_WIKI_DIR="${root}/${wiki_rel}"
+    fi
+  fi
+
+  FLOWAI_GRAPH_JSON="${FLOWAI_WIKI_DIR}/graph.json"
+  FLOWAI_GRAPH_INDEX="${FLOWAI_WIKI_DIR}/index.md"
+  FLOWAI_GRAPH_LOG="${FLOWAI_WIKI_DIR}/log.md"
+  FLOWAI_GRAPH_CACHE_DIR="${FLOWAI_WIKI_DIR}/cache"
+
+  mkdir -p "$FLOWAI_WIKI_DIR" 2>/dev/null || true
+
+  if [[ -n "${FLOWAI_GRAPH_REPORT_PATH:-}" ]]; then
+    FLOWAI_GRAPH_REPORT="${FLOWAI_GRAPH_REPORT_PATH}"
+    return 0
+  fi
+
+  local _cfg_report_path=""
   if type flowai_cfg_read >/dev/null 2>&1; then
     _cfg_report_path="$(flowai_cfg_read '.graph.report_path' '')"
   fi
 
   if [[ -n "$_cfg_report_path" ]]; then
-    FLOWAI_GRAPH_REPORT="$(pwd -P)/${_cfg_report_path}"
-  elif [[ -d "$(pwd -P)/docs" ]]; then
-    FLOWAI_GRAPH_REPORT="$(pwd -P)/docs/GRAPH_REPORT.md"
+    if [[ "$_cfg_report_path" == /* ]]; then
+      FLOWAI_GRAPH_REPORT="${_cfg_report_path}"
+    else
+      FLOWAI_GRAPH_REPORT="${root}/${_cfg_report_path}"
+    fi
+  elif [[ -d "${root}/docs" ]]; then
+    FLOWAI_GRAPH_REPORT="${root}/docs/GRAPH_REPORT.md"
   else
-    FLOWAI_GRAPH_REPORT="$(pwd -P)/GRAPH_REPORT.md"
+    FLOWAI_GRAPH_REPORT="${root}/GRAPH_REPORT.md"
   fi
-fi
-FLOWAI_GRAPH_JSON="${FLOWAI_WIKI_DIR}/graph.json"
-FLOWAI_GRAPH_INDEX="${FLOWAI_WIKI_DIR}/index.md"
-FLOWAI_GRAPH_LOG="${FLOWAI_WIKI_DIR}/log.md"
-FLOWAI_GRAPH_CACHE_DIR="${FLOWAI_WIKI_DIR}/cache"
+}
+
+flowai_graph_resolve_paths
 
 # ─── Path Helpers ─────────────────────────────────────────────────────────────
 

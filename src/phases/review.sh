@@ -25,10 +25,18 @@ ROLE_FILE="$(flowai_phase_resolve_role_prompt "review")"
 # Path injected into the AI directive below — the Review AI agent writes to this
 # file when it finds issues. The Implement agent reads it on re-run.
 readonly REJECTION_CONTEXT_FILE="$FLOWAI_DIR/signals/impl.rejection_context"
+readonly REVIEW_DOC="$FEATURE_DIR/review.md"
 
 DIRECTIVE="IMPORTANT PIPELINE DIRECTIVE:
 You are assigned to Phase: Review (QA / quality).
 Your WORKING DIRECTORY is: $PWD
+
+OUTPUT FILE (mandatory): Write your full QA report to:
+  $REVIEW_DOC
+
+Include: summary verdict, checks vs acceptance criteria, test/lint results, risks,
+and concrete recommendations. The human approves using the menu in the terminal but
+opens this file in the editor to read the full write-up (tmux output alone is not enough).
 
 CONTEXT — read ALL upstream artifacts to perform a thorough review:
   $FEATURE_DIR/spec.md    (original requirements and acceptance criteria)
@@ -38,7 +46,7 @@ CONTEXT — read ALL upstream artifacts to perform a thorough review:
 Review the implementation against the spec's acceptance criteria and the plan's
 architecture decisions. Run checks (tests, linters) as appropriate.
 
-IMPORTANT: If you find issues, write a structured rejection summary to:
+If you find blocking issues, ALSO write a structured rejection summary to:
   $REJECTION_CONTEXT_FILE
 
 Format your rejection file as:
@@ -49,15 +57,16 @@ Format your rejection file as:
   ## Required Fixes
   - Description of what needs to change
 
-This file will be provided to the Implement agent on re-run so it can focus
-on ONLY the failing items instead of re-implementing everything.
+That file is provided to the Implement agent on re-run. Keep $REVIEW_DOC as the
+complete human-readable QA record either way.
 
-Summarize findings or confirm clean."
+Summarize in chat only after the file is written."
 
-INJECTED_PROMPT="$(flowai_phase_write_prompt "review" "$ROLE_FILE" "$DIRECTIVE")"
+INJECTED_PROMPT="$(flowai_phase_write_prompt "review" "$ROLE_FILE" "$DIRECTIVE" \
+  "When blocking implementation, you may ALSO write the structured rejection file ($REJECTION_CONTEXT_FILE) for the Implement agent.")"
 export INJECTED_PROMPT
 
 log_info "Booting Review phase..."
 log_info "QA scope: the whole implementation in this repo (git diff, tests/audit, spec + plan + tasks cross-check) — see your role and the directive above."
-log_info "The human menu names tasks.md only as the pipeline checklist anchor (shared with Implement); it is not asking you to ignore source code."
-flowai_phase_run_loop "review" "$INJECTED_PROMPT" "$FEATURE_DIR/tasks.md" "Implementation QA" "review"
+log_info "Primary artifact for this phase: review.md (human opens it from the approval menu)."
+flowai_phase_run_loop "review" "$INJECTED_PROMPT" "$REVIEW_DOC" "Implementation QA" "review"
