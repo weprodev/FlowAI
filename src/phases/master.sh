@@ -246,8 +246,7 @@ _master_approval_watcher() {
       flowai_event_emit "master" "artifact_produced" "$spec_file"
       flowai_event_emit "master" "approved" "spec.md approved by user"
       flowai_event_emit "master" "phase_complete" "Spec approved — pipeline advancing to Plan"
-      log_success "Spec approved by user — pipeline advancing to Plan phase."
-      log_info "🔄 Transitioning to pipeline monitoring mode..."
+      # Handoff message is printed once below (after spec gate) so chat + manual paths match.
       # Switch focus to Plan pane
       flowai_phase_focus "plan" 2>/dev/null || true
       # Terminate the foreground Gemini process (child of our parent)
@@ -360,9 +359,10 @@ rm -f "$APPROVAL_MARKER" 2>/dev/null || true
 # reviews downstream artifacts, AI-reviews tasks (one-shot), and mediates final
 # implementation sign-off after QA (Review) — then touches impl.ready.
 
+log_success "Spec approved. I'm handing off to the Plan agent and will stay here to monitor the pipeline."
+printf '\n'
 log_header "Master Agent — Pipeline Orchestrator"
-log_info "Monitoring pipeline. I'll manage all phase transitions."
-log_info "Press Ctrl+C to exit monitoring."
+log_info "Monitoring phase transitions and status in this pane. Press Ctrl+C to exit when finished."
 
 _master_last_processed_line=0
 _master_last_pipeline_line=""

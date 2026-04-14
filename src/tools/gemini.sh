@@ -66,7 +66,10 @@ flowai_tool_gemini_run() {
   local sys_prompt="$4"
 
   local cmd=(gemini -m "$model")
-  if [[ "$auto_approve" == "true" ]]; then
+  # Non-interactive phases have no stdin for confirmations — same rule as Claude
+  # (--permission-mode acceptEdits) and Cursor (--yolo): auto-approve tool use so
+  # tasks.md / plan.md etc. are actually written when auto_approve is false in config.
+  if [[ "$run_interactive" == "false" ]] || [[ "$auto_approve" == "true" ]]; then
     cmd+=(-y)
   fi
 

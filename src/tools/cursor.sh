@@ -125,7 +125,6 @@ flowai_tool_cursor_run() {
   abs_prompt="$(cd "$(dirname "$tmp_prompt")" && pwd)/$(basename "$tmp_prompt")"
 
   local cmd=("$_ca")
-
   # Model selection
   if [[ -n "$model" && "$model" != "default" ]]; then
     cmd+=(--model "$model")
@@ -151,7 +150,10 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
   fi
 
   # Non-interactive: -p print mode; < /dev/null so the agent exits after work.
-  "${cmd[@]}" -p "$_initial_prompt" < /dev/null || return $?
+  # Per Cursor docs, combine --print with --yolo (added above) so edits are applied.
+  # --trust and explicit --workspace are only valid with --print; interactive Master
+  # uses the REPL path without -p and must not pass --trust (CLI error otherwise).
+  "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || return $?
   rm -f "$tmp_prompt"
   trap - EXIT
 }
