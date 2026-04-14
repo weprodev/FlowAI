@@ -606,8 +606,9 @@ _graph_semantic_extract_file() {
   # Invoke AI and capture JSON output
   local raw_output
   if command -v flowai_tool_"${tool}"_run_oneshot >/dev/null 2>&1; then
-    # Prefer non-interactive oneshot mode if the tool supports it
-    raw_output="$(flowai_tool_"${tool}"_run_oneshot "$model" "$prompt_file"  || echo '{}')"
+    # Prefer non-interactive oneshot mode if the tool supports it.
+    # Do not use `|| echo '{}'` here: oneshot may echo '{}' and exit non-zero, which would duplicate output.
+    raw_output="$(flowai_tool_"${tool}"_run_oneshot "$model" "$prompt_file")" || raw_output='{}'
   else
     # Fallback: write placeholder; semantic pass is best-effort
     raw_output='{"nodes":[],"edges":[],"insights":[]}'

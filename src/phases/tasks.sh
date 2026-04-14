@@ -118,7 +118,7 @@ while true; do
     log_info "tasks.md produced. Waiting for Master Agent review..."
   else
     log_error "tasks.md was not created by the AI agent."
-    flowai_event_emit "tasks" "error" "tasks.md not produced"
+    flowai_phase_emit_error "tasks" "tasks.md not produced"
     exit 1
   fi
 

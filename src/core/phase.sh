@@ -10,6 +10,14 @@ export FLOWAI_DIR="${FLOWAI_DIR:-$PWD/.flowai}"
 export SIGNALS_DIR="${FLOWAI_DIR}/signals"
 export SPECS_DIR="${PWD}/specs"
 
+# Emit a canonical pipeline error event (Master uses these for agent-agnostic recovery UX).
+# Args: phase_id (e.g. plan, tasks, impl)  detail (human-readable)
+flowai_phase_emit_error() {
+  local phase_id="$1"
+  local detail="${2:-}"
+  flowai_event_emit "$phase_id" "error" "$detail"
+}
+
 # shellcheck source=src/core/wait_ui.sh
 source "$FLOWAI_HOME/src/core/wait_ui.sh"
 # shellcheck source=src/core/session.sh

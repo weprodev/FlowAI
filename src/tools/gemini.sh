@@ -151,13 +151,17 @@ flowai_tool_gemini_run_oneshot() {
     _hb_pid=$!
   fi
 
+  # Headless oneshot: Gemini CLI defaults positional "query" to INTERACTIVE mode; use
+  # -p/--prompt for non-interactive (see `gemini --help`). Without -p, stdin is /dev/null
+  # but the session still targets interactive semantics — slow, stuck, or flaky.
+  # -y matches flowai_tool_gemini_run non-interactive: no tty to approve tool actions.
   # Stderr: filter LocalAgentExecutor noise; stdout stays raw for callers (e.g. graph JSON).
   # region agent log
   local _g0 _g1 _gw _plen _rc=0
   _plen="${#prompt}"
   _flowai_gemini_slow_auth_hint_once
   _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
-  gemini -m "$model" "$prompt" < /dev/null 2> >(_flowai_gemini_filter_executor_noise >&2) || _rc=$?
+  gemini -m "$model" -y -p "$prompt" < /dev/null 2> >(_flowai_gemini_filter_executor_noise >&2) || _rc=$?
   if [[ -n "$_hb_pid" ]]; then
     kill "$_hb_pid" 2>/dev/null || true
     wait "$_hb_pid" 2>/dev/null || true
@@ -171,4 +175,5 @@ flowai_tool_gemini_run_oneshot() {
   flowai_debug_session_log "H-B" "gemini.sh:flowai_tool_gemini_run_oneshot" "oneshot_master_review_finished" \
     "{\"model\":\"${model}\",\"gemini_wall_ms\":${_gw},\"prompt_chars\":${_plen},\"exit\":${_rc}}"
   # endregion
+  return "${_rc}"
 }

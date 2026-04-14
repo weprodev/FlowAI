@@ -405,6 +405,72 @@ _master_emit_pipeline_complete_message() {
   log_success "🎉 Happy FlowAI! Feature complete."
 }
 
+# Agent-agnostic: any phase may emit event "error" — offer recovery (stop / continue / exit monitoring).
+# Reads new JSONL batch; returns 0, or 2 if user chose to exit Master monitoring only.
+# Returns nothing if FLOWAI_TESTING=1 (logs only).
+_master_handle_phase_errors_from_batch() {
+  local new_events="$1"
+  local line ev_phase ev_detail choice
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    command -v jq >/dev/null 2>&1 || return 0
+    [[ "$(jq -r '.event // empty' <<< "$line" 2>/dev/null)" == "error" ]] || continue
+    ev_phase="$(jq -r '.phase // "unknown"' <<< "$line" 2>/dev/null)"
+    ev_detail="$(jq -r '.detail // ""' <<< "$line" 2>/dev/null)"
+
+    printf '\n'
+    log_header "Phase error — $ev_phase"
+    log_error "A pipeline phase reported failure."
+    [[ -n "$ev_detail" ]] && log_warn "Detail: $ev_detail"
+    flowai_phase_focus "$ev_phase" 2>/dev/null || true
+
+    if [[ "${FLOWAI_TESTING:-0}" == "1" ]]; then
+      log_warn "($ev_phase error — recovery menu skipped in FLOWAI_TESTING)"
+      continue
+    fi
+
+    log_info "How do you want to proceed?"
+    if command -v gum >/dev/null 2>&1; then
+      choice="$(flowai_gum_choose --header "  Recovery" \
+        'Stop FlowAI session (flowai stop) — kill tmux, start fresh later' \
+        'Continue monitoring — I will fix artifacts or re-run the phase, then use the normal approval gates' \
+        'Exit Master monitoring only — leave other panes running')"
+    else
+      printf '%s\n' "  1) Stop FlowAI session (flowai stop) — kill tmux" \
+        "  2) Continue monitoring — fix / re-run phase, then approve as usual" \
+        "  3) Exit Master monitoring only"
+      read -r -p "Choice [1-3]: " choice < /dev/tty || true
+      case "$choice" in
+        1) choice="Stop FlowAI session" ;;
+        3) choice="Exit Master monitoring only" ;;
+        *) choice="Continue monitoring" ;;
+      esac
+    fi
+
+    case "$choice" in
+      Stop*)
+        flowai_event_emit "master" "error_recovery" "User chose flowai stop after $ev_phase error"
+        log_info "Stopping FlowAI session…"
+        FLOWAI_KILL_NO_CONFIRM=1 bash "$FLOWAI_HOME/src/commands/kill.sh"
+        exit 0
+        ;;
+      *Exit*Master*|*Exit*monitoring*)
+        flowai_event_emit "master" "error_recovery" "User exited Master monitoring after $ev_phase error"
+        log_info "Exiting Master monitoring."
+        return 2
+        ;;
+      *)
+        flowai_event_emit "master" "error_recovery" "User chose to continue after $ev_phase error"
+        local _run_hint="$ev_phase"
+        [[ "$_run_hint" == "impl" ]] && _run_hint="implement"
+        log_info "Continuing. When ready, re-run the failed work if needed, e.g.:  flowai run $_run_hint"
+        log_info "Then use the usual human approval gates in each phase pane."
+        ;;
+    esac
+  done < <(printf '%s\n' "$new_events")
+  return 0
+}
+
 _master_check_events() {
   [[ -f "$FLOWAI_EVENTS_FILE" ]] || return 0
 
@@ -424,6 +490,10 @@ _master_check_events() {
   local new_events
   new_events="$(tail -n +"$((_master_last_processed_line + 1))" "$FLOWAI_EVENTS_FILE")"
   _master_last_processed_line="$total_lines"
+
+  local _err_rc=0
+  _master_handle_phase_errors_from_batch "$new_events" || _err_rc=$?
+  [[ "$_err_rc" -eq 2 ]] && return 2
 
   # ── Plan phase approved → switch focus to Tasks ──
   local plan_approved
@@ -590,9 +660,14 @@ _master_check_events() {
 
 while [[ "$_master_interrupted" -eq 0 ]]; do
   _master_display_status
-  if ! _master_check_events; then
-    break  # Pipeline complete
-  fi
+  _mrc=0
+  _master_check_events || _mrc=$?
+  case "$_mrc" in
+    0) ;;
+    1) break ;; # Pipeline complete (impl approved)
+    2) _master_interrupted=1; break ;; # User exited monitoring (e.g. error recovery menu)
+    *) break ;;
+  esac
   sleep "${FLOWAI_MASTER_POLL_SEC:-2}"
 done
 
@@ -601,7 +676,7 @@ trap - INT TERM
 if [[ "$_master_interrupted" -eq 1 ]]; then
   printf '\n'
   log_info "Master monitoring stopped by user."
-  flowai_event_emit "master" "monitoring_stopped" "User interrupted"
+  flowai_event_emit "master" "monitoring_stopped" "User exited monitoring or interrupted"
 fi
 
 log_info "Master Agent session ended."

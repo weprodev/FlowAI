@@ -9,6 +9,17 @@ source "$FLOWAI_HOME/src/core/session.sh"
 
 SESSION="$(flowai_session_name "$PWD")"
 
+# Nested automation (e.g. Master error recovery already asked the user): skip confirm.
+if [[ "${FLOWAI_KILL_NO_CONFIRM:-0}" == "1" ]]; then
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    tmux kill-session -t "$SESSION"
+    log_success "Session '$SESSION' killed."
+  else
+    printf '%s⚠ No active session for this repo (%s).%s\n' "$YELLOW" "$SESSION" "$RESET" >&2
+  fi
+  exit 0
+fi
+
 if tmux has-session -t "$SESSION" 2>/dev/null; then
   if [ -t 0 ] && [ "${FLOWAI_TESTING:-0}" != "1" ]; then
     if command -v gum >/dev/null 2>&1; then
