@@ -459,7 +459,7 @@ _master_emit_pipeline_complete_message() {
   # We compute it here while all sourced functions are still available.
   {
     source "$FLOWAI_HOME/src/core/session.sh"
-    flowai_session_name "${FLOWAI_DIR%/.flowai}"
+    flowai_session_name "$(flowai_repo_root_for_session)"
   } > "${FLOWAI_DIR}/signals/pipeline.complete" 2>/dev/null || touch "${FLOWAI_DIR}/signals/pipeline.complete"
 }
 
@@ -925,21 +925,23 @@ log_info "Master Agent session ended."
 if [[ -f "${FLOWAI_DIR}/signals/pipeline.complete" && "${FLOWAI_TESTING:-0}" != "1" ]]; then
   _flowai_session=""
 
-  # Strategy 1: read session name from the signal file
-  _flowai_session="$(cat "${FLOWAI_DIR}/signals/pipeline.complete" 2>/dev/null | head -1 | tr -d '[:space:]')" || true
-
-  # Strategy 2: ask tmux for current session (works if $TMUX is set)
-  if [[ -z "$_flowai_session" ]]; then
+  # Strategy 1: current tmux session (same as wrap-up confirm — most reliable).
+  if [[ -n "${TMUX:-}" ]]; then
     _flowai_session="$(tmux display-message -p '#S' 2>/dev/null)" || true
   fi
-
-  # Strategy 3: find any flowai-* session
-  if [[ -z "$_flowai_session" ]]; then
+  # Strategy 2: signal file / repo-based name (must match flowai start).
+  if [[ -z "$_flowai_session" ]] || ! tmux has-session -t "$_flowai_session" 2>/dev/null; then
+    _flowai_session="$(flowai_resolve_tmux_session_name)"
+  fi
+  # Strategy 3: any flowai-* session (last resort if detached / renamed).
+  if [[ -z "$_flowai_session" ]] || ! tmux has-session -t "$_flowai_session" 2>/dev/null; then
     _flowai_session="$(tmux list-sessions -F '#S' 2>/dev/null | grep '^flowai-' | head -1)" || true
   fi
 
   if [[ -n "$_flowai_session" ]] && command -v tmux >/dev/null 2>&1; then
     sleep 2
-    tmux kill-session -t "$_flowai_session" 2>/dev/null || true
+    if ! tmux kill-session -t "$_flowai_session" 2>/dev/null; then
+      log_warn "Could not tear down tmux session '$_flowai_session'. Try: flowai kill"
+    fi
   fi
 fi

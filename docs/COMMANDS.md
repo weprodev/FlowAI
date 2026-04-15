@@ -93,7 +93,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete
 | `FLOWAI_TEST_SKIP_AI=1` | Contract-test mode: phase scripts exit 0 before invoking AI. |
 | `FLOWAI_SKIP_GRAPH=1` | Skip graph enforcement in `flowai start` (same as `--skip-graph` flag). |
 | `FLOWAI_PHASE_EXPECTED_DURATION_SEC=N` | Master scope check threshold (seconds). When a phase exceeds this, Master AI verifies the agent is on track. Default: `300` (5 min). |
-| `FLOWAI_PANE_MIN_HEIGHT=N` | Minimum rows for inactive panes in dashboard layout. Default: `3`. |
+| `FLOWAI_PANE_MIN_HEIGHT=N` | Minimum rows for inactive **phase** panes when only one pipeline pane is emphasized. Default: `3`. |
+| `FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1` | Dashboard layout only: when multiple phase panes exist (impl + review, etc.), make the **focused** phase tall and shrink the others to `FLOWAI_PANE_MIN_HEIGHT`. Default is **off** — phase panes **share height evenly** so two active agents get equal rows. |
 
 ### Event Log Configuration
 

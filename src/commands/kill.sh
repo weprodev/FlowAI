@@ -7,7 +7,7 @@ set -euo pipefail
 source "$FLOWAI_HOME/src/core/log.sh"
 source "$FLOWAI_HOME/src/core/session.sh"
 
-SESSION="$(flowai_session_name "$PWD")"
+SESSION="$(flowai_session_name "$(flowai_repo_root_for_session)")"
 
 # Nested automation (e.g. Master error recovery already asked the user): skip confirm.
 if [[ "${FLOWAI_KILL_NO_CONFIRM:-0}" == "1" ]]; then

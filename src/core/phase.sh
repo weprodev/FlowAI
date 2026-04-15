@@ -130,12 +130,20 @@ flowai_session_prompt_end() {
   fi
 
   if [[ "$do_kill" -eq 1 ]]; then
-    local sess
-    sess="$(flowai_session_name "$PWD")"
+    local sess=""
+    # Prefer the session we are actually in (avoids PWD / symlink mismatch vs flowai start).
+    if [[ -n "${TMUX:-}" ]]; then
+      sess="$(tmux display-message -p '#S' 2>/dev/null)" || true
+    fi
+    if [[ -z "$sess" ]] || ! tmux has-session -t "$sess" 2>/dev/null; then
+      sess="$(flowai_resolve_tmux_session_name)"
+    fi
     if tmux has-session -t "$sess" 2>/dev/null; then
       exec tmux kill-session -t "$sess"
     fi
-    exit 0
+    log_warn "Could not close the tmux session automatically (tried: ${sess:-unknown}). Run: flowai kill"
+    # Do not `exit` here — that would skip master.sh teardown; return so the outer script can retry.
+    return 0
   fi
   log_info "Session left running. When finished:  flowai kill"
 }
@@ -608,7 +616,11 @@ flowai_phase_focus() {
   flowai_phase_resize_panes "$phase"
 }
 
-# Resize tmux panes in dashboard layout: maximize the active phase, minimize others.
+# Resize tmux panes in dashboard layout.
+# - Only touches pipeline phase panes (titles containing "Phase:") — never shrinks Master.
+# - If two or more phase panes exist: split vertical space evenly (impl + review both usable).
+#   Set FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1 to restore "one large, others tiny" for the focused phase.
+# - If one phase pane: it gets the full height of the phase column.
 # No-ops gracefully in tabs layout, non-tmux, or FLOWAI_TESTING.
 flowai_phase_resize_panes() {
   local active_phase="$1"
@@ -631,28 +643,51 @@ flowai_phase_resize_panes() {
   [[ "$pane_count" -gt 1 ]] || return 0
 
   local min_height="${FLOWAI_PANE_MIN_HEIGHT:-3}"
-  local border_overhead=$(( pane_count - 1 ))
-  local active_height=$(( total_height - (pane_count - 1) * min_height - border_overhead ))
-  [[ "$active_height" -lt "$min_height" ]] && active_height="$min_height"
 
-  # Find the pane matching the active phase by title
-  local active_pane_id=""
+  # Pipeline phase panes only (Plan/Tasks/Implement/Review) — not Master.
+  local -a phase_ids=()
   local _pid _ptitle
   while IFS=$'\t' read -r _pid _ptitle; do
+    if printf '%s' "$_ptitle" | grep -qF 'Phase:'; then
+      phase_ids+=("$_pid")
+    fi
+  done < <(tmux list-panes -t "${session}:0" -F '#{pane_id}	#{pane_title}' 2>/dev/null)
+
+  local n_phase=${#phase_ids[@]}
+  [[ "$n_phase" -ge 1 ]] || return 0
+
+  # Two or more agents in the stack: equal rows so you can watch both (unless legacy mode).
+  if [[ "$n_phase" -ge 2 ]] && [[ "${FLOWAI_DASHBOARD_MAXIMIZE_FOCUS:-0}" != "1" ]]; then
+    local borders=$(( n_phase - 1 ))
+    local each_h=$(( (total_height - borders) / n_phase ))
+    [[ "$each_h" -lt "$min_height" ]] && each_h="$min_height"
+    for _pid in "${phase_ids[@]}"; do
+      tmux resize-pane -t "$_pid" -y "$each_h" 2>/dev/null || true
+    done
+    return 0
+  fi
+
+  # Single phase pane, or FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1: maximize the focused phase among phase panes.
+  local active_pane_id=""
+  for _pid in "${phase_ids[@]}"; do
+    _ptitle="$(tmux display-message -t "$_pid" -p '#{pane_title}' 2>/dev/null)" || true
     if printf '%s' "$_ptitle" | grep -qi "$active_phase"; then
       active_pane_id="$_pid"
       break
     fi
-  done < <(tmux list-panes -t "${session}:0" -F '#{pane_id}	#{pane_title}' 2>/dev/null)
+  done
+  [[ -n "$active_pane_id" ]] || active_pane_id="${phase_ids[0]}"
 
-  [[ -n "$active_pane_id" ]] || return 0
+  local k=$(( n_phase - 1 ))
+  local stack_borders=0
+  [[ "$n_phase" -gt 1 ]] && stack_borders=$(( n_phase - 1 ))
+  local active_height=$(( total_height - k * min_height - stack_borders ))
+  [[ "$active_height" -lt "$min_height" ]] && active_height="$min_height"
 
-  # Shrink all non-active panes first, then give active pane max height
-  while IFS=$'\t' read -r _pid _ptitle; do
+  for _pid in "${phase_ids[@]}"; do
     if [[ "$_pid" != "$active_pane_id" ]]; then
       tmux resize-pane -t "$_pid" -y "$min_height" 2>/dev/null || true
     fi
-  done < <(tmux list-panes -t "${session}:0" -F '#{pane_id}	#{pane_title}' 2>/dev/null)
-
+  done
   tmux resize-pane -t "$active_pane_id" -y "$active_height" 2>/dev/null || true
 }
