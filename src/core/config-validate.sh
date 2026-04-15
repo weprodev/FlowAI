@@ -4,7 +4,7 @@
 
 # shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
-# shellcheck source=models-catalog.sh
+# shellcheck source=src/core/models-catalog.sh
 [[ -n "${FLOWAI_HOME:-}" ]] && source "$FLOWAI_HOME/src/core/models-catalog.sh"
 
 # Check one (tool, model) pair. Returns 0 if ok or empty; 1 if invalid (strict).

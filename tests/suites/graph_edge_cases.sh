@@ -13,6 +13,7 @@
 #
 # Expects tests/lib/harness.sh sourced first (see tests/run.sh).
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # tests use single-quoted bash -c with $ vars intentionally
 
 source "$FLOWAI_HOME/src/core/log.sh"
 

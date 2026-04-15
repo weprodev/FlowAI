@@ -3,6 +3,7 @@
 # phase timeout / pre-signal fast path, feature directory resolution,
 # constraint reminder constant, and tool plugin API completeness.
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # bash -c strings use $ vars for inner shell, not outer
 
 # shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"

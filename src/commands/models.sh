@@ -42,6 +42,7 @@ declare -a available_tools=()
 if [[ -d "$FLOWAI_HOME/src/tools" ]]; then
   for tool_file in "$FLOWAI_HOME/src/tools/"*.sh; do
     [[ -f "$tool_file" ]] || continue
+    # shellcheck source=/dev/null  # dynamic plugin path — intentional
     source "$tool_file"
     tool_name="$(basename "$tool_file" .sh)"
     available_tools+=("$tool_name")

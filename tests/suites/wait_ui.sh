@@ -2,6 +2,7 @@
 # FlowAI test suite — wait UI (single-line progress, rank resolution, spin lock)
 # Tests rank mapping, spin lock acquire/release, and guard-condition early returns.
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # bash -c strings use $ vars for inner shell, not outer
 #
 # Isolated temp projects use: env FLOWAI_DIR=… FLOWAI_HOME=… bash -s <<'EOS' … EOS
 # so ShellCheck does not treat exports as lost subshell assignments (SC2030/SC2031).
@@ -96,8 +97,9 @@ EOS
     rm -rf "$scratch"
     return
   fi
-  # Now unlock
+  # Now unlock — rc2 captures exit code to prevent set -e abort; validation is via dir state below
   local rc2=0
+  # shellcheck disable=SC2034  # rc2 intentionally unused; prevents set -e abort
   env FLOWAI_HOME="$FLOWAI_HOME" SIGNALS_DIR="$scratch/signals" bash -s <<'EOS' || rc2=$?
 source "$FLOWAI_HOME/src/core/wait_ui.sh"
 _flowai_wait_ui_spin_unlock

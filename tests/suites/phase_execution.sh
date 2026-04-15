@@ -2,6 +2,7 @@
 # Phase execution tests — emit_error, artifact_boundary, write_prompt,
 # role resolution tiers, session_prompt_end, and phase_focus no-op.
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # bash -c strings use $ vars for inner shell, not outer
 
 # shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"

@@ -176,15 +176,17 @@ flowai_test_s_ver_008() {
   local scratch
   scratch="$(mktemp -d)"
   local output rc=0
+  # Run in a standalone subshell, capture output and exit code independently
+  # to avoid SC2030/SC2031 (subshell variable assignment inside $()).
   output="$(env FLOWAI_HOME="$FLOWAI_HOME" \
     FLOWAI_TESTING=1 \
     FLOWAI_UPDATE_CACHE_DIR="$scratch/.cache" \
     FLOWAI_UPDATE_CACHE_FILE="$scratch/.cache/update-check" \
-    bash -s 2>&1 <<'EOS' || rc=$?
+    bash -s 2>&1 <<'EOS'
 source "$FLOWAI_HOME/src/core/version-check.sh"
 flowai_version_check_notify
 EOS
-)"
+)" || rc=$?
   if [[ "$rc" -eq 0 && -z "$output" ]]; then
     flowai_test_pass "$id" "notify skips in test mode"
   else

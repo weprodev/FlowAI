@@ -6,9 +6,9 @@
 
 set -euo pipefail
 
-# shellcheck source=../core/log.sh
+# shellcheck source=src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
-# shellcheck source=../core/session.sh
+# shellcheck source=src/core/session.sh
 source "$FLOWAI_HOME/src/core/session.sh"
 
 if ! command -v tmux >/dev/null 2>&1; then

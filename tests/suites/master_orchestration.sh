@@ -5,6 +5,7 @@
 # runs interactive AI sessions), so we do NOT source it. Tests use grep/pattern
 # analysis on the source file or validate extracted regex patterns inline.
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # grep patterns match literal $ in source files
 
 # shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"

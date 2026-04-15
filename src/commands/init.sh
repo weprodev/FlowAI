@@ -22,6 +22,7 @@ source "$FLOWAI_HOME/src/os/platform.sh"
 # are available during the wizard without hardcoding tool names.
 for _init_tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
   [[ -f "$_init_tool_plugin" ]] || continue
+  # shellcheck source=/dev/null  # dynamic plugin path — intentional
   source "$_init_tool_plugin"
 done
 unset _init_tool_plugin

@@ -3,6 +3,7 @@
 # Tests for flowai_ai_resolve_model_for_tool, flowai_ai_resolve_tool_and_model_for_phase,
 # and flowai_ai_tool_is_paste_only in src/core/ai.sh.
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # bash -c strings use $ vars for inner shell, not outer
 #
 # Isolated temp projects use: env FLOWAI_DIR=… FLOWAI_HOME=… bash -s <<'EOS' … EOS
 # so ShellCheck does not treat exports as lost subshell assignments (SC2030/SC2031).

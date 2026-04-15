@@ -2,6 +2,7 @@
 # FlowAI test suite — tool plugin API compliance
 # Tests that all tool plugins define the required functions.
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # grep patterns match literal $ in source files
 
 # shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"

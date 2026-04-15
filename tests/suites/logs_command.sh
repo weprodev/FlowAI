@@ -2,6 +2,7 @@
 # Logs command — tests for src/commands/logs.sh
 # Expects tests/lib/harness.sh sourced first (see tests/run.sh).
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # grep patterns contain $ for literal matching, not shell expansion
 
 # shellcheck source=../../src/core/log.sh
 source "$FLOWAI_HOME/src/core/log.sh"
