@@ -453,6 +453,17 @@ _master_emit_pipeline_complete_message() {
   log_info "  4. Push:            git push"
   printf '\n'
   log_success "🎉 Happy FlowAI! Feature complete."
+
+  # Drop a signal so the host wrapper (start.sh) knows to display the final message
+  touch "${FLOWAI_DIR}/signals/pipeline.complete"
+
+  # Wait for Implementation terminal to close (it sleeps 1s), then kill session
+  if command -v tmux >/dev/null 2>&1 && [[ -n "${TMUX:-}" && "${FLOWAI_TESTING:-0}" != "1" ]]; then
+    sleep 2
+    log_info "Closing Master terminal and returning to host..."
+    sleep 1
+    tmux kill-session -t "$(tmux display-message -p '#S' 2>/dev/null)" 2>/dev/null || true
+  fi
 }
 
 # Agent-agnostic: any phase may emit event "error" — offer recovery (stop / continue / exit monitoring).

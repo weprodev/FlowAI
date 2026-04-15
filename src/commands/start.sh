@@ -638,3 +638,20 @@ if [[ -n "${TMUX:-}" ]]; then
 else
   tmux attach-session -t "$SESSION"
 fi
+
+# Session has finished or user detached.
+if [[ -f "${FLOWAI_DIR:-$PWD/.flowai}/signals/pipeline.complete" ]]; then
+  # Clear the screen to bring the summary to the top for a clean finish
+  clear || true
+  log_success "Pipeline complete! All phases approved."
+  log_info "Review the final artifacts in specs/ and the implemented code."
+  printf '\n'
+  log_info "Next steps:"
+  log_info "  1. Review changes:  git diff"
+  log_info "  2. Commit changes:  git add -A && git commit -m 'feat: ...'"
+  log_info "  3. Update graph:    flowai graph update"
+  log_info "  4. Push:            git push"
+  printf '\n'
+  log_success "🎉 Happy FlowAI! Feature complete."
+  rm -f "${FLOWAI_DIR:-$PWD/.flowai}/signals/pipeline.complete"
+fi
