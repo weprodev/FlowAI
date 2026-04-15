@@ -69,4 +69,15 @@ export INJECTED_PROMPT
 log_info "Booting Review phase..."
 log_info "QA scope: the whole implementation in this repo (git diff, tests/audit, spec + plan + tasks cross-check) — see your role and the directive above."
 log_info "Primary artifact for this phase: review.md (human opens it from the approval menu)."
+
+# Pre-create review.md so the agent can read/edit it without 'File not found'
+if [[ ! -f "$REVIEW_DOC" ]]; then
+  cat > "$REVIEW_DOC" <<'REVIEWTPL'
+# QA Review
+
+<!-- This file is the primary output of the Review phase. -->
+<!-- The Review agent will replace this template with the full QA report. -->
+REVIEWTPL
+fi
+
 flowai_phase_run_loop "review" "$INJECTED_PROMPT" "$REVIEW_DOC" "Implementation QA" "review"

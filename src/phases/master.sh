@@ -454,16 +454,13 @@ _master_emit_pipeline_complete_message() {
   printf '\n'
   log_success "🎉 Happy FlowAI! Feature complete."
 
-  # Drop a signal so the host wrapper (start.sh) knows to display the final message
-  touch "${FLOWAI_DIR}/signals/pipeline.complete"
-
-  # Wait for Implementation terminal to close (it sleeps 1s), then kill session
-  if command -v tmux >/dev/null 2>&1 && [[ -n "${TMUX:-}" && "${FLOWAI_TESTING:-0}" != "1" ]]; then
-    sleep 2
-    log_info "Closing Master terminal and returning to host..."
-    sleep 1
-    tmux kill-session -t "$(tmux display-message -p '#S' 2>/dev/null)" 2>/dev/null || true
-  fi
+  # Write the tmux session name into the signal file so the teardown at the
+  # end of this script and the host wrapper (start.sh) can use it reliably.
+  # We compute it here while all sourced functions are still available.
+  {
+    source "$FLOWAI_HOME/src/core/session.sh"
+    flowai_session_name "${FLOWAI_DIR%/.flowai}"
+  } > "${FLOWAI_DIR}/signals/pipeline.complete" 2>/dev/null || touch "${FLOWAI_DIR}/signals/pipeline.complete"
 }
 
 # Agent-agnostic: any phase may emit event "error" — offer recovery (stop / continue / exit monitoring).
@@ -921,3 +918,28 @@ if [[ "$_master_interrupted" -eq 1 ]]; then
 fi
 
 log_info "Master Agent session ended."
+
+# ─── Session teardown ─────────────────────────────────────────────────────────
+# Kill the tmux session so the user is returned to the host terminal.
+# The session name was written into pipeline.complete by the emit function.
+if [[ -f "${FLOWAI_DIR}/signals/pipeline.complete" && "${FLOWAI_TESTING:-0}" != "1" ]]; then
+  _flowai_session=""
+
+  # Strategy 1: read session name from the signal file
+  _flowai_session="$(cat "${FLOWAI_DIR}/signals/pipeline.complete" 2>/dev/null | head -1 | tr -d '[:space:]')" || true
+
+  # Strategy 2: ask tmux for current session (works if $TMUX is set)
+  if [[ -z "$_flowai_session" ]]; then
+    _flowai_session="$(tmux display-message -p '#S' 2>/dev/null)" || true
+  fi
+
+  # Strategy 3: find any flowai-* session
+  if [[ -z "$_flowai_session" ]]; then
+    _flowai_session="$(tmux list-sessions -F '#S' 2>/dev/null | grep '^flowai-' | head -1)" || true
+  fi
+
+  if [[ -n "$_flowai_session" ]] && command -v tmux >/dev/null 2>&1; then
+    sleep 2
+    tmux kill-session -t "$_flowai_session" 2>/dev/null || true
+  fi
+fi

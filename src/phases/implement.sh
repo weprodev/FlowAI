@@ -103,18 +103,6 @@ while true; do
   if [[ -f "${FLOWAI_DIR}/signals/impl.ready" ]]; then
     log_success "Implementation approved by Master + User. Phase complete."
     flowai_event_emit "impl" "phase_complete" "Approved and signalled"
-    
-    # Close the implementation terminal on completion
-    if command -v tmux >/dev/null 2>&1 && [[ -n "${TMUX:-}" && "${FLOWAI_TESTING:-0}" != "1" ]]; then
-      log_info "Closing Implementation terminal..."
-      sleep 1
-      if [[ "$(flowai_cfg_layout)" == "dashboard" && -n "${TMUX_PANE:-}" ]]; then
-        tmux kill-pane -t "$TMUX_PANE" 2>/dev/null || true
-      elif [[ "$(flowai_cfg_layout)" == "tabs" ]]; then
-        tmux kill-window 2>/dev/null || true
-      fi
-    fi
-    
     break
   fi
 
