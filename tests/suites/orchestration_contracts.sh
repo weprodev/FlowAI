@@ -123,24 +123,45 @@ flowai_test_s_orch_006() {
   fi
 }
 
-# ─── ORCH-007: Gemini stderr filter drops LocalAgentExecutor noise only ──────
+# ─── ORCH-007: Gemini stderr filter — configurable via FLOWAI_AGENT_VERBOSE ──
 flowai_test_s_orch_007() {
   local id="ORCH-007"
   # shellcheck source=../../src/tools/gemini.sh
   source "$FLOWAI_HOME/src/tools/gemini.sh"
-  local out
-  out="$(
-    {
-      printf '%s\n' '[LocalAgentExecutor] Skipping subagent tool x'
-      printf '%s\n' 'gemini: real error on stderr'
-    } | _flowai_gemini_filter_executor_noise
+
+  # Mode 1: FLOWAI_AGENT_VERBOSE=0 → strip LocalAgentExecutor lines (old behavior)
+  local out_quiet
+  out_quiet="$(
+    # shellcheck disable=SC2030  # intentional: subshell-scoped env for test isolation
+    export FLOWAI_AGENT_VERBOSE=0
+    printf '%s\n%s\n' \
+      '[LocalAgentExecutor] Skipping subagent tool x' \
+      'gemini: real error on stderr' \
+    | _flowai_gemini_filter_stderr
   )"
-  if [[ "$out" == *'real error'* ]] && [[ "$out" != *'LocalAgentExecutor'* ]]; then
-    flowai_test_pass "$id" "Gemini stderr filter removes LocalAgentExecutor only"
-  else
-    printf 'FAIL %s: filter output wrong: %q\n' "$id" "$out" >&2
+  if [[ "$out_quiet" != *'real error'* ]] || [[ "$out_quiet" == *'LocalAgentExecutor'* ]]; then
+    printf 'FAIL %s: verbose=0 should strip executor lines: %q\n' "$id" "$out_quiet" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return
   fi
+
+  # Mode 2: FLOWAI_AGENT_VERBOSE=1 → pass through (with dim ANSI prefix)
+  local out_verbose
+  out_verbose="$(
+    # shellcheck disable=SC2031  # intentional: subshell-scoped env for test isolation
+    export FLOWAI_AGENT_VERBOSE=1
+    printf '%s\n%s\n' \
+      '[LocalAgentExecutor] Skipping subagent tool x' \
+      'gemini: real error on stderr' \
+    | _flowai_gemini_filter_stderr
+  )"
+  if [[ "$out_verbose" != *'LocalAgentExecutor'* ]] || [[ "$out_verbose" != *'real error'* ]]; then
+    printf 'FAIL %s: verbose=1 should keep executor lines: %q\n' "$id" "$out_verbose" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return
+  fi
+
+  flowai_test_pass "$id" "Gemini stderr filter: verbose=0 strips, verbose=1 passes through"
 }
 
 # ─── ORCH-008: plan.revision.ready unblocks flowai_phase_wait_for ───────────

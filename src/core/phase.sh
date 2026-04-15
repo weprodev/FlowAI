@@ -508,6 +508,9 @@ flowai_phase_run_loop() {
 
   while true; do
     log_info "⏳ $artifact_label: AI agent is working (stream output appears below as the tool runs)..."
+    if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
+      log_info "💡 Agent thinking is visible (FLOWAI_AGENT_VERBOSE=1). Set to 0 for quieter output."
+    fi
     flowai_ai_run "$phase_name" "$prompt_file" "false"
     log_success "✅ $artifact_label: AI agent finished. Verifying output..."
     log_info "📄 Expected artifact: $artifact_file"

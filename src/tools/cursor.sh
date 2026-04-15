@@ -191,11 +191,17 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
     return "$_rc"
   fi
 
-  # Non-interactive: -p print mode; < /dev/null so the agent exits after work.
-  # Per Cursor docs, combine --print with --yolo (added above) so edits are applied.
+  # Non-interactive: agent runs autonomously, then exits when work is done.
+  # FLOWAI_AGENT_VERBOSE=1 (default): use --output-format stream-json so the tmux
+  # pane shows real-time thinking (tool calls, file reads, reasoning).
+  # FLOWAI_AGENT_VERBOSE=0: use -p (print mode) for buffered, quieter output.
   # --trust and explicit --workspace are only valid with --print; interactive Master
   # uses the REPL path without -p and must not pass --trust (CLI error otherwise).
-  "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || _rc=$?
+  if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
+    "${cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null || _rc=$?
+  else
+    "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || _rc=$?
+  fi
   _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   _cw=$((_c1 - _c0))
   flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "oneshot_phase_cursor_finished" \

@@ -83,3 +83,18 @@ log_header() {
     printf " %b%s%b\n" "$BOLD" "$1" "$RESET"
     printf '%b%b━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%b\n\n' "$BOLD" "$CYAN" "$RESET"
 }
+
+# ─── Spinner — reusable braille-dot animation for polling loops ───────────────
+# Smooth circular animation; each call to flowai_spinner_frame returns the next
+# character. Use with flowai_overwrite_line for single-line progress indicators.
+if [[ -z "${FLOWAI_SPINNER_FRAMES+x}" ]]; then
+  readonly FLOWAI_SPINNER_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+fi
+FLOWAI_SPINNER_TICK=0
+
+# Print the next spinner frame character (advances the global tick).
+flowai_spinner_frame() {
+  local frame="${FLOWAI_SPINNER_FRAMES[$(( FLOWAI_SPINNER_TICK % ${#FLOWAI_SPINNER_FRAMES[@]} ))]}"
+  FLOWAI_SPINNER_TICK=$(( FLOWAI_SPINNER_TICK + 1 ))
+  printf '%s' "$frame"
+}

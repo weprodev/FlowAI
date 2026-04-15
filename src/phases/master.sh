@@ -384,6 +384,13 @@ _master_phase_starts=()
 _master_scope_flags=()
 trap '_master_interrupted=1' INT TERM
 
+# Dirty-tracking: suppresses \r-overwrite when other output has displaced the cursor.
+_master_status_dirty=false
+
+_master_mark_display_dirty() {
+  _master_status_dirty=true
+}
+
 _master_display_status() {
   local status line
   status="$(flowai_event_pipeline_status)"
@@ -392,16 +399,45 @@ _master_display_status() {
   fi
   line="$(printf '%s' "$status" | jq -r 'to_entries | map("\(.key)=\(.value)") | join(" · ")' 2>/dev/null || echo "$status")"
   line="$(flowai_sanitize_display_text "$line")"
-  # FLOWAI_PLAIN_TERMINAL=1 — newline-only updates when status changes (readable scrollback).
-  if flowai_terminal_plain_enabled; then
-    if [[ "$line" != "${_master_last_pipeline_line:-}" ]]; then
-      _master_last_pipeline_line="$line"
-      log_info "Pipeline: $line"
+
+  local elapsed=$(( SECONDS - _master_orchestration_start_sec ))
+  local frame
+  frame="$(flowai_spinner_frame)"
+
+  # Status changed → print as a permanent log line, then reset for spinner
+  if [[ "$line" != "${_master_last_pipeline_line:-}" ]]; then
+    # Clear any leftover spinner line before printing the new status
+    if ! flowai_terminal_plain_enabled; then
+      flowai_clear_line
     fi
+    log_info "Pipeline: $line"
+    _master_last_pipeline_line="$line"
+    _master_status_dirty=false
     return 0
   fi
-  # Clear full line then draw — live line; avoid when plain (scrollback-safe mode above).
-  flowai_overwrite_line "$(printf '%sPipeline: %s%s' "$CYAN" "$line" "$RESET")"
+
+  # Status unchanged — show spinner on a single overwritten line (non-plain terminals only)
+  if flowai_terminal_plain_enabled; then
+    return 0
+  fi
+
+  # If something else printed output since the last spinner draw, skip the \r overwrite
+  # for one cycle to avoid corrupting the previous output line.
+  if [[ "$_master_status_dirty" == "true" ]]; then
+    _master_status_dirty=false
+    return 0
+  fi
+
+  # Overwrite the current line with spinner + elapsed time
+  local mins=$(( elapsed / 60 ))
+  local secs=$(( elapsed % 60 ))
+  local time_str
+  if [[ "$mins" -gt 0 ]]; then
+    time_str="${mins}m${secs}s"
+  else
+    time_str="${secs}s"
+  fi
+  flowai_overwrite_line "$(printf '%s%s  Monitoring pipeline · %s%s' "$CYAN" "$frame" "$time_str" "$RESET")"
 }
 
 _master_emit_pipeline_complete_message() {
@@ -853,6 +889,7 @@ while [[ "$_master_interrupted" -eq 0 ]]; do
   _master_display_status
   _mrc=0
   _master_check_events || _mrc=$?
+  _master_mark_display_dirty   # event handling may have printed log lines
   case "$_mrc" in
     0) ;;
     1) break ;; # Pipeline complete (impl approved)
@@ -860,6 +897,7 @@ while [[ "$_master_interrupted" -eq 0 ]]; do
     *) break ;;
   esac
   _master_check_phase_durations
+  _master_mark_display_dirty   # scope checks may have printed warnings
   sleep "${FLOWAI_MASTER_POLL_SEC:-2}"
 done
 

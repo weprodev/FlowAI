@@ -44,16 +44,29 @@ flowai_tool_gemini_print_models() {
   _flowai_print_tool_block "gemini"
 }
 
-# Gemini CLI (headless + some interactive runs) logs internal [LocalAgentExecutor]
-# lines to stderr (subagent recursion skips). That noise is not useful in tmux
-# panes and can interleave with stdout in confusing ways. Real stderr errors are
-# preserved (they do not match this prefix).
-_flowai_gemini_filter_executor_noise() {
+# Gemini CLI stderr filter — configurable via FLOWAI_AGENT_VERBOSE.
+#
+# [LocalAgentExecutor] lines are the agent's execution trace: tool calls, file
+# reads, searches, code writes. They show what the agent is *thinking and doing*.
+#
+# FLOWAI_AGENT_VERBOSE=1 (default): pass through with a dimmed prefix so the user
+#   sees the agent's step-by-step reasoning in real time.
+# FLOWAI_AGENT_VERBOSE=0: strip [LocalAgentExecutor] lines (old silent behavior).
+_flowai_gemini_filter_stderr() {
+  local verbose="${FLOWAI_AGENT_VERBOSE:-1}"
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
-      \[LocalAgentExecutor\]*) continue ;;
+      \[LocalAgentExecutor\]*)
+        if [[ "$verbose" == "1" ]]; then
+          # Dim prefix so thinking lines are visually distinct from primary output
+          printf '\033[2m%s\033[0m\n' "$line"
+        fi
+        # When verbose=0, skip the line (old behavior)
+        ;;
+      *)
+        printf '%s\n' "$line"
+        ;;
     esac
-    printf '%s\n' "$line"
   done
 }
 
@@ -91,7 +104,7 @@ flowai_tool_gemini_run() {
     # Send initial prompt to anchor Gemini to the pipeline workflow (same pattern as Claude).
     GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
       "Read your PIPELINE DIRECTIVE and HARD CONSTRAINTS in the system prompt. You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as written — begin with step 1 now. Do NOT deviate from the directive." \
-      2> >(_flowai_gemini_filter_executor_noise >&2)
+      2> >(_flowai_gemini_filter_stderr >&2)
     local ext_code=$?
     _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
     _gw=$((_g1 - _g0))
@@ -120,7 +133,7 @@ flowai_tool_gemini_run() {
   _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
     "Execute the PIPELINE DIRECTIVE in your system prompt. HARD CONSTRAINTS are MANDATORY — you may ONLY write to the OUTPUT FILE specified in the directive. Do NOT create any other files. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE searching files. Begin immediately." \
-    < /dev/null 2> >(_flowai_gemini_filter_executor_noise >&2) || _rc=$?
+    < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) || _rc=$?
   _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   _gw=$((_g1 - _g0))
   flowai_debug_session_log "H-B" "gemini.sh:flowai_tool_gemini_run" "oneshot_phase_gemini_finished" \
@@ -164,13 +177,14 @@ flowai_tool_gemini_run_oneshot() {
   # -p/--prompt for non-interactive (see `gemini --help`). Without -p, stdin is /dev/null
   # but the session still targets interactive semantics — slow, stuck, or flaky.
   # -y matches flowai_tool_gemini_run non-interactive: no tty to approve tool actions.
-  # Stderr: filter LocalAgentExecutor noise; stdout stays raw for callers (e.g. graph JSON).
+  # Stderr: filter via _flowai_gemini_filter_stderr (configurable via FLOWAI_AGENT_VERBOSE);
+  # stdout stays raw for callers (e.g. graph JSON).
   # region agent log
   local _g0 _g1 _gw _plen _rc=0
   _plen="${#prompt}"
   _flowai_gemini_slow_auth_hint_once
   _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
-  gemini -m "$model" -y -p "$prompt" < /dev/null 2> >(_flowai_gemini_filter_executor_noise >&2) || _rc=$?
+  gemini -m "$model" -y -p "$prompt" < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) || _rc=$?
   if [[ -n "$_hb_pid" ]]; then
     kill "$_hb_pid" 2>/dev/null || true
     wait "$_hb_pid" 2>/dev/null || true
