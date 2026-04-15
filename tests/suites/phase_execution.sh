@@ -277,9 +277,11 @@ flowai_test_s_phe_010() {
   local _fh="$FLOWAI_HOME"
   local clean_path
   clean_path="$(flowai_test_path_excluding_cmd tmux)"
+  local bash_exe
+  bash_exe="$(command -v bash)"
   local rc=0
   env FLOWAI_DIR="$scratch/.flowai" FLOWAI_HOME="$_fh" PATH="$clean_path" TMUX="" \
-    bash -c '
+    "$bash_exe" -c '
       source "$FLOWAI_HOME/src/core/phase.sh"
       flowai_phase_focus "plan"
     ' 2>/dev/null || rc=$?
