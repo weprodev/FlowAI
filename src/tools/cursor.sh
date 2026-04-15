@@ -226,10 +226,13 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
   # FLOWAI_AGENT_VERBOSE=0: use -p (print mode) for buffered, quieter output.
   # --trust and explicit --workspace are only valid with --print; interactive Master
   # uses the REPL path without -p and must not pass --trust (CLI error otherwise).
+  local _ps
   if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
-    "${cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null 2>&1 | tee "$_cursor_log" || _rc=$?
+    { "${cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null 2>&1 | tee "$_cursor_log" | python3 "$FLOWAI_HOME/src/tools/cursor_formatter.py"; _ps=("${PIPESTATUS[@]}"); } || true
+    _rc="${_ps[0]}"
   else
-    "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null 2>&1 | tee "$_cursor_log" || _rc=$?
+    { "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null 2>&1 | tee "$_cursor_log"; _ps=("${PIPESTATUS[@]}"); } || true
+    _rc="${_ps[0]}"
   fi
 
   # Auto-fallback: if the model's quota is exhausted, retry with --model auto
@@ -238,9 +241,11 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
     _rc=0
     local auto_cmd=("$_ca" --model auto --yolo)
     if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
-      "${auto_cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null || _rc=$?
+      { "${auto_cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null 2>&1 | python3 "$FLOWAI_HOME/src/tools/cursor_formatter.py"; _ps=("${PIPESTATUS[@]}"); } || true
+      _rc="${_ps[0]}"
     else
-      "${auto_cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || _rc=$?
+      { "${auto_cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null; _ps=("${PIPESTATUS[@]}"); } || true
+      _rc="${_ps[0]}"
     fi
   fi
   rm -f "$_cursor_log"
