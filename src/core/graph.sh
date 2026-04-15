@@ -125,6 +125,18 @@ _flowai_graph_max_age_hours() {
   fi
 }
 
+# Modification time of a file in seconds since epoch.
+# Do not probe with `stat -f` on Linux: GNU stat uses -f for --file-system, so
+# the probe can succeed while returning the wrong field (breaks freshness checks).
+_flowai_graph_file_mtime_sec() {
+  local path="$1"
+  if stat --version >/dev/null 2>&1; then
+    stat -c '%Y' "$path" 2>/dev/null
+  else
+    stat -f '%m' "$path" 2>/dev/null
+  fi
+}
+
 # Returns 0 if the graph is stale (older than max_age_hours) or missing.
 flowai_graph_is_stale() {
   if ! flowai_graph_exists; then
@@ -134,14 +146,10 @@ flowai_graph_is_stale() {
   max_hours="$(_flowai_graph_max_age_hours)"
   local max_seconds=$(( max_hours * 3600 ))
 
-  # Use stat to get file age in seconds
   local mtime now age
-  if stat -f '%m' "$FLOWAI_GRAPH_REPORT" >/dev/null 2>&1; then
-    # macOS stat
-    mtime="$(stat -f '%m' "$FLOWAI_GRAPH_REPORT" 2>/dev/null)"
-  else
-    # GNU stat
-    mtime="$(stat -c '%Y' "$FLOWAI_GRAPH_REPORT" 2>/dev/null)"
+  mtime="$(_flowai_graph_file_mtime_sec "$FLOWAI_GRAPH_REPORT")"
+  if [[ -z "$mtime" ]] || ! [[ "$mtime" =~ ^[0-9]+$ ]]; then
+    return 0
   fi
   now="$(date +%s)"
   age=$(( now - mtime ))
@@ -184,10 +192,10 @@ _flowai_graph_age_label() {
     return
   fi
   local mtime now age
-  if stat -f '%m' "$FLOWAI_GRAPH_REPORT" >/dev/null 2>&1; then
-    mtime="$(stat -f '%m' "$FLOWAI_GRAPH_REPORT")"
-  else
-    mtime="$(stat -c '%Y' "$FLOWAI_GRAPH_REPORT")"
+  mtime="$(_flowai_graph_file_mtime_sec "$FLOWAI_GRAPH_REPORT")"
+  if [[ -z "$mtime" ]] || ! [[ "$mtime" =~ ^[0-9]+$ ]]; then
+    printf 'unknown'
+    return
   fi
   now="$(date +%s)"
   age=$(( now - mtime ))

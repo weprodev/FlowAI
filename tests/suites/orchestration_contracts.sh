@@ -148,7 +148,7 @@ flowai_test_s_orch_007() {
   # Mode 2: FLOWAI_AGENT_VERBOSE=1 → pass through (with dim ANSI prefix)
   local out_verbose
   out_verbose="$(
-    # shellcheck disable=SC2031  # intentional: subshell-scoped env for test isolation
+    # shellcheck disable=SC2030,SC2031  # intentional: subshell-scoped env for test isolation
     export FLOWAI_AGENT_VERBOSE=1
     printf '%s\n%s\n' \
       '[LocalAgentExecutor] Skipping subagent tool x' \
@@ -268,4 +268,53 @@ flowai_test_s_orch_009() {
     printf 'FAIL %s: phase.sh must kill-pane for dashboard after plan approve\n' "$id" >&2
     FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
   fi
+}
+
+# ─── ORCH-013: Cursor auto-fallback detects "out of usage" error patterns ─────
+# Prevents: Cursor CLI quota exhaustion crashes the pipeline instead of retrying with --model auto.
+flowai_test_s_orch_013() {
+  local id="ORCH-013"
+  # shellcheck source=../../src/tools/cursor.sh
+  source "$FLOWAI_HOME/src/tools/cursor.sh"
+
+  local scratch
+  scratch="$(mktemp -d)"
+
+  # Case 1: "out of usage" message → should detect
+  printf '%s\n' "You're out of usage. Switch to auto or Auto, or ask your admin to increase your limit to continue." > "$scratch/usage_error.log"
+  if ! _flowai_cursor_is_usage_exhausted "$scratch/usage_error.log"; then
+    printf 'FAIL %s: did not detect "out of usage" pattern\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    rm -rf "$scratch"
+    return
+  fi
+
+  # Case 2: "increase your limit" message → should detect
+  printf '%s\n' "Error: increase your limit to continue" > "$scratch/limit_error.log"
+  if ! _flowai_cursor_is_usage_exhausted "$scratch/limit_error.log"; then
+    printf 'FAIL %s: did not detect "increase your limit" pattern\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    rm -rf "$scratch"
+    return
+  fi
+
+  # Case 3: unrelated error → should NOT detect
+  printf '%s\n' "Error: connection timed out" > "$scratch/other_error.log"
+  if _flowai_cursor_is_usage_exhausted "$scratch/other_error.log"; then
+    printf 'FAIL %s: false positive on unrelated error\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    rm -rf "$scratch"
+    return
+  fi
+
+  # Case 4: missing file → should NOT detect
+  if _flowai_cursor_is_usage_exhausted "$scratch/nonexistent.log"; then
+    printf 'FAIL %s: false positive on missing file\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    rm -rf "$scratch"
+    return
+  fi
+
+  rm -rf "$scratch"
+  flowai_test_pass "$id" "Cursor usage-exhausted detector: matches quota errors, ignores unrelated"
 }

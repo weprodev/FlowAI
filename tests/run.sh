@@ -291,6 +291,7 @@ flowai_test_s_orch_009
 flowai_test_s_orch_010
 flowai_test_s_orch_011
 flowai_test_s_orch_012
+flowai_test_s_orch_013
 # spec readiness (trunk + specs/<branch>/spec.md)
 _test_banner "Spec workspace readiness"
 flowai_test_s_sr_001

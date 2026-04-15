@@ -104,6 +104,20 @@ flowai_tool_cursor_check_deps() {
 # reinforcement. Unlike Claude (which has its own --append-system-prompt constant),
 # Cursor writes it directly into the session prompt file.
 
+# ─── Usage-Limit Auto-Fallback ───────────────────────────────────────────────
+# Cursor CLI exits non-zero with "out of usage" when the configured model's
+# quota is exhausted. Instead of crashing the pipeline, detect the error and
+# automatically retry with --model auto (the unlimited fallback tier).
+
+# Check if a log file contains the Cursor "out of usage" / "Switch to auto" error.
+# Args: $1=path to captured output file
+# Returns: 0 if usage-limit error detected, 1 otherwise.
+_flowai_cursor_is_usage_exhausted() {
+  local logfile="$1"
+  [[ -f "$logfile" ]] || return 1
+  grep -qi 'out of usage\|switch to auto\|increase your limit' "$logfile" 2>/dev/null
+}
+
 # ─── Paste-Only Fallback ─────────────────────────────────────────────────────
 # When cursor-agent is not installed, print the prompt for manual paste into Cursor.
 
@@ -180,8 +194,23 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
   _sz="$(wc -c < "$tmp_prompt" | tr -d ' ')"
   _c0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
 
+  # Temp file to capture output for usage-limit detection
+  local _cursor_log
+  _cursor_log="$(mktemp "${flowai_dir}/cursor_run_log_XXXXXX")"
+
   if [[ "$run_interactive" == "true" ]]; then
-    "${cmd[@]}" "$_initial_prompt" || _rc=$?
+    "${cmd[@]}" "$_initial_prompt" 2>&1 | tee "$_cursor_log" || _rc=$?
+
+    # Auto-fallback: if the model's quota is exhausted, retry with --model auto
+    if [[ "$_rc" -ne 0 ]] && _flowai_cursor_is_usage_exhausted "$_cursor_log"; then
+      log_warn "⚡ Model '$model' usage exhausted — switching to Auto..."
+      _rc=0
+      local auto_cmd=("$_ca" --model auto)
+      [[ "$auto_approve" == "true" ]] && auto_cmd+=(--yolo)
+      "${auto_cmd[@]}" "$_initial_prompt" || _rc=$?
+    fi
+    rm -f "$_cursor_log"
+
     _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
     _cw=$((_c1 - _c0))
     flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "interactive_cursor_finished" \
@@ -198,10 +227,24 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
   # --trust and explicit --workspace are only valid with --print; interactive Master
   # uses the REPL path without -p and must not pass --trust (CLI error otherwise).
   if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
-    "${cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null || _rc=$?
+    "${cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null 2>&1 | tee "$_cursor_log" || _rc=$?
   else
-    "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || _rc=$?
+    "${cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null 2>&1 | tee "$_cursor_log" || _rc=$?
   fi
+
+  # Auto-fallback: if the model's quota is exhausted, retry with --model auto
+  if [[ "$_rc" -ne 0 ]] && _flowai_cursor_is_usage_exhausted "$_cursor_log"; then
+    log_warn "⚡ Model '$model' usage exhausted — switching to Auto..."
+    _rc=0
+    local auto_cmd=("$_ca" --model auto --yolo)
+    if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
+      "${auto_cmd[@]}" --workspace "$PWD" --trust --output-format stream-json "$_initial_prompt" < /dev/null || _rc=$?
+    else
+      "${auto_cmd[@]}" --workspace "$PWD" --trust -p "$_initial_prompt" < /dev/null || _rc=$?
+    fi
+  fi
+  rm -f "$_cursor_log"
+
   _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   _cw=$((_c1 - _c0))
   flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "oneshot_phase_cursor_finished" \
@@ -240,7 +283,19 @@ flowai_tool_cursor_run_oneshot() {
   local _c0 _c1 _cw _plen _rc=0
   _plen="${#prompt}"
   _c0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
-  "${cmd[@]}" -p "$prompt" < /dev/null 2>/dev/null || _rc=$?
+
+  local _cursor_log
+  _cursor_log="$(mktemp "${FLOWAI_DIR:-$PWD/.flowai}/cursor_oneshot_log_XXXXXX")"
+  "${cmd[@]}" -p "$prompt" < /dev/null 2>"$_cursor_log" || _rc=$?
+
+  # Auto-fallback: if the model's quota is exhausted, retry with --model auto
+  if [[ "$_rc" -ne 0 ]] && _flowai_cursor_is_usage_exhausted "$_cursor_log"; then
+    log_warn "⚡ Model '$model' usage exhausted — switching to Auto..." >&2
+    _rc=0
+    "$_ca" --model auto -p "$prompt" < /dev/null 2>/dev/null || _rc=$?
+  fi
+  rm -f "$_cursor_log"
+
   if [[ "$_rc" -ne 0 ]]; then
     echo '{}'
   fi
@@ -251,3 +306,4 @@ flowai_tool_cursor_run_oneshot() {
   # endregion
   return "$_rc"
 }
+
