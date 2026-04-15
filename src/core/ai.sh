@@ -21,7 +21,7 @@ source "$FLOWAI_HOME/src/bootstrap/specify.sh"
 # the same text from ai.sh per DRY).
 readonly FLOWAI_CONSTRAINT_REMINDER="REMINDER — MANDATORY RULES (from PIPELINE COORDINATION):
 1. You may ONLY write to the OUTPUT FILE in your PIPELINE DIRECTIVE. Do NOT create *_PLAN.md, *_SUMMARY.md, *_REPORT.md or any other files.
-2. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE using search, find, or grep.
+2. Knowledge graph: use the embedded [FLOWAI KNOWLEDGE GRAPH] block in your system prompt first; do not run broad repo search to discover structure. Narrow search after the graph names paths is OK.
 3. spec.md is the single source of truth. Verify alignment before completing work.
 4. Portable search regex: agent/IDE repo search (Gemini grep_search, Claude tool grep, ripgrep-backed search, etc.) usually uses a subset engine (Rust/RE2/limited JS), not full PCRE. Do NOT use PCRE-only inline flags such as (?i) unless that tool's docs explicitly support them — they often fail at runtime (e.g. Invalid group). Prefer plain substrings, [Ww] alternation, or the tool's own -i / case-fold option when available."
 
@@ -122,18 +122,19 @@ flowai_ai_project_config_content() {
   cat <<'RULES'
 # FlowAI Pipeline Rules (auto-generated — do not edit between markers)
 
-## MANDATORY: Knowledge Graph Navigation
-A compiled knowledge graph of this codebase is available under the wiki directory (`graph.wiki_dir` in `.flowai/config.json`; default **`.flowai/wiki/`**).
+## MANDATORY: Knowledge Graph Navigation (token & search discipline)
+The compiled graph lives under **`graph.wiki_dir`** in `.flowai/config.json` (default **`.flowai/wiki/`**). The dashboard report path is **`graph.report_path`** or, if unset, **`docs/GRAPH_REPORT.md`** when `docs/` exists.
 
-**You MUST follow this order:**
-1. BEFORE any file search, grep, find, or Bash exploration: READ **`docs/GRAPH_REPORT.md`** (default dashboard; override with `graph.report_path`)
-2. Use **`<wiki_dir>/index.md`** to locate the exact wiki page for any concept
-3. Use **`<wiki_dir>/graph.json`** for multi-hop reasoning (dependencies, call chains)
-4. ONLY after the graph points you to a specific file should you read that file
-5. Do NOT explore the codebase blindly — the graph exists to prevent that
+**Order of operations (same intent as FlowAI tmux agents):**
+1. **Discovery & topology:** Read **`GRAPH_REPORT.md`** at the report path above, plus **`index.md`** in the wiki dir — *before* using search to learn repo structure.
+2. **Multi-hop / dependencies:** Use **`graph.json`** (jq or a small read), not a repo-wide grep tour.
+3. **Source files:** Open only paths the graph names, when you need implementation detail.
+4. **Targeted questions:** From project root, run **`flowai graph query "…"`** for wiki-backed Q&A (narrows scope without reading many files — similar to graph-retrieval helpers in compact CLI setups).
+5. **In FlowAI tmux phases**, the system prompt often **embeds** a report excerpt — treat that as authoritative for navigation; only open the full report file if you need content beyond the excerpt.
 
-**PROHIBITED:** Do NOT run find, grep, rg, or broad file searches to understand
-the codebase. The graph already contains this information. Read the graph first.
+**Avoid:** Using find / list-dir / broad `rg` or `grep` as your *first* step to map the codebase — that duplicates the graph and burns tokens.
+
+**Allowed:** Targeted search or single-file grep **after** the graph (or your task) has narrowed which paths matter.
 
 ## MANDATORY: Artifact Boundaries
 When operating inside a FlowAI pipeline phase:
@@ -222,9 +223,8 @@ flowai_ai_run_oneshot() {
   fi
   model="$(flowai_ai_resolve_model_for_tool "$tool" "$model")"
 
-  # Enrich prompt with knowledge graph context when available.
-  # The graph block is ~25 lines — small token cost for significant quality gain:
-  # agents navigate via the compiled graph instead of exploring files blindly.
+  # Prepend knowledge graph context when available (same priority as skills.sh):
+  # map before the long oneshot body so the model attends to navigation first.
   local enriched_prompt="$prompt_file"
   if declare -F flowai_graph_is_enabled >/dev/null 2>&1 \
      && flowai_graph_is_enabled && flowai_graph_exists; then
@@ -232,7 +232,7 @@ flowai_ai_run_oneshot() {
     graph_block="$(flowai_graph_context_block)"
     if [[ -n "$graph_block" ]]; then
       enriched_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_oneshot_enriched_XXXXXX")"
-      { cat "$prompt_file"; printf '%s\n' "$graph_block"; } > "$enriched_prompt"
+      { printf '%s\n' "$graph_block"; cat "$prompt_file"; } > "$enriched_prompt"
     fi
   fi
 

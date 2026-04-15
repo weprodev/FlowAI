@@ -128,12 +128,28 @@ flowai_tool_gemini_run() {
   } > "$tmp_sys"
   _flowai_gemini_slow_auth_hint_once
   # region agent log
-  local _g0 _g1 _gw _sz _rc=0
+  local _g0 _g1 _gw _sz _rc=0 _ps
   _sz="$(wc -c < "$tmp_sys" | tr -d ' ')"
   _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
-  GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
-    "Execute the PIPELINE DIRECTIVE in your system prompt. HARD CONSTRAINTS are MANDATORY — you may ONLY write to the OUTPUT FILE specified in the directive. Do NOT create any other files. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE searching files. Begin immediately." \
-    < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) || _rc=$?
+
+  local _initial_prompt="Execute the PIPELINE DIRECTIVE in your system prompt. HARD CONSTRAINTS are MANDATORY — you may ONLY write to the OUTPUT FILE specified in the directive. Do NOT create any other files. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE searching files. Begin immediately."
+
+  # FLOWAI_AGENT_VERBOSE=1 (default): use --output-format stream-json so the tmux
+  # pane shows real-time thinking (tool calls, file reads, reasoning) — same
+  # pattern as the Cursor plugin's streaming mode.
+  # FLOWAI_AGENT_VERBOSE=0: original quiet behavior (plain stdout, stderr filter only).
+  if [[ "${FLOWAI_AGENT_VERBOSE:-1}" == "1" ]]; then
+    { GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" --output-format stream-json \
+        "$_initial_prompt" \
+        < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) \
+        | python3 "$FLOWAI_HOME/src/tools/gemini_formatter.py"; _ps=("${PIPESTATUS[@]}"); } || true
+    _rc="${_ps[0]}"
+  else
+    GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
+      "$_initial_prompt" \
+      < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) || _rc=$?
+  fi
+
   _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
   _gw=$((_g1 - _g0))
   flowai_debug_session_log "H-B" "gemini.sh:flowai_tool_gemini_run" "oneshot_phase_gemini_finished" \

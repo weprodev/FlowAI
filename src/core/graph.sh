@@ -212,8 +212,8 @@ _flowai_graph_age_label() {
 # Generate the markdown block injected into every agent's system prompt when a
 # graph exists. Teaches agents to navigate the graph instead of grepping raw files.
 #
-# Design principle: short, directive, concrete. This is read at the start of
-# every agent turn — it must be scannable in seconds and act as a navigation map.
+# Design principle: short, directive, concrete. Injected early in the system
+# prompt (see skills.sh) so agents attend to it before long role text.
 flowai_graph_context_block() {
   if ! flowai_graph_exists; then
     return 0
@@ -227,13 +227,23 @@ flowai_graph_context_block() {
   age="$(_flowai_graph_age_label)"
   wiki_dir="$(_graph_rel_path "$FLOWAI_WIKI_DIR")"  # project-relative path for display
 
-  # Embed the actual graph report content so the agent already HAS the codebase
-  # map without needing to read a file. Instructions like "read GRAPH_REPORT.md
-  # first" are consistently ignored — embedding the content is the only reliable
-  # approach. Truncate to first 200 lines to keep prompt size reasonable.
+  # Embed report lines so the agent does not burn a tool round-trip re-reading the
+  # same file. Override line budget: FLOWAI_GRAPH_CONTEXT_REPORT_LINES (default 200).
+  # Optional: FLOWAI_GRAPH_CONTEXT_MAX_CHARS caps total characters (after line trim)
+  # so pathological long lines cannot dominate the prompt — similar in spirit to
+  # per-turn read budgets in tools like Codex-CLI-Compact / GrapeRoot.
+  local max_lines="${FLOWAI_GRAPH_CONTEXT_REPORT_LINES:-200}"
   local report_content=""
   if [[ -f "$FLOWAI_GRAPH_REPORT" ]]; then
-    report_content="$(head -200 "$FLOWAI_GRAPH_REPORT" 2>/dev/null || true)"
+    report_content="$(head -n "$max_lines" "$FLOWAI_GRAPH_REPORT" 2>/dev/null || true)"
+  fi
+
+  local max_chars="${FLOWAI_GRAPH_CONTEXT_MAX_CHARS:-0}"
+  if [[ -n "$report_content" ]] && [[ "$max_chars" =~ ^[0-9]+$ ]] && [[ "$max_chars" -gt 0 ]]; then
+    local rc_len=${#report_content}
+    if [[ "$rc_len" -gt "$max_chars" ]]; then
+      report_content="${report_content:0:max_chars}"$'\n\n'"[FlowAI: excerpt truncated at FLOWAI_GRAPH_CONTEXT_MAX_CHARS=${max_chars} — increase the limit, adjust FLOWAI_GRAPH_CONTEXT_REPORT_LINES, run \`flowai graph query \"…\"\` for targeted Q&A, or read the full report on disk.]"
+    fi
   fi
 
   cat <<GRAPH_BLOCK
@@ -242,11 +252,15 @@ flowai_graph_context_block() {
 ${nodes} nodes · ${edges} edges · ${communities} communities · ${bridges} bridges · built ${age}
 
 FILES: graph.json=${wiki_dir}/graph.json | index=${wiki_dir}/index.md
+(Token discipline: this block already includes the report excerpt below — avoid
+re-reading the full GRAPH_REPORT on disk unless you need lines past this excerpt.)
 
 USE THIS MAP to navigate the codebase. Do NOT search files blindly — the graph
-already maps every entity, relationship, and community. Only read a source file
-when you need specific implementation details that the graph summary below
-does not cover.
+already maps entities, relationships, and communities. Prefer index.md for topic
+lookup; use graph.json for precise multi-hop queries. For relationship questions
+without reading many files, run in the repo: \`flowai graph query "your question"\`
+(wiki-backed Q&A). Only open source files the graph points to when you need
+implementation detail not summarized here.
 
 ${report_content}
 

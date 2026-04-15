@@ -138,11 +138,15 @@ pipeline for all agents.
    The ONLY files you may create or modify:
      spec/master → spec.md | plan → plan.md | tasks → tasks.md
      impl → source code files | review → review.md (+ rejection context when blocking)
-2. GRAPH FIRST: If a knowledge graph is available (see [FLOWAI KNOWLEDGE GRAPH]
-   below), you MUST read GRAPH_REPORT.md BEFORE using any search, find, grep,
-   or file exploration tools. Do NOT explore the codebase with search tools
-   when the graph already maps it. Read the graph, then read only the specific
-   files the graph points you to.
+2. GRAPH FIRST: When the [FLOWAI KNOWLEDGE GRAPH — CODEBASE MAP] section appears
+   right after these rules, it **already embeds** an excerpt of the compiled report —
+   **start navigation there** to save tokens. Use index.md and targeted graph.json
+   reads (multi-hop / call chains) as described in that block before opening large
+   subtrees of source. Do **not** use broad repo search (find / grep / rg / list-dir
+   sweeps) to *discover* layout or ownership — that duplicates the graph and wastes
+   context. After the graph names specific files, read those files; narrow search
+   inside known paths is OK. Open the on-disk GRAPH_REPORT file only if you need
+   detail beyond the embedded excerpt.
 3. SPEC IS TRUTH: The specification (spec.md) is the AUTHORITATIVE single
    source of truth. Every decision traces back to it. When any artifact
    conflicts with spec.md, the spec wins. Before completing your work,
@@ -167,9 +171,17 @@ pipeline for all agents.
   Use it to understand progress, approvals, and rejections.
 ---"
 
+  # Knowledge graph: immediately after HARD CONSTRAINTS (before role + skills) so
+  # the map is high in the context window — reduces blind search and token waste.
+  if flowai_graph_is_enabled && flowai_graph_exists; then
+    local graph_block
+    graph_block="$(flowai_graph_context_block)"
+    if [[ -n "$graph_block" ]]; then
+      prompt="${prompt}${graph_block}"
+    fi
+  fi
+
   # ─── Role + Directive + Artifact Boundary ────────────────────────────────
-  # Injected AFTER the HARD CONSTRAINTS so the mandatory rules are always at
-  # the top of the context window — role content follows.
   if [[ -f "$prompt_file" ]]; then
     prompt="${prompt}
 
@@ -187,17 +199,6 @@ $(cat "$prompt_file")"
 --- [PROJECT CONSTITUTION] ---
 $(cat "$constitution")
 ---"
-  fi
-
-  # Inject knowledge graph context (platform-level — not per-role, fires for all agents)
-  # The graph context is the primary navigation layer; inject it before any skill files
-  # so agents read it at the top of their context window.
-  if flowai_graph_is_enabled && flowai_graph_exists; then
-    local graph_block
-    graph_block="$(flowai_graph_context_block)"
-    if [[ -n "$graph_block" ]]; then
-      prompt="${prompt}${graph_block}"
-    fi
   fi
 
   # Inject pipeline event log context (cross-agent visibility)

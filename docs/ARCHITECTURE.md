@@ -95,13 +95,15 @@ flowchart TD
 
 ### How Agents Receive the Graph
 
-`skills.sh` → `flowai_skills_build_prompt()` injects the knowledge graph context block **before** any skill files, so agents see it at the top of their context window:
+`skills.sh` → `flowai_skills_build_prompt()` injects the knowledge graph context block **immediately after** the PIPELINE COORDINATION / HARD CONSTRAINTS preamble and **before** the role prompt and skill files. That order keeps the map high in the context window (models attend more to early tokens) and avoids burning turns on broad search.
 
 ```
-[Role prompt + Directive] → [PIPELINE COORDINATION] → [Constitution] → [KNOWLEDGE GRAPH block] → [EVENT LOG] → [Skills]
+[PIPELINE COORDINATION — HARD CONSTRAINTS] → [KNOWLEDGE GRAPH block — embedded report excerpt + paths] → [Role + Directive] → [Constitution] → [PIPELINE EVENT LOG] → [Skills]
 ```
 
-The graph block includes the navigation protocol (read `GRAPH_REPORT.md` → `index.md` → `graph.json` → source files).
+The block embeds the first *N* lines of `GRAPH_REPORT.md` (default 200; override with `FLOWAI_GRAPH_CONTEXT_REPORT_LINES`) so agents do not need a separate tool call to load the same overview. Full navigation: `index.md` for concepts, `graph.json` for multi-hop queries, then **only** source files the graph points to.
+
+IDE-only sessions (Cursor, Copilot, etc.) rely on the same rules injected into project config files via `flowai_ai_project_config_content()` — they read the on-disk report path because there is no tmux system prompt.
 
 ## Tool Plugin System
 

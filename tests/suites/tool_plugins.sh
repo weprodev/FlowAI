@@ -240,3 +240,79 @@ flowai_test_s_tpl_012() {
   fi
 }
 
+# ─── TPL-013: Gemini plugin uses --output-format stream-json for streaming ───
+flowai_test_s_tpl_013() {
+  local id="TPL-013"
+  local plugin="$FLOWAI_HOME/src/tools/gemini.sh"
+  local ok=true
+  if ! grep -q 'output-format stream-json' "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: Gemini plugin missing --output-format stream-json for streaming output\n' "$id" >&2
+    ok=false
+  fi
+  if ! grep -q 'gemini_formatter.py' "$plugin" 2>/dev/null; then
+    printf 'FAIL %s: Gemini plugin missing gemini_formatter.py reference\n' "$id" >&2
+    ok=false
+  fi
+  if ! [[ -f "$FLOWAI_HOME/src/tools/gemini_formatter.py" ]]; then
+    printf 'FAIL %s: gemini_formatter.py does not exist\n' "$id" >&2
+    ok=false
+  fi
+  if $ok; then
+    flowai_test_pass "$id" "Gemini plugin uses --output-format stream-json + gemini_formatter.py"
+  else
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+
+# ─── TPL-014: Gemini formatter handles stream-json events correctly ──────────
+flowai_test_s_tpl_014() {
+  local id="TPL-014"
+  local formatter="$FLOWAI_HOME/src/tools/gemini_formatter.py"
+  if [[ ! -f "$formatter" ]]; then
+    printf 'FAIL %s: gemini_formatter.py not found\n' "$id" >&2
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+    return
+  fi
+  # Feed sample Gemini stream-json events and verify output contains expected markers
+  local sample_input output
+  sample_input='{"type":"text","text":"Hello world"}
+{"type":"thought","text":"Analyzing the codebase..."}
+{"type":"tool_call:started","name":"read_file","arguments":{"path":"/tmp/test.sh"}}
+{"type":"tool_call:completed","result":{}}
+{"type":"error","message":"Something went wrong"}
+plain text passthrough'
+
+  output="$(printf '%s\n' "$sample_input" | python3 "$formatter" 2>/dev/null)"
+  local ok=true
+  # Verify text event was passed through
+  if ! printf '%s' "$output" | grep -q 'Hello world'; then
+    printf 'FAIL %s: formatter did not pass through text event\n' "$id" >&2
+    ok=false
+  fi
+  # Verify tool started shows reading label
+  if ! printf '%s' "$output" | grep -q 'Reading'; then
+    printf 'FAIL %s: formatter did not show tool started label\n' "$id" >&2
+    ok=false
+  fi
+  # Verify tool completed shows done marker
+  if ! printf '%s' "$output" | grep -q 'Done'; then
+    printf 'FAIL %s: formatter did not show tool completed marker\n' "$id" >&2
+    ok=false
+  fi
+  # Verify error event shows error label
+  if ! printf '%s' "$output" | grep -q 'Gemini Error'; then
+    printf 'FAIL %s: formatter did not show error event\n' "$id" >&2
+    ok=false
+  fi
+  # Verify plain text passthrough
+  if ! printf '%s' "$output" | grep -q 'plain text passthrough'; then
+    printf 'FAIL %s: formatter did not pass through plain text\n' "$id" >&2
+    ok=false
+  fi
+  if $ok; then
+    flowai_test_pass "$id" "Gemini formatter handles stream-json events correctly"
+  else
+    FLOWAI_TEST_FAILURES=$((FLOWAI_TEST_FAILURES + 1))
+  fi
+}
+

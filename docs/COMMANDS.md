@@ -95,6 +95,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#skills--roles-resolution) for the complete
 | `FLOWAI_PHASE_EXPECTED_DURATION_SEC=N` | Master scope check threshold (seconds). When a phase exceeds this, Master AI verifies the agent is on track. Default: `300` (5 min). |
 | `FLOWAI_PANE_MIN_HEIGHT=N` | Minimum rows for inactive **phase** panes when only one pipeline pane is emphasized. Default: `3`. |
 | `FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1` | Dashboard layout only: when multiple phase panes exist (impl + review, etc.), make the **focused** phase tall and shrink the others to `FLOWAI_PANE_MIN_HEIGHT`. Default is **off** — phase panes **share height evenly** so two active agents get equal rows. |
+| `FLOWAI_GRAPH_CONTEXT_REPORT_LINES=N` | Lines of `GRAPH_REPORT.md` embedded in the `[FLOWAI KNOWLEDGE GRAPH]` system-prompt block (default **200**). Lower = fewer tokens; higher = more on-map detail without opening the file. |
+| `FLOWAI_GRAPH_CONTEXT_MAX_CHARS=N` | Optional **second** cap on the embedded report excerpt (characters, after the line limit). **0** = disabled (default). Use when reports have very long lines so the prompt stays bounded — same idea as read-budget limits in compact CLI wrappers. |
 
 ### Event Log Configuration
 
