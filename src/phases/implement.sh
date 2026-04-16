@@ -131,7 +131,7 @@ while true; do
 
     # User approval gate — user must approve impl changes before Review re-runs.
     # This prevents sending broken code to Review and wasting a full QA cycle.
-    local _impl_rev_rc=0
+    _impl_rev_rc=0
     flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Revised Implementation" "impl" || _impl_rev_rc=$?
     if [[ "$_impl_rev_rc" -eq 0 ]]; then
       touch "${FLOWAI_DIR}/signals/impl.code_complete.ready"

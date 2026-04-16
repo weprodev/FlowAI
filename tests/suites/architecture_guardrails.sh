@@ -36,7 +36,7 @@ flowai_test_s_arch_001() {
   for dir in "${scan_dirs[@]}"; do
     [[ -d "$dir" ]] || continue
     while IFS= read -r -d '' file; do
-      local relpath="${file#$FLOWAI_HOME/}"
+      local relpath="${file#"$FLOWAI_HOME"/}"
 
       # Skip editor-scaffold.sh (explicitly per-tool by design)
       [[ "$relpath" == *"editor-scaffold.sh" ]] && continue
