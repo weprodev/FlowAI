@@ -11,8 +11,12 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOWAI_SRC="$(CDPATH="" cd "$SCRIPT_DIR" && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "bash" ]]; then
+  SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR="$(pwd)"
+fi
+FLOWAI_SRC="$SCRIPT_DIR"
 
 BOLD=$'\033[1m'
 GREEN=$'\033[32m'

@@ -34,6 +34,20 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]]; then
   exit 1
 fi
 
+# Check whether interactive gum selection menus should be used in this pane.
+# Returns 1 (skip gum) when the current pane's tool cannot render gum choose
+# (some tools capture terminal control sequences, breaking arrow-key navigation).
+# Each tool plugin may declare flowai_tool_<name>_supports_gum() returning 1 to
+# disable gum in its panes. If the function doesn't exist, gum is allowed.
+_flowai_should_use_gum() {
+  command -v gum >/dev/null 2>&1 || return 1
+  local tool="${FLOWAI_PHASE_TOOL:-}"
+  if [[ -n "$tool" ]] && declare -F "flowai_tool_${tool}_supports_gum" >/dev/null 2>&1; then
+    "flowai_tool_${tool}_supports_gum" || return 1
+  fi
+  return 0
+}
+
 # Gum reads the keyboard via stdin. When bash stdin is not the user terminal (nested
 # pipelines, some tmux layouts), menus hang or leak OSC noise unless we attach /dev/tty.
 flowai_gum_choose() {
@@ -246,6 +260,37 @@ flowai_phase_resolve_feature_dir() {
   esac
 }
 
+# Update status markers inside the approved artifact MD file.
+# AI agents often write status lines like "**Specification Status:** DRAFT" or
+# "**Status:** DRAFT". On human approval, patch these to APPROVED so the document
+# reflects reality when read later.
+# Args: target_file, phase_id
+_flowai_phase_update_artifact_status() {
+  local target_file="$1"
+  local phase_id="$2"
+
+  [[ -f "$target_file" ]] || return 0
+
+  # Replace status markers: DRAFT → APPROVED (case-insensitive match for the value)
+  if grep -qiE '\*\*.*Status:\*\*\s*(DRAFT|PENDING|IN.REVIEW)' "$target_file" 2>/dev/null; then
+    sed -i.bak -E 's/(\*\*[^*]*Status:\*\*[[:space:]]*)(DRAFT|PENDING|IN.REVIEW)/\1APPROVED/gi' "$target_file"
+    rm -f "${target_file}.bak"
+  fi
+
+  # Update "Next Step" lines that mention awaiting approval
+  if grep -qiE '\*\*Next Step:\*\*.*[Aa]wait.*approval' "$target_file" 2>/dev/null; then
+    local next_phase=""
+    case "$phase_id" in
+      spec) next_phase="Proceed to Plan phase" ;;
+      plan) next_phase="Proceed to Tasks phase" ;;
+      review) next_phase="Implementation complete" ;;
+      *) next_phase="Approved — proceed to next phase" ;;
+    esac
+    sed -i.bak -E "s/(\*\*Next Step:\*\*).*/\1 ${next_phase}/" "$target_file"
+    rm -f "${target_file}.bak"
+  fi
+}
+
 # Print phase-specific context before the approval gate so the user knows
 # exactly what they are approving. Inspired by spec-kit's approval patterns:
 # show coverage metrics, change stats, and a clear "what approve means" line.
@@ -335,7 +380,7 @@ flowai_phase_verify_artifact() {
     log_error "Required output not found: $target_file"
 
     local action=""
-    if command -v gum >/dev/null 2>&1; then
+    if _flowai_should_use_gum; then
       action="$(flowai_gum_choose 'Wait (I saved it)' 'Retry Agent' 'Create empty')"
     else
       read -r -p "Not found. [w]ait / [r]etry / [e]mpty: " action < /dev/tty || true
@@ -360,7 +405,7 @@ flowai_phase_verify_artifact() {
 
   while true; do
     local decision=""
-    if command -v gum >/dev/null 2>&1; then
+    if _flowai_should_use_gum; then
       log_info "⏸️  Waiting on you — interactive menu (read keyboard from terminal)…"
       decision="$(flowai_gum_choose --header "  How would you like to proceed?" 'Approve' 'Needs changes' 'Review artifact')"
     else
@@ -373,8 +418,8 @@ flowai_phase_verify_artifact() {
     fi
 
     if [[ "$decision" == "Review artifact" ]]; then
-      local my_editor="${EDITOR:-cursor}"
-      if command -v gum >/dev/null 2>&1; then
+      local my_editor="${EDITOR:-vi}"
+      if _flowai_should_use_gum; then
         local mode
         mode="$(flowai_gum_choose 'Read here (Terminal)' 'Open in Editor')"
         if [[ "$mode" == "Open in Editor" ]]; then
@@ -400,6 +445,7 @@ flowai_phase_verify_artifact() {
     if [[ "$decision" == "Approve" ]]; then
       touch "$SIGNALS_DIR/${phase_id}.ready"
       flowai_event_emit "$phase_id" "approved" "$target_file"
+      _flowai_phase_update_artifact_status "$target_file" "$phase_id"
       return 0
     fi
 
@@ -455,6 +501,83 @@ flowai_phase_schedule_close_phase_ui() {
 # Backward-compatible name (Plan-only callers historically).
 flowai_phase_schedule_close_plan_ui() {
   flowai_phase_schedule_close_phase_ui "$1"
+}
+
+# Check if a phase pane is alive in tmux. Returns 0 if alive, 1 if dead/missing.
+# Works for both dashboard (pane titles) and tabs (window names) layouts.
+# Args: $1=phase_name (e.g. "impl", "review")
+flowai_phase_is_pane_alive() {
+  local phase="$1"
+  command -v tmux >/dev/null 2>&1 || return 1
+  [[ -n "${TMUX:-}" ]] || return 1
+
+  local session
+  session="$(tmux display-message -p '#S' 2>/dev/null)" || return 1
+
+  # Tabs layout: check for a window named after the phase
+  if tmux list-windows -t "$session" -F '#{window_name}' 2>/dev/null | grep -qx "$phase"; then
+    return 0
+  fi
+
+  # Dashboard layout: scan pane titles for the phase name
+  if tmux list-panes -t "${session}" -F '#{pane_title}' 2>/dev/null | grep -qi "$phase"; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Respawn a dead phase pane by creating a new tmux window/pane and launching
+# the phase script. Uses the launcher scripts written by start.sh.
+# Args: $1=phase_name (e.g. "impl", "review")
+# Returns: 0 on success, 1 if respawn not possible.
+flowai_phase_respawn() {
+  local phase="$1"
+  command -v tmux >/dev/null 2>&1 || return 1
+  [[ -n "${TMUX:-}" ]] || return 1
+
+  local session
+  session="$(tmux display-message -p '#S' 2>/dev/null)" || return 1
+
+  # Find the launcher script — start.sh writes these to FLOWAI_DIR/launch/
+  local launcher=""
+  for f in "${FLOWAI_DIR}/launch"/tmux_phase_*.sh; do
+    [[ -f "$f" ]] || continue
+    if grep -q "run ${phase}\$" "$f" 2>/dev/null || grep -q "run ${phase} " "$f" 2>/dev/null; then
+      launcher="$f"
+      break
+    fi
+  done
+
+  if [[ -z "$launcher" ]]; then
+    log_warn "Cannot respawn $phase — no launcher script found in ${FLOWAI_DIR}/launch/"
+    return 1
+  fi
+
+  local layout
+  layout="$(flowai_cfg_layout)"
+  local phase_res
+  phase_res="$(flowai_ai_resolve_tool_and_model_for_phase "$phase" 2>/dev/null || echo "unknown:unknown")"
+  local phase_title="🤖 Phase: ${phase} [${phase_res%%:*}: ${phase_res#*:}]"
+
+  if [[ "$layout" == "dashboard" ]]; then
+    tmux split-window -t "${session}:0" -v
+    local new_pane
+    new_pane="$(tmux list-panes -t "${session}:0" -F '#{pane_id}' 2>/dev/null | tail -1)"
+    tmux select-pane -t "$new_pane" -T "$phase_title"
+    tmux send-keys -t "$new_pane" "bash '$launcher'" Enter
+  else
+    # Tabs layout: create a new window
+    tmux new-window -t "${session}" -n "$phase"
+    tmux set-window-option -t "${session}:${phase}" pane-border-status top 2>/dev/null || true
+    tmux set-window-option -t "${session}:${phase}" pane-border-format " #[bold]#{pane_title}#[default] " 2>/dev/null || true
+    tmux select-pane -t "${session}:${phase}" -T "$phase_title" 2>/dev/null || true
+    tmux send-keys -t "${session}:${phase}" "bash '$launcher'" Enter
+  fi
+
+  log_info "Respawned $phase phase pane."
+  flowai_event_emit "master" "phase_respawned" "Respawned dead $phase pane"
+  return 0
 }
 
 # Print the universal artifact boundary rule for a given phase.
@@ -616,11 +739,37 @@ flowai_phase_focus() {
   flowai_phase_resize_panes "$phase"
 }
 
+# Determine whether a pipeline phase is actively working (not waiting/completed).
+# A phase is active when its upstream signal exists but its own completion signal does not.
+# Args: phase_name (plan|tasks|impl|review)
+# Returns: 0 if active, 1 if waiting or completed.
+_flowai_phase_is_active() {
+  local phase="$1"
+  local upstream="" own=""
+  case "$phase" in
+    plan)   upstream="spec.ready";                   own="plan.ready" ;;
+    tasks)  upstream="plan.ready";                   own="tasks.master_approved.ready" ;;
+    impl)   upstream="tasks.master_approved.ready";  own="impl.code_complete.ready" ;;
+    review) upstream="impl.code_complete.ready";     own="review.ready" ;;
+    *)      return 1 ;;
+  esac
+  [[ -f "$SIGNALS_DIR/$upstream" ]] && [[ ! -f "$SIGNALS_DIR/$own" ]]
+}
+
+# Extract the phase name from a tmux pane title like "🤖 Phase: plan [gemini: ...]".
+# Prints the phase name (plan, tasks, impl, review) or empty if not a phase pane.
+_flowai_phase_name_from_title() {
+  local title="$1"
+  printf '%s' "$title" | sed -n 's/.*Phase:[[:space:]]*\([a-z]*\).*/\1/p'
+}
+
 # Resize tmux panes in dashboard layout.
 # - Only touches pipeline phase panes (titles containing "Phase:") — never shrinks Master.
-# - If two or more phase panes exist: split vertical space evenly (impl + review both usable).
-#   Set FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1 to restore "one large, others tiny" for the focused phase.
-# - If one phase pane: it gets the full height of the phase column.
+# - Detects which phases are actively working vs waiting on upstream signals.
+# - Active phases get maximised; waiting/idle phases get minimised.
+# - When 2+ phases are active simultaneously (e.g. impl + review): equal height for each.
+# - Set FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1 to ignore signal detection and always
+#   maximise only the caller's focused phase (legacy behaviour).
 # No-ops gracefully in tabs layout, non-tmux, or FLOWAI_TESTING.
 flowai_phase_resize_panes() {
   local active_phase="$1"
@@ -644,50 +793,91 @@ flowai_phase_resize_panes() {
 
   local min_height="${FLOWAI_PANE_MIN_HEIGHT:-3}"
 
-  # Pipeline phase panes only (Plan/Tasks/Implement/Review) — not Master.
+  # Collect pipeline phase panes (Plan/Tasks/Implement/Review) — not Master.
   local -a phase_ids=()
-  local _pid _ptitle
+  local -a phase_names=()
+  local _pid _ptitle _pname
   while IFS=$'\t' read -r _pid _ptitle; do
-    if printf '%s' "$_ptitle" | grep -qF 'Phase:'; then
+    _pname="$(_flowai_phase_name_from_title "$_ptitle")"
+    if [[ -n "$_pname" ]]; then
       phase_ids+=("$_pid")
+      phase_names+=("$_pname")
     fi
   done < <(tmux list-panes -t "${session}:0" -F '#{pane_id}	#{pane_title}' 2>/dev/null)
 
   local n_phase=${#phase_ids[@]}
   [[ "$n_phase" -ge 1 ]] || return 0
 
-  # Two or more agents in the stack: equal rows so you can watch both (unless legacy mode).
-  if [[ "$n_phase" -ge 2 ]] && [[ "${FLOWAI_DASHBOARD_MAXIMIZE_FOCUS:-0}" != "1" ]]; then
-    local borders=$(( n_phase - 1 ))
-    local each_h=$(( (total_height - borders) / n_phase ))
-    [[ "$each_h" -lt "$min_height" ]] && each_h="$min_height"
+  # Legacy override: FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1 skips signal detection
+  # and always maximises only the caller's focused phase.
+  if [[ "${FLOWAI_DASHBOARD_MAXIMIZE_FOCUS:-0}" == "1" ]]; then
+    local active_pane_id=""
     for _pid in "${phase_ids[@]}"; do
-      tmux resize-pane -t "$_pid" -y "$each_h" 2>/dev/null || true
+      _ptitle="$(tmux display-message -t "$_pid" -p '#{pane_title}' 2>/dev/null)" || true
+      if printf '%s' "$_ptitle" | grep -qi "$active_phase"; then
+        active_pane_id="$_pid"
+        break
+      fi
     done
+    [[ -n "$active_pane_id" ]] || active_pane_id="${phase_ids[0]}"
+
+    local k=$(( n_phase - 1 ))
+    local stack_borders=$(( n_phase > 1 ? n_phase - 1 : 0 ))
+    local active_height=$(( total_height - k * min_height - stack_borders ))
+    [[ "$active_height" -lt "$min_height" ]] && active_height="$min_height"
+    for _pid in "${phase_ids[@]}"; do
+      if [[ "$_pid" != "$active_pane_id" ]]; then
+        tmux resize-pane -t "$_pid" -y "$min_height" 2>/dev/null || true
+      fi
+    done
+    tmux resize-pane -t "$active_pane_id" -y "$active_height" 2>/dev/null || true
     return 0
   fi
 
-  # Single phase pane, or FLOWAI_DASHBOARD_MAXIMIZE_FOCUS=1: maximize the focused phase among phase panes.
-  local active_pane_id=""
-  for _pid in "${phase_ids[@]}"; do
-    _ptitle="$(tmux display-message -t "$_pid" -p '#{pane_title}' 2>/dev/null)" || true
-    if printf '%s' "$_ptitle" | grep -qi "$active_phase"; then
-      active_pane_id="$_pid"
-      break
+  # Default: signal-based active/waiting classification.
+  # Active = upstream signal exists AND own completion signal absent.
+  local -a active_pids=()
+  local -a waiting_pids=()
+  local i
+  for (( i = 0; i < n_phase; i++ )); do
+    if _flowai_phase_is_active "${phase_names[$i]}"; then
+      active_pids+=("${phase_ids[$i]}")
+    else
+      waiting_pids+=("${phase_ids[$i]}")
     fi
   done
-  [[ -n "$active_pane_id" ]] || active_pane_id="${phase_ids[0]}"
 
-  local k=$(( n_phase - 1 ))
-  local stack_borders=0
-  [[ "$n_phase" -gt 1 ]] && stack_borders=$(( n_phase - 1 ))
-  local active_height=$(( total_height - k * min_height - stack_borders ))
-  [[ "$active_height" -lt "$min_height" ]] && active_height="$min_height"
-
-  for _pid in "${phase_ids[@]}"; do
-    if [[ "$_pid" != "$active_pane_id" ]]; then
-      tmux resize-pane -t "$_pid" -y "$min_height" 2>/dev/null || true
+  # Fallback: if no phase detected as active, treat the focused phase as active.
+  if [[ ${#active_pids[@]} -eq 0 ]]; then
+    for (( i = 0; i < n_phase; i++ )); do
+      if [[ "${phase_names[$i]}" == "$active_phase" ]]; then
+        active_pids+=("${phase_ids[$i]}")
+      else
+        waiting_pids+=("${phase_ids[$i]}")
+      fi
+    done
+    # Still nothing? Equal distribution.
+    if [[ ${#active_pids[@]} -eq 0 ]]; then
+      active_pids=("${phase_ids[@]}")
+      waiting_pids=()
     fi
+  fi
+
+  local n_active=${#active_pids[@]}
+  local n_waiting=${#waiting_pids[@]}
+
+  # Calculate height: waiting panes get min_height, active panes share the rest equally.
+  local borders=$(( n_phase - 1 ))
+  local waiting_total=$(( n_waiting * min_height ))
+  local active_space=$(( total_height - borders - waiting_total ))
+  local each_active_h=$(( active_space / n_active ))
+  [[ "$each_active_h" -lt "$min_height" ]] && each_active_h="$min_height"
+
+  # Apply sizes: waiting panes first (shrink), then active panes (expand).
+  for _pid in "${waiting_pids[@]}"; do
+    tmux resize-pane -t "$_pid" -y "$min_height" 2>/dev/null || true
   done
-  tmux resize-pane -t "$active_pane_id" -y "$active_height" 2>/dev/null || true
+  for _pid in "${active_pids[@]}"; do
+    tmux resize-pane -t "$_pid" -y "$each_active_h" 2>/dev/null || true
+  done
 }

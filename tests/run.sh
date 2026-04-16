@@ -89,8 +89,12 @@ source "$TESTS_ROOT/suites/phase_execution.sh"
 source "$TESTS_ROOT/suites/master_orchestration.sh"
 # shellcheck source=tests/suites/update_command.sh
 source "$TESTS_ROOT/suites/update_command.sh"
+# shellcheck source=tests/suites/phase_ux.sh
+source "$TESTS_ROOT/suites/phase_ux.sh"
 # shellcheck source=tests/suites/graph_edge_cases.sh
 source "$TESTS_ROOT/suites/graph_edge_cases.sh"
+# shellcheck source=tests/suites/architecture_guardrails.sh
+source "$TESTS_ROOT/suites/architecture_guardrails.sh"
 
 echo "FlowAI test run — FLOWAI_HOME=$FLOWAI_HOME"
 
@@ -228,8 +232,7 @@ flowai_test_s_evt_011
 flowai_test_s_evt_012
 # tool plugins
 _test_banner "Agent Tool Plugins (Claude/Gemini/Cursor)"
-flowai_test_s_tpl_001
-flowai_test_s_tpl_002
+# TPL-001/002 removed: subsumed by ARCH-002 (plugin API completeness)
 flowai_test_s_tpl_003
 flowai_test_s_tpl_004
 flowai_test_s_tpl_005
@@ -251,7 +254,7 @@ flowai_test_s_sig_006
 flowai_test_s_sig_007
 flowai_test_s_sig_008
 flowai_test_s_sig_009
-flowai_test_s_sig_010
+# SIG-010 removed: pure string check (memory protocol text in master.sh)
 flowai_test_s_sig_011
 flowai_test_s_sig_012
 flowai_test_s_sig_013
@@ -259,22 +262,18 @@ flowai_test_s_sig_014
 flowai_test_s_sig_015
 flowai_test_s_sig_016
 flowai_test_s_sig_017
-flowai_test_s_sig_018
+# SIG-018 removed: pure string check (memory approve/reject paths)
 flowai_test_s_sig_019
 flowai_test_s_sig_020
-flowai_test_s_sig_021
-flowai_test_s_sig_022
-flowai_test_s_sig_023
+# SIG-021/022/023 removed: pure string checks (covered by SIG-007/019/020 behavioral tests)
 flowai_test_s_sig_024
 flowai_test_s_sig_025
 flowai_test_s_sig_026
 flowai_test_s_sig_027
-flowai_test_s_sig_028
-flowai_test_s_sig_029
-flowai_test_s_sig_030
+# SIG-028/029/030 removed: string checks subsumed by SIG-007 (behavioral) and SIG-031
 flowai_test_s_sig_031
 flowai_test_s_sig_032
-flowai_test_s_sig_033
+# SIG-033 removed: subsumed by ARCH-001 (tool-agnostic enforcement)
 flowai_test_s_sig_034
 flowai_test_s_sig_035
 # orchestration regression contracts (behavioral — not grep-only)
@@ -381,10 +380,10 @@ flowai_test_s_phe_009
 flowai_test_s_phe_010
 # master orchestration
 _test_banner "Master Orchestration"
-flowai_test_s_mstr_001
+# MSTR-001 removed: trivial (master.sh sources files)
 flowai_test_s_mstr_002
 flowai_test_s_mstr_003
-flowai_test_s_mstr_004
+# MSTR-004 removed: trivial (function exists)
 flowai_test_s_mstr_005
 flowai_test_s_mstr_006
 flowai_test_s_mstr_007
@@ -399,6 +398,32 @@ flowai_test_s_upd_003
 flowai_test_s_upd_004
 flowai_test_s_upd_005
 flowai_test_s_upd_006
+# phase UX improvements (claude gum fallback, status update, pane sizing)
+_test_banner "Phase UX Improvements"
+flowai_test_s_pux_001
+flowai_test_s_pux_002
+flowai_test_s_pux_003
+flowai_test_s_pux_004
+flowai_test_s_pux_005
+flowai_test_s_pux_006
+flowai_test_s_pux_007
+flowai_test_s_pux_008
+flowai_test_s_pux_009
+flowai_test_s_pux_010
+flowai_test_s_pux_011
+flowai_test_s_pux_012
+flowai_test_s_pux_013
+flowai_test_s_pux_014
+flowai_test_s_pux_015
+flowai_test_s_pux_016
+flowai_test_s_pux_017
+flowai_test_s_pux_018
+flowai_test_s_pux_022
+flowai_test_s_pux_023
+flowai_test_s_pux_024
+flowai_test_s_pux_019
+flowai_test_s_pux_020
+flowai_test_s_pux_021
 # graph edge cases
 _test_banner "Graph Edge Cases"
 flowai_test_s_gredge_001
@@ -409,6 +434,12 @@ flowai_test_s_gredge_005
 flowai_test_s_gredge_006
 flowai_test_s_gredge_007
 flowai_test_s_gredge_008
+# architecture guardrails (tool-agnostic enforcement, plugin API, no cross-deps)
+_test_banner "Architecture Guardrails"
+flowai_test_s_arch_001
+flowai_test_s_arch_002
+flowai_test_s_arch_003
+flowai_test_s_arch_004
 set -e
 
 if [[ "${FLOWAI_TEST_FAILURES:-0}" -gt 0 ]]; then

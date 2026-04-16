@@ -45,34 +45,36 @@ flowai_ai_resolve_model_for_tool() {
     return
   fi
 
-  if [[ "$tool" == "claude" ]]; then
-    case "$raw" in
-      gpt-*|o1|o1-*|o3|o3-*|chatgpt-*)
-        local fb
-        fb="$(flowai_cfg_default_model_for_tool claude)"
-        log_warn "Model '$raw' is not valid for Claude Code — using '$fb'. Update roles.*.model in .flowai/config.json."
-        printf '%s' "$fb"
-        return
-        ;;
-    esac
+  # Tool-specific model validation: if the plugin defines
+  # flowai_tool_<name>_validate_model(), delegate to it.
+  local validate_fn="flowai_tool_${tool}_validate_model"
+  if declare -F "$validate_fn" >/dev/null 2>&1; then
+    "$validate_fn" "$raw"
+    return
   fi
 
-  case "$tool" in
-    claude|gemini)
-      [[ "${FLOWAI_ALLOW_UNKNOWN_MODEL:-0}" == "1" ]] && { printf '%s' "$raw"; return; }
-      if declare -F flowai_models_catalog_contains >/dev/null 2>&1 && flowai_models_catalog_contains "$tool" "$raw"; then
-        printf '%s' "$raw"
-        return
-      fi
-      local fb
-      fb="$(flowai_cfg_default_model_for_tool "$tool")"
-      log_warn "Model '$raw' is not in catalog for '$tool' — using '$fb'. Run: flowai models list $tool"
-      printf '%s' "$fb"
-      return
-      ;;
-  esac
+  # Generic catalog validation for tools that have catalog entries
+  [[ "${FLOWAI_ALLOW_UNKNOWN_MODEL:-0}" == "1" ]] && { printf '%s' "$raw"; return; }
+  if declare -F flowai_models_catalog_contains >/dev/null 2>&1 && flowai_models_catalog_contains "$tool" "$raw"; then
+    printf '%s' "$raw"
+    return
+  fi
+  local fb
+  fb="$(flowai_cfg_default_model_for_tool "$tool")"
+  if [[ "$fb" != "$raw" ]]; then
+    log_warn "Model '$raw' is not in catalog for '$tool' — using '$fb'. Run: flowai models list $tool"
+  fi
+  printf '%s' "$fb"
+}
 
-  printf '%s' "$raw"
+# Dynamic fallback tool — reads from catalog, no hardcoded tool name.
+_flowai_default_tool() {
+  local t=""
+  t="$(flowai_cfg_read '.master.tool' '')"
+  if [[ -z "$t" || "$t" == "null" ]]; then
+    t="$(flowai_models_catalog_first_tool 2>/dev/null)"
+  fi
+  printf '%s' "${t:-}"
 }
 
 # Helper: resolve exactly which tool and model will run for a specific phase
@@ -81,14 +83,14 @@ flowai_ai_resolve_tool_and_model_for_phase() {
   local tool="" model="" role=""
 
   if [[ "$phase" == "master" ]]; then
-    tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+    tool="$(flowai_cfg_read '.master.tool' "$(_flowai_default_tool)")"
     model="$(flowai_cfg_read '.master.model' '')"
   else
     role="$(flowai_cfg_pipeline_role "$phase" "backend-engineer")"
     tool="$(flowai_cfg_role_tool "$role" "")"
     model="$(flowai_cfg_role_model "$role" "")"
     if [[ -z "$tool" || "$tool" == "null" ]]; then
-      tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+      tool="$(flowai_cfg_read '.master.tool' "$(_flowai_default_tool)")"
     fi
   fi
   model="$(flowai_ai_resolve_model_for_tool "$tool" "$model")"
@@ -177,9 +179,9 @@ flowai_ai_run() {
   local sys_prompt=""
   # region agent log
   local _t_skills_0 _t_skills_1 _skills_ms
-  _t_skills_0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _t_skills_0="$(date +%s)000"
   sys_prompt="$(flowai_skills_build_prompt "$phase" "$prompt_file")"
-  _t_skills_1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _t_skills_1="$(date +%s)000"
   _skills_ms=$((_t_skills_1 - _t_skills_0))
   flowai_debug_session_log "H-A" "ai.sh:flowai_ai_run" "after_flowai_skills_build_prompt" \
     "{\"phase\":\"${phase}\",\"tool\":\"${tool}\",\"model\":\"${model}\",\"prompt_build_ms\":${_skills_ms},\"prompt_chars\":${#sys_prompt}}"
@@ -194,8 +196,9 @@ flowai_ai_run() {
     return 1
   fi
 
-  # Export phase so tool plugins can apply phase-specific restrictions
-  # (e.g., disallow Write for review phase, restrict artifact paths).
+  # Export phase and tool so downstream code (approval menus, pane sizing) can
+  # adapt behaviour per-tool (e.g., Claude Code cannot render gum selection items).
+  export FLOWAI_PHASE_TOOL="$tool"
   FLOWAI_CURRENT_PHASE="$phase" "$run_fn" "$model" "$auto_approve" "$run_interactive" "$sys_prompt"
 }
 
@@ -210,7 +213,7 @@ flowai_ai_run_oneshot() {
 
   local tool="" model=""
   if [[ "$phase" == "master" ]]; then
-    tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+    tool="$(flowai_cfg_read '.master.tool' "$(_flowai_default_tool)")"
     model="$(flowai_cfg_read '.master.model' '')"
   else
     local role
@@ -218,7 +221,7 @@ flowai_ai_run_oneshot() {
     tool="$(flowai_cfg_role_tool "$role" "")"
     model="$(flowai_cfg_role_model "$role" "")"
     if [[ -z "$tool" || "$tool" == "null" ]]; then
-      tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+      tool="$(flowai_cfg_read '.master.tool' "$(_flowai_default_tool)")"
     fi
   fi
   model="$(flowai_ai_resolve_model_for_tool "$tool" "$model")"

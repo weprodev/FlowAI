@@ -600,7 +600,7 @@ _graph_semantic_extract_file() {
 
   # Use the master agent's tool/model (graph extraction doesn't need full pipeline agents)
   local tool model
-  tool="$(flowai_cfg_read '.master.tool' 'gemini')"
+  tool="$(flowai_cfg_read '.master.tool' "$(flowai_models_catalog_first_tool 2>/dev/null)")"
   model="$(flowai_cfg_read '.master.model' '')"
 
   # Invoke AI and capture JSON output

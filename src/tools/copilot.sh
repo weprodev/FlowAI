@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # FlowAI Copilot Tool Plugin
+# shellcheck source=src/core/log.sh
+source "$FLOWAI_HOME/src/core/log.sh"
 # Defines the two required plugin API functions:
 #   flowai_tool_copilot_print_models  — used by: flowai models list copilot
 #   flowai_tool_copilot_run           — used by: ai.sh dispatcher

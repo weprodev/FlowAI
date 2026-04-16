@@ -81,21 +81,18 @@ _start_resolve_feature_dir() {
 
 _start_write_resume_next_steps() {
   local feature_dir="$1"
-  local dest="$FLOWAI_DIR/RESUME_NEXT_STEPS.md"
-  cat > "$dest" <<EOF
-# FlowAI — next steps (resume)
-
-You approved an existing \`review.md\` as complete. **No tmux session** was started.
-
-Suggested follow-up:
-- Merge or open a PR when your branch is ready.
-- Run your full test suite, \`make audit\`, or CI before release.
-- Clear stale pipeline signals only when starting a truly fresh run: \`rm -f .flowai/signals/*.ready\` (know what you remove).
-
-Feature directory: \`${feature_dir}\`
-Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-EOF
-  log_success "Wrote $dest"
+  printf '\n'
+  log_header "Next steps"
+  log_info "You approved an existing review.md as complete. No tmux session started."
+  printf '\n'
+  log_info "Suggested follow-up:"
+  log_info "  1. Review changes:  git diff"
+  log_info "  2. Commit changes:  git add -A && git commit -m 'feat: ...'"
+  log_info "  3. Update graph:    flowai graph update"
+  log_info "  4. Push:            git push"
+  printf '\n'
+  log_info "Feature directory: ${feature_dir}"
+  log_info "To start fresh:    rm -f .flowai/signals/*.ready && flowai start"
 }
 
 _start_check_resume() {
@@ -492,10 +489,20 @@ rm -f "$FLOWAI_DIR/signals"/*.ready 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals"/*.reject 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals"/*.rejection_context 2>/dev/null || true
 rm -f "$FLOWAI_DIR/signals"/*.user_approved 2>/dev/null || true
-# Clean stale temp files from interrupted Gemini runs
-rm -f "$FLOWAI_DIR"/gemini_sys_* 2>/dev/null || true
+# Clean stale temp files from interrupted tool runs (tool-agnostic patterns)
+rm -f "$FLOWAI_DIR"/gemini_sys_* "$FLOWAI_DIR"/cursor_session_prompt_* \
+      "$FLOWAI_DIR"/cursor_run_log_* "$FLOWAI_DIR"/cursor_oneshot_log_* 2>/dev/null || true
+# Per-tool cleanup hooks: each plugin may define flowai_tool_<name>_cleanup()
+for _tool_plugin in "$FLOWAI_HOME/src/tools/"*.sh; do
+  [[ -f "$_tool_plugin" ]] || continue
+  _tool_name="$(basename "$_tool_plugin" .sh)"
+  _cleanup_fn="flowai_tool_${_tool_name}_cleanup"
+  if declare -F "$_cleanup_fn" >/dev/null 2>&1; then
+    "$_cleanup_fn" "$FLOWAI_DIR" 2>/dev/null || true
+  fi
+done
+unset _tool_plugin _tool_name _cleanup_fn
 rm -f "$FLOWAI_DIR/signals/tasks.dispute_round" 2>/dev/null || true
-rm -f "$FLOWAI_DIR/gemini_slow_auth_hint_shown" 2>/dev/null || true
 rm -f "$FLOWAI_DIR/.session_pane_skip" 2>/dev/null || true
 
 # ── Inject tool project configs for subagent propagation ────────────────────
@@ -535,7 +542,6 @@ fi
 
 if [[ "${_FLOWAI_RESUME_PIPELINE_COMPLETE_EXIT:-0}" -eq 1 ]]; then
   log_header "Resume: workflow complete"
-  log_info "No tmux session started. See: $FLOWAI_DIR/RESUME_NEXT_STEPS.md"
   exit 0
 fi
 

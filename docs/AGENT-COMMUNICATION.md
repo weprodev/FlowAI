@@ -76,11 +76,17 @@ The codebase maps concepts directly:
 The review cycle ensures quality through multiple feedback loops:
 
 ```
-Implement → Review agent (creates review.md) → User approves/gives feedback
-  ↓ (if feedback)
-Review agent re-analyzes → Implement agent fixes → Review again
-  ↓ (if approved by user)
-Master agent final review (oneshot with review.md + all artifacts)
+Implement → code_complete → Review agent (creates review.md) → User decision
+  ↓ (if rejected — code needs changes)
+Ask user: "what code changes are needed?" → user types feedback
+  ↓
+Review agent one-shot analysis (user feedback + review.md findings)
+  ↓
+Combined revision context → impl.rejection_context → Implement agent
+  ↓
+Implement makes CODE changes (not MD files) → user approves impl → code_complete
+  ↓
+Review re-runs (has previous context) → user approves → Master final review
   ↓
   ├── NEEDS_FOLLOW_UP → feedback sent to Implement → cycle repeats
   └── READY_FOR_HUMAN_SIGNOFF → User approve/needs changes
@@ -93,6 +99,42 @@ Key points:
 - Master reads `review.md` during its final review for full context
 - Both Master AI and the user can send revision context back to Implement
 - The cycle is self-healing: impl → review → master → (feedback) → impl → ...
+
+### Rejection Type Separation (Critical Design Rule)
+
+**This is a fundamental design principle.** Rejections are handled differently
+depending on the phase type:
+
+| Phase Type | What rejection means | What gets changed |
+|------------|---------------------|-------------------|
+| **Spec / Plan / Tasks** | The **document** needs revision | The **MD file** is updated (spec.md, plan.md, tasks.md) |
+| **Impl / Review** | The **code** needs changes | The **source code** is modified — MD files are NOT touched |
+
+**When Spec, Plan, or Tasks are rejected:**
+- The agent revises the MD file directly
+- This is correct — these are document phases, and rejection means the document is wrong
+
+**When Implementation or Review are rejected:**
+1. Master asks the user: "What code changes are needed?"
+2. User types their feedback (logged to events.jsonl for traceability)
+3. Review agent creates a one-shot analysis combining user feedback + its QA findings
+4. The combined analysis is written to `impl.rejection_context`
+5. Implement agent reads it and makes **CODE changes only** (never MD files)
+6. After Implement finishes, **user must approve** the revision before Review re-runs
+7. Review re-runs with the new code changes + previous context
+8. User approves review → pipeline continues to Master final sign-off
+
+**Why this separation matters:**
+- The Master agent must NEVER run an interactive AI session for review rejections
+  (it will try to edit spec.md or create documentation files)
+- Review rejection = "the code is wrong" — only the Implement agent should fix code
+- User feedback + review analysis together give Implement targeted, actionable context
+- The user approval gate after impl revision prevents wasting a full QA cycle on broken code
+
+**Dead pane recovery:** If the Implement pane has exited (crash, manual close,
+completed phase), Master detects this and **automatically respawns** the Implement
+pane before writing `impl.rejection_context`. This prevents pipeline deadlocks
+where rejection context sits unread on disk.
 
 ---
 
@@ -453,25 +495,29 @@ flowchart TD
 > uncommitted changes that the user might still revert — a hallucination risk.
 > The graph should only reflect committed, intentional code.
 
-**What happens on ❌ Reject:**
+**What happens on ❌ Reject (code needs changes, NOT MD file updates):**
 
-1. Review Agent writes structured rejection to `impl.rejection_context`
-2. Master detects the rejection event and provides guidance
-3. Impl Agent re-runs with only the failing items
-4. Review runs again after Impl completes (new `review.md`)
-5. Loops until the user approves the review
+1. Master asks the user: "What code changes are needed?"
+2. User types feedback (logged to `events.jsonl` as `user_revision_feedback`)
+3. Review agent runs a **one-shot analysis** combining user feedback + `review.md` findings
+4. The combined analysis is written to `impl.rejection_context`
+5. If the Implement pane is dead, Master **automatically respawns** it
+6. Implement agent reads the rejection context → makes **CODE changes only**
+7. **User must approve** the revised implementation before Review re-runs
+8. After user approves → `impl.code_complete.ready` → Review re-runs with new changes
+9. Loops until the user approves the review
 
 ---
 
 ### Rejection Flow Summary
 
-| Phase  | Rejected by              | What happens next                                              |
-| ------ | ------------------------ | -------------------------------------------------------------- |
-| Spec   | 👤 User (in REPL)        | Master revises `spec.md`, asks user again                      |
-| Plan   | 👤 User (terminal menu)  | Plan self-corrects **or** escalates to Master if spec conflict |
-| Tasks  | 👑 Master Agent          | Master writes revision context, Tasks re-runs                  |
-| Impl   | 👑 Master **or** 👤 User | Master writes `impl.rejection_context`, Impl re-runs           |
-| Review | 👤 User (terminal menu)  | Master + Impl re-engage, Review runs again                     |
+| Phase  | Rejected by              | What changes | What happens next                                              |
+| ------ | ------------------------ | ------------ | -------------------------------------------------------------- |
+| Spec   | 👤 User (in REPL)        | **MD file**  | Master revises `spec.md`, asks user again                      |
+| Plan   | 👤 User (terminal menu)  | **MD file**  | Plan self-corrects **or** escalates to Master if spec conflict |
+| Tasks  | 👑 Master Agent          | **MD file**  | Master writes revision context, Tasks re-runs                  |
+| Impl   | 👑 Master **or** 👤 User | **Code**     | User feedback + review analysis → `impl.rejection_context` → Impl makes code changes → user approves → Review re-runs |
+| Review | 👤 User (terminal menu)  | **Code**     | User feedback + review one-shot analysis → `impl.rejection_context` → Impl makes code changes → user approves impl → Review re-runs |
 
 ## Communication Mechanisms
 
@@ -607,6 +653,8 @@ activity. Each event has the format:
 | `artifact_produced` | Phase output file written                     |
 | `approved`          | Human approved the artifact                   |
 | `rejected`          | Human rejected the artifact                   |
+| `user_revision_feedback` | User's feedback on what code changes are needed (traceability) |
+| `impl_revision_needed` | Revision context sent to Implement agent      |
 | `progress`          | Implementation progress (e.g., "3/7 tasks")   |
 | `phase_complete`    | Phase fully done (approved + signal fired)    |
 | `pipeline_complete` | All phases done                               |
@@ -797,10 +845,17 @@ Implement runs once then waits for Master's lifecycle signals:
 │    │ → impl.ready exists? → exit cleanly       │    │
 │    │ → impl.rejection_context exists?          │    │
 │    │   → re-run AI with revision context       │    │
-│    │   → emit "impl_produced" again → loop     │    │
+│    │   → USER APPROVAL GATE (must approve      │    │
+│    │     before Review re-runs)                 │    │
+│    │   → touch impl.code_complete → loop       │    │
 │    └───────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
+
+> **User approval after revision:** After the Implement agent makes code
+> changes based on rejection context, the user must approve before Review
+> re-runs. This prevents wasting a full QA cycle on code the user hasn't
+> verified. The approval uses the same terminal menu as other phases.
 
 ### Master Phase (central orchestrator)
 

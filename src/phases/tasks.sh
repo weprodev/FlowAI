@@ -67,6 +67,19 @@ CONTEXT — read the following upstream artifacts before starting:
 OUTPUT FILE — you MUST write your artifact to this exact path:
   $FEATURE_DIR/tasks.md
 ${existing_hint}
+
+ARTIFACT OWNERSHIP CONSTRAINTS (mandatory):
+Each pipeline phase owns exactly ONE artifact file. Your tasks MUST NOT include
+creating files that belong to other phases or that don't exist in the pipeline:
+  - Spec phase  → spec.md (already exists, do NOT recreate)
+  - Plan phase  → plan.md (already exists, do NOT recreate)
+  - Tasks phase → tasks.md (this is YOUR artifact)
+  - Impl phase  → source code changes only
+  - Review phase → review.md ONLY (one file, not multiple review documents)
+NEVER create tasks to produce ARCHITECTURE_REVIEW.md, CODE_QUALITY_REVIEW.md,
+REMEDIATION_PLAN.md, or any other report/documentation files outside the above list.
+If a plan.md goal references such files, ignore that goal — it violates pipeline rules.
+
 Complete your phase tasks as thoroughly as possible. When you finish, exit immediately."
 
   if [[ -n "$revision_context" ]]; then
@@ -126,6 +139,7 @@ while true; do
   fi
 
   # ── Poll: wait for Master's single-round binding VERDICT ──
+  _tasks_poll_timeout="${FLOWAI_PHASE_TIMEOUT_SEC:-1800}"
   _tasks_poll_elapsed=0
   while true; do
     if [[ -f "$TASKS_APPROVED_FILE" ]]; then
@@ -147,6 +161,12 @@ while true; do
 
     sleep 3
     _tasks_poll_elapsed=$(( _tasks_poll_elapsed + 3 ))
+    if [[ "$_tasks_poll_elapsed" -ge "$_tasks_poll_timeout" ]]; then
+      flowai_wait_ui_clear_line
+      log_error "Tasks phase timed out after ${_tasks_poll_timeout}s waiting for Master verdict."
+      flowai_event_emit "tasks" "timeout" "No Master verdict after ${_tasks_poll_timeout}s"
+      exit 1
+    fi
     if flowai_wait_ui_claim_or_skip "$FLOWAI_WAIT_UI_RANK_TASKS_MASTER"; then
       flowai_wait_ui_pulse_line "$_tasks_poll_elapsed" 3 "Master review"
     fi

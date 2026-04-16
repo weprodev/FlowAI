@@ -2,7 +2,7 @@
 # Optional NDJSON timing logs for DEBUG sessions (set FLOWAI_DEBUG_GEMINI_TIMING=1).
 # shellcheck shell=bash
 
-FLOWAI_DEBUG_SESSION_LOG="${FLOWAI_DEBUG_SESSION_LOG:-/Users/michael/Sites/WeProDev/wpd-message-gateway/.cursor/debug-70894f.log}"
+FLOWAI_DEBUG_SESSION_LOG="${FLOWAI_DEBUG_SESSION_LOG:-${FLOWAI_DIR:-$PWD/.flowai}/debug-session.log}"
 
 # Args: hypothesisId location message json_object_string
 flowai_debug_session_log() {

@@ -99,6 +99,8 @@ flowai_phase_focus "review" 2>/dev/null || true
 # Master will either:
 #   1. Write impl.ready (after QA + Master final sign-off) → exit cleanly
 #   2. Write impl.rejection_context → re-run with changes
+_impl_poll_timeout="${FLOWAI_PHASE_TIMEOUT_SEC:-1800}"
+_impl_poll_elapsed=0
 while true; do
   if [[ -f "${FLOWAI_DIR}/signals/impl.ready" ]]; then
     log_success "Implementation approved by Master + User. Phase complete."
@@ -124,11 +126,29 @@ while true; do
     INJECTED_PROMPT="$(flowai_phase_write_prompt "impl" "$ROLE_FILE" "$(cat "$_impl_dir_merge")")"
     rm -f "$_impl_dir_merge"
     flowai_ai_run "impl" "$INJECTED_PROMPT" "false"
-    flowai_event_emit "impl" "impl_produced" "Revised implementation — QA (Review) next, then Master final sign-off"
-    touch "${FLOWAI_DIR}/signals/impl.code_complete.ready"
-    log_info "Revised implementation complete. Next: Review (QA) — Master final sign-off only after QA."
-    flowai_phase_focus "review" 2>/dev/null || true
+    flowai_event_emit "impl" "impl_produced" "Revised implementation — awaiting user approval"
+    log_success "Revised implementation complete. Awaiting your approval before Review re-runs."
+
+    # User approval gate — user must approve impl changes before Review re-runs.
+    # This prevents sending broken code to Review and wasting a full QA cycle.
+    local _impl_rev_rc=0
+    flowai_phase_verify_artifact "$FEATURE_DIR/tasks.md" "Revised Implementation" "impl" || _impl_rev_rc=$?
+    if [[ "$_impl_rev_rc" -eq 0 ]]; then
+      touch "${FLOWAI_DIR}/signals/impl.code_complete.ready"
+      log_info "Revised implementation approved. Review (QA) will re-run."
+      flowai_phase_focus "review" 2>/dev/null || true
+    else
+      # User rejected revision — stay in polling loop, Master will handle
+      log_warn "Revision not approved — waiting for further instructions."
+      flowai_event_emit "impl" "revision_rejected" "User rejected revised implementation"
+    fi
   fi
 
   sleep 3
+  _impl_poll_elapsed=$((_impl_poll_elapsed + 3))
+  if [[ "$_impl_poll_elapsed" -ge "$_impl_poll_timeout" ]]; then
+    log_error "Implement phase timed out after ${_impl_poll_timeout}s waiting for Master signal."
+    flowai_event_emit "impl" "timeout" "No Master signal after ${_impl_poll_timeout}s"
+    exit 1
+  fi
 done

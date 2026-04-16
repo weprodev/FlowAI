@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # FlowAI Cursor Tool Plugin
+# shellcheck source=src/core/debug_session.sh
+source "$FLOWAI_HOME/src/core/debug_session.sh"
+# shellcheck source=src/core/log.sh
+source "$FLOWAI_HOME/src/core/log.sh"
 # Defines the required plugin API functions:
 #   flowai_tool_cursor_print_models  — used by: flowai models list cursor
 #   flowai_tool_cursor_run           — used by: ai.sh dispatcher
@@ -192,7 +196,7 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
   # region agent log
   local _c0 _c1 _cw _sz _rc=0
   _sz="$(wc -c < "$tmp_prompt" | tr -d ' ')"
-  _c0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _c0="$(date +%s)000"
 
   # Temp file to capture output for usage-limit detection
   local _cursor_log
@@ -211,7 +215,7 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
     fi
     rm -f "$_cursor_log"
 
-    _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+    _c1="$(date +%s)000"
     _cw=$((_c1 - _c0))
     flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "interactive_cursor_finished" \
       "{\"model\":\"${model}\",\"interactive\":true,\"cursor_wall_ms\":${_cw},\"prompt_bytes\":${_sz},\"exit\":${_rc}}"
@@ -250,7 +254,7 @@ You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as wr
   fi
   rm -f "$_cursor_log"
 
-  _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _c1="$(date +%s)000"
   _cw=$((_c1 - _c0))
   flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run" "oneshot_phase_cursor_finished" \
     "{\"model\":\"${model}\",\"interactive\":false,\"cursor_wall_ms\":${_cw},\"prompt_bytes\":${_sz},\"exit\":${_rc}}"
@@ -287,7 +291,7 @@ flowai_tool_cursor_run_oneshot() {
   # region agent log
   local _c0 _c1 _cw _plen _rc=0
   _plen="${#prompt}"
-  _c0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _c0="$(date +%s)000"
 
   local _cursor_log
   _cursor_log="$(mktemp "${FLOWAI_DIR:-$PWD/.flowai}/cursor_oneshot_log_XXXXXX")"
@@ -304,7 +308,7 @@ flowai_tool_cursor_run_oneshot() {
   if [[ "$_rc" -ne 0 ]]; then
     echo '{}'
   fi
-  _c1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _c1="$(date +%s)000"
   _cw=$((_c1 - _c0))
   flowai_debug_session_log "H-B" "cursor.sh:flowai_tool_cursor_run_oneshot" "oneshot_cursor_finished" \
     "{\"model\":\"${model}\",\"cursor_wall_ms\":${_cw},\"prompt_chars\":${_plen},\"exit\":${_rc}}"

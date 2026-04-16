@@ -72,7 +72,7 @@ flowai_cfg_pipeline_role() {
 
 flowai_cfg_role_tool() {
   local role="$1"
-  local def="${2:-gemini}"
+  local def="${2:-}"
   if [[ ! -f "$FLOWAI_CONFIG" ]]; then
     printf '%s' "$def"
     return
@@ -94,17 +94,15 @@ flowai_cfg_role_model() {
 #
 # Resolution order (first non-empty value wins):
 #   1. .tool_defaults.<tool>.model  in config.json   (generic; works for any tool)
-#   2. .default_model               in config.json   (gemini legacy key)
-#   3. .claude_default_model        in config.json   (claude legacy key)
-#   4. .tools.<tool>.default_id     in models-catalog.json
+#   2. .tools.<tool>.default_id     in models-catalog.json
 #
 # Adding a new tool to models-catalog.json gives it a working default with no
-# changes to this file.
+# changes to this file. Fully tool-agnostic — no tool names in this function.
 flowai_cfg_default_model_for_tool() {
   local tool="${1:-}"
   [[ -z "$tool" ]] && return 0
 
-  # 1. Generic per-tool override in project config
+  # 1. Per-tool override in project config
   local override=""
   if [[ -f "$FLOWAI_CONFIG" ]]; then
     override="$(jq -r --arg t "$tool" '.tool_defaults[$t].model // empty' "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r')"
@@ -114,19 +112,17 @@ flowai_cfg_default_model_for_tool() {
     return
   fi
 
-  # 2–3. Legacy single-key overrides (backward compatibility)
-  if [[ "$tool" == "gemini" ]]; then
-    local v=""
-    v="$(flowai_cfg_read '.default_model' '')"
-    [[ -n "$v" ]] && { printf '%s' "$v"; return; }
-  fi
-  if [[ "$tool" == "claude" ]]; then
-    local v=""
-    v="$(flowai_cfg_read '.claude_default_model' '')"
-    [[ -n "$v" ]] && { printf '%s' "$v"; return; }
+  # 2. Legacy config keys (backward compatibility for existing config.json files)
+  # Reads <tool>_default_model or default_model from config — tool-agnostic lookup.
+  if [[ -f "$FLOWAI_CONFIG" ]]; then
+    local legacy=""
+    legacy="$(jq -r --arg t "$tool" '
+      .[$t + "_default_model"] // .default_model // empty
+    ' "$FLOWAI_CONFIG" 2>/dev/null | tr -d '\r')"
+    [[ -n "$legacy" && "$legacy" != "null" ]] && { printf '%s' "$legacy"; return; }
   fi
 
-  # 4. Catalog default_id
+  # 3. Catalog default_id (single source of truth for defaults)
   if declare -F flowai_models_catalog_default_for_tool >/dev/null 2>&1; then
     local catalog=""
     catalog="$(flowai_models_catalog_default_for_tool "$tool")"
@@ -135,7 +131,3 @@ flowai_cfg_default_model_for_tool() {
 
   return 0
 }
-
-# Shims for legacy call-sites — delegate to the generic resolver.
-flowai_cfg_default_model()        { flowai_cfg_default_model_for_tool "gemini"; }
-flowai_cfg_claude_default_model() { flowai_cfg_default_model_for_tool "claude"; }

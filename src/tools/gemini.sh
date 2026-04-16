@@ -27,6 +27,13 @@ ${marker_end}"
   fi
 }
 
+# Clean up Gemini-specific state files between sessions.
+# Args: $1=FLOWAI_DIR path
+flowai_tool_gemini_cleanup() {
+  local flowai_dir="$1"
+  rm -f "$flowai_dir/gemini_slow_auth_hint_shown" 2>/dev/null || true
+}
+
 _flowai_gemini_slow_auth_hint_once() {
   [[ "${FLOWAI_GEMINI_AUTH_HINT:-1}" == "0" ]] && return 0
   local hint="${FLOWAI_DIR:-$PWD/.flowai}/gemini_slow_auth_hint_shown"
@@ -38,6 +45,24 @@ _flowai_gemini_slow_auth_hint_once() {
 #   flowai_tool_gemini_print_models  — used by: flowai models list gemini
 #   flowai_tool_gemini_run           — used by: ai.sh dispatcher
 # shellcheck shell=bash
+
+# Validate model ID for Gemini CLI. Falls back to catalog default if unknown.
+# Args: $1=raw model ID
+# Prints: validated model ID (or fallback)
+flowai_tool_gemini_validate_model() {
+  local raw="$1"
+  [[ "${FLOWAI_ALLOW_UNKNOWN_MODEL:-0}" == "1" ]] && { printf '%s' "$raw"; return; }
+  if declare -F flowai_models_catalog_contains >/dev/null 2>&1 && flowai_models_catalog_contains "gemini" "$raw"; then
+    printf '%s' "$raw"
+    return
+  fi
+  local fb
+  fb="$(flowai_cfg_default_model_for_tool gemini)"
+  if [[ "$fb" != "$raw" ]]; then
+    log_warn "Model '$raw' is not in catalog for Gemini — using '$fb'. Run: flowai models list gemini"
+  fi
+  printf '%s' "$fb"
+}
 
 flowai_tool_gemini_print_models() {
   # _flowai_print_tool_block is dynamically provided by the caller (models.sh)
@@ -100,13 +125,13 @@ flowai_tool_gemini_run() {
     # region agent log
     local _g0 _g1 _gw _sz
     _sz="$(wc -c < "$tmp_sys" | tr -d ' ')"
-    _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+    _g0="$(date +%s)000"
     # Send initial prompt to anchor Gemini to the pipeline workflow (same pattern as Claude).
     GEMINI_SYSTEM_MD="$tmp_sys" "${cmd[@]}" \
       "Read your PIPELINE DIRECTIVE and HARD CONSTRAINTS in the system prompt. You are inside a FlowAI pipeline phase. Follow the STAGED WORKFLOW exactly as written — begin with step 1 now. Do NOT deviate from the directive." \
       2> >(_flowai_gemini_filter_stderr >&2)
     local ext_code=$?
-    _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+    _g1="$(date +%s)000"
     _gw=$((_g1 - _g0))
     flowai_debug_session_log "H-B" "gemini.sh:flowai_tool_gemini_run" "interactive_gemini_finished" \
       "{\"model\":\"${model}\",\"interactive\":true,\"gemini_wall_ms\":${_gw},\"system_md_bytes\":${_sz},\"exit\":${ext_code}}"
@@ -130,7 +155,7 @@ flowai_tool_gemini_run() {
   # region agent log
   local _g0 _g1 _gw _sz _rc=0 _ps
   _sz="$(wc -c < "$tmp_sys" | tr -d ' ')"
-  _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _g0="$(date +%s)000"
 
   local _initial_prompt="Execute the PIPELINE DIRECTIVE in your system prompt. HARD CONSTRAINTS are MANDATORY — you may ONLY write to the OUTPUT FILE specified in the directive. Do NOT create any other files. If a knowledge graph is available, read GRAPH_REPORT.md BEFORE searching files. Begin immediately."
 
@@ -150,7 +175,7 @@ flowai_tool_gemini_run() {
       < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) || _rc=$?
   fi
 
-  _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _g1="$(date +%s)000"
   _gw=$((_g1 - _g0))
   flowai_debug_session_log "H-B" "gemini.sh:flowai_tool_gemini_run" "oneshot_phase_gemini_finished" \
     "{\"model\":\"${model}\",\"interactive\":false,\"gemini_wall_ms\":${_gw},\"system_md_bytes\":${_sz},\"exit\":${_rc}}"
@@ -199,7 +224,7 @@ flowai_tool_gemini_run_oneshot() {
   local _g0 _g1 _gw _plen _rc=0
   _plen="${#prompt}"
   _flowai_gemini_slow_auth_hint_once
-  _g0="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _g0="$(date +%s)000"
   gemini -m "$model" -y -p "$prompt" < /dev/null 2> >(_flowai_gemini_filter_stderr >&2) || _rc=$?
   if [[ -n "$_hb_pid" ]]; then
     kill "$_hb_pid" 2>/dev/null || true
@@ -210,7 +235,7 @@ flowai_tool_gemini_run_oneshot() {
   if [[ "$_rc" -ne 0 ]]; then
     echo '{}'
   fi
-  _g1="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0)"
+  _g1="$(date +%s)000"
   _gw=$((_g1 - _g0))
   flowai_debug_session_log "H-B" "gemini.sh:flowai_tool_gemini_run_oneshot" "oneshot_master_review_finished" \
     "{\"model\":\"${model}\",\"gemini_wall_ms\":${_gw},\"prompt_chars\":${_plen},\"exit\":${_rc}}"

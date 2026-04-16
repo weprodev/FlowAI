@@ -488,7 +488,7 @@ _master_handle_phase_errors_from_batch() {
     fi
 
     log_info "How do you want to proceed?"
-    if command -v gum >/dev/null 2>&1; then
+    if _flowai_should_use_gum; then
       choice="$(flowai_gum_choose --header "  Recovery" \
         'Stop FlowAI session (flowai stop) — kill tmux, start fresh later' \
         'Continue monitoring — I will fix artifacts or re-run the phase, then use the normal approval gates' \
@@ -588,6 +588,11 @@ _master_run_scope_check() {
     log_warn "Scope check: $phase appears OVER SCOPE"
     printf '%s\n' "$scope_result"
     flowai_event_emit "master" "scope_warning" "Phase $phase may be exceeding its mandate"
+
+    # Escalate: emit a phase error so the existing recovery menu fires,
+    # giving the user the choice to stop, continue, or restart.
+    flowai_phase_emit_error "$phase" \
+      "OVER_SCOPE — $(printf '%s' "$scope_result" | grep -i 'SCOPE:' | head -1)"
   else
     log_info "Scope check: $phase is ON TRACK (just slow)"
     flowai_event_emit "master" "scope_ok" "Phase $phase on track despite long runtime"
@@ -784,6 +789,11 @@ _master_check_events() {
       _master_post_qa_signoff=0
       # Also reset impl.code_complete so Review will re-run after impl finishes
       rm -f "${FLOWAI_DIR}/signals/impl.code_complete.ready" 2>/dev/null || true
+      # Ensure Implement pane is alive — respawn if dead
+      if ! flowai_phase_is_pane_alive "impl"; then
+        log_warn "Implement pane is dead — respawning..."
+        flowai_phase_respawn "impl" || log_error "Failed to respawn Implement pane."
+      fi
       log_info "Revision context sent to Implement. Waiting for impl → review → Master cycle..."
       flowai_phase_focus "impl" 2>/dev/null || true
     else
@@ -830,6 +840,11 @@ _master_check_events() {
         # Reset so we re-enter post-QA flow after impl + review cycle completes
         _master_post_qa_signoff=0
         rm -f "${FLOWAI_DIR}/signals/impl.code_complete.ready" 2>/dev/null || true
+        # Ensure Implement pane is alive — respawn if dead
+        if ! flowai_phase_is_pane_alive "impl"; then
+          log_warn "Implement pane is dead — respawning..."
+          flowai_phase_respawn "impl" || log_error "Failed to respawn Implement pane."
+        fi
         log_info "Revision context sent to Implement. Waiting for impl → review → Master cycle..."
         flowai_phase_focus "impl" 2>/dev/null || true
       fi
@@ -850,43 +865,133 @@ _master_check_events() {
     flowai_phase_focus "master" 2>/dev/null || true
     log_warn "REJECTION detected in phase: $rej_phase"
     log_warn "Detail: $rej_detail"
-    log_info "Re-invoking Master Agent with rejection context..."
 
-    local context_prompt
-    context_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_reenter_XXXXXX")"
-    {
-      cat "$ROLE_FILE"
-      printf '\n%s\n' "$DIRECTIVE"
-      printf '\n\n--- [REJECTION CONTEXT] ---\n'
-      printf 'The **%s** phase was REJECTED by the human reviewer.\n' "$rej_phase"
-      printf 'Rejection detail: %s\n\n' "$rej_detail"
-      printf 'Recent pipeline events:\n'
-      flowai_event_format_for_prompt 20
-      printf '\n\nYour task: Analyze why the rejection occurred. Review the artifacts '
-      printf 'in the specs/ directory. Provide guidance on how to fix the issue, '
-      printf 'or revise the spec if the original requirements were unclear.\n'
-      printf 'When ready, signal the revision by explaining what you changed.\n\n'
-      printf 'MEMORY LEARNING: Also analyze the user feedback for reusable behavioral\n'
-      printf 'rules (not task-specific). If you detect one, ask the user whether to\n'
-      printf 'persist it to project memory at: %s\n' "$MEMORY_FILE"
-      printf 'Only write to that file if the user explicitly approves.\n---\n'
-      flowai_phase_artifact_boundary "master"
-    } > "$context_prompt"
+    if [[ "$rej_phase" == "review" ]]; then
+      # ── Review rejection: CODE needs changes → route to Implement ──
+      # Review found problems with the implementation. The rejection is about
+      # code quality, NOT about updating MD files. Ask user what code changes
+      # are needed, then use review one-shot to create a targeted analysis
+      # combining user feedback + review.md findings for the Implement agent.
+      log_info "Review rejected — implementation code needs changes."
+      log_info "What code changes are needed? (Type your feedback, then press Enter)"
+      local _user_feedback=""
+      if [[ -r /dev/tty ]]; then
+        read -r _user_feedback </dev/tty || true
+      else
+        read -r _user_feedback || true
+      fi
 
-    flowai_event_emit "master" "re-engaged" "Responding to $rej_phase rejection"
-    flowai_ai_run "master" "$context_prompt" "true"
-    rm -f "$context_prompt"
+      # Log user feedback to events for traceability
+      flowai_event_emit "master" "user_revision_feedback" "${_user_feedback:-No specific details provided}"
 
-    # Auto-signal revision ready — Master has provided guidance, unblock the phase
-    # Phase id in events must be lowercase (e.g. plan) to match .revision.ready wait paths.
-    if [[ "$rej_phase" != "unknown" ]]; then
-      touch "$SIGNALS_DIR/${rej_phase}.revision.ready" 2>/dev/null || true
-    fi
-    flowai_event_emit "master" "revision_signalled" "Master unblocked $rej_phase revision"
-    log_info "Revision signal sent — $rej_phase phase will re-run."
-    if [[ "$rej_phase" == "plan" ]]; then
-      log_info "👉 Switching focus to Plan — re-run the architecture step with your feedback in context."
-      flowai_phase_focus "plan" 2>/dev/null || true
+      # One-shot review analysis: combine user feedback + review.md into a
+      # targeted, actionable rejection context for the Implement agent.
+      local _review_analysis_prompt
+      _review_analysis_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_review_analysis_XXXXXX")"
+      {
+        printf 'You are the Review Agent creating a targeted revision brief for the Implement Agent.\n\n'
+        printf 'The user rejected the implementation after reviewing review.md.\n'
+        printf 'Analyze the user feedback and your QA findings to create a focused,\n'
+        printf 'actionable list of CODE changes the Implement agent must make.\n\n'
+        printf '### User feedback:\n%s\n\n' "${_user_feedback:-No specific details — review the QA findings and identify the most critical code issues.}"
+        if [[ -f "$FEATURE_DIR/review.md" ]]; then
+          printf '### Your QA report (review.md):\n'
+          cat "$FEATURE_DIR/review.md"
+          printf '\n\n'
+        fi
+        printf 'Produce a structured revision brief:\n'
+        printf '1. ## Required Code Changes — specific files and what to fix\n'
+        printf '2. ## User Priority — what the user explicitly asked for\n'
+        printf '3. ## Test/Lint Failures — from your QA report that need fixing\n\n'
+        printf 'Be concise and actionable. The Implement agent will read this and make CODE changes only.\n'
+        printf 'Do NOT suggest updating documentation or MD files — this is about code.\n'
+      } > "$_review_analysis_prompt"
+
+      local _review_analysis=""
+      log_info "Review agent analyzing revision requirements..."
+      _review_analysis="$(flowai_ai_run_oneshot "review" "$_review_analysis_prompt" 2>/dev/null || true)"
+      rm -f "$_review_analysis_prompt"
+
+      # Write the combined analysis to impl.rejection_context
+      {
+        printf '## Review Rejection — Code Revision Required\n\n'
+        printf 'The user rejected the implementation. Make CODE changes only (not MD files).\n\n'
+        if [[ -n "$_user_feedback" ]]; then
+          printf '### User feedback:\n%s\n\n' "$_user_feedback"
+        fi
+        if [[ -n "$_review_analysis" ]]; then
+          printf '### Review agent analysis:\n%s\n' "$_review_analysis"
+        else
+          # Fallback: include raw review.md if one-shot failed
+          if [[ -f "$FEATURE_DIR/review.md" ]]; then
+            printf '### Review agent findings (from review.md):\n'
+            cat "$FEATURE_DIR/review.md"
+            printf '\n'
+          fi
+        fi
+      } > "${FLOWAI_DIR}/signals/impl.rejection_context"
+      flowai_event_emit "master" "impl_revision_needed" "Review rejected — review analysis sent to Implement"
+
+      # Reset impl.code_complete so Review re-runs after Implement finishes
+      rm -f "${FLOWAI_DIR}/signals/impl.code_complete.ready" 2>/dev/null || true
+      _master_post_qa_signoff=0
+
+      # Ensure Implement pane is alive — respawn if dead
+      if ! flowai_phase_is_pane_alive "impl"; then
+        log_warn "Implement pane is dead — respawning..."
+        flowai_phase_respawn "impl" || log_error "Failed to respawn Implement pane."
+      fi
+
+      # Signal review.revision.ready so Review exits its wait loop
+      touch "$SIGNALS_DIR/review.revision.ready" 2>/dev/null || true
+      flowai_event_emit "master" "revision_signalled" "Master routed review rejection to Implement"
+      log_info "Revision context sent to Implement. Waiting for impl → review → Master cycle..."
+      flowai_phase_focus "impl" 2>/dev/null || true
+    else
+      # ── Non-review rejection (plan, spec, tasks): re-invoke Master interactively ──
+      log_info "Re-invoking Master Agent with rejection context..."
+
+      local context_prompt
+      context_prompt="$(mktemp "${TMPDIR:-/tmp}/flowai_master_reenter_XXXXXX")"
+      {
+        cat "$ROLE_FILE"
+        printf '\n%s\n' "$DIRECTIVE"
+        printf '\n\n--- [REJECTION CONTEXT] ---\n'
+        printf 'The **%s** phase was REJECTED by the human reviewer.\n' "$rej_phase"
+        printf 'Rejection detail: %s\n\n' "$rej_detail"
+        printf 'Recent pipeline events:\n'
+        flowai_event_format_for_prompt 20
+        printf '\n\nYour task: Analyze why the rejection occurred. Review the artifacts '
+        printf 'in the specs/ directory. Provide guidance on how to fix the issue, '
+        printf 'or revise the spec if the original requirements were unclear.\n'
+        printf 'When ready, signal the revision by explaining what you changed.\n\n'
+        printf 'MEMORY LEARNING: Also analyze the user feedback for reusable behavioral\n'
+        printf 'rules (not task-specific). If you detect one, ask the user whether to\n'
+        printf 'persist it to project memory at: %s\n' "$MEMORY_FILE"
+        printf 'Only write to that file if the user explicitly approves.\n---\n'
+        flowai_phase_artifact_boundary "master"
+      } > "$context_prompt"
+
+      flowai_event_emit "master" "re-engaged" "Responding to $rej_phase rejection"
+      flowai_ai_run "master" "$context_prompt" "true"
+      rm -f "$context_prompt"
+
+      # Ensure the rejected phase pane is alive before signalling revision
+      if [[ "$rej_phase" != "unknown" ]] && ! flowai_phase_is_pane_alive "$rej_phase"; then
+        log_warn "$rej_phase pane is dead — respawning..."
+        flowai_phase_respawn "$rej_phase" || log_error "Failed to respawn $rej_phase pane."
+      fi
+
+      # Auto-signal revision ready — Master has provided guidance, unblock the phase
+      if [[ "$rej_phase" != "unknown" ]]; then
+        touch "$SIGNALS_DIR/${rej_phase}.revision.ready" 2>/dev/null || true
+      fi
+      flowai_event_emit "master" "revision_signalled" "Master unblocked $rej_phase revision"
+      log_info "Revision signal sent — $rej_phase phase will re-run."
+      if [[ "$rej_phase" == "plan" ]]; then
+        log_info "👉 Switching focus to Plan — re-run the architecture step with your feedback in context."
+        flowai_phase_focus "plan" 2>/dev/null || true
+      fi
     fi
   fi
 

@@ -42,6 +42,16 @@ CONTEXT — read the following upstream artifact before starting:
 OUTPUT FILE — you MUST write your artifact to this exact path:
   $FEATURE_DIR/plan.md
 ${_PLAN_EXISTING_HINT}
+DOWNSTREAM ARTIFACT CONSTRAINTS (mandatory):
+Your plan MUST respect the pipeline's artifact ownership. Do NOT set goals or
+propose deliverables that violate these rules:
+  - Review phase creates ONLY review.md — never ARCHITECTURE_REVIEW.md,
+    CODE_QUALITY_REVIEW.md, REMEDIATION_PLAN.md, or any other report files.
+  - Implement phase creates source code only — no documentation artifacts.
+  - Tasks phase creates ONLY tasks.md.
+If your plan references review deliverables, list them as SECTIONS within
+review.md (e.g. '## Architecture Review', '## Code Quality'), not separate files.
+
 POST-WRITE UX (required):
 - When plan.md is written, tell the user the **absolute path** above.
 - Tell them the FlowAI terminal will show an **approval menu** next (Approve / Needs changes / Review artifact).

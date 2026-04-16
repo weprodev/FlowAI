@@ -116,19 +116,14 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
     mkdir -p "$FLOWAI_DIR/wiki/cache"
 
     _mc="$FLOWAI_HOME/models-catalog.json"
-    _gdef="gemini-2.5-pro"
-    _cdef="sonnet"
-    
+
     declare -a tool_names=()
     if [[ -f "$_mc" ]]; then
       while IFS= read -r t_name; do
         [[ -n "$t_name" ]] && tool_names+=("$t_name")
       done < <(jq -r '.tools | keys[]' "$_mc" | tr -d '\r')
-      
-      _gdef="$(jq -r '.tools.gemini.default_id // "gemini-2.5-pro"' "$_mc" | tr -d '\r')"
-      _cdef="$(jq -r '.tools.claude.default_id // "sonnet"' "$_mc" | tr -d '\r')"
     fi
-    
+
     if [ ${#tool_names[@]} -eq 0 ]; then
       tool_names=("gemini" "claude" "cursor")
     fi
@@ -298,13 +293,11 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
       fi
     fi
 
-    # ── Determine default model based on primary tool ─────────────────────
+    # ── Determine default model based on primary tool (tool-agnostic) ─────
     if [[ -f "$_mc" ]]; then
       wizard_model="$(jq -r --arg t "$wizard_tool" '.tools[$t].default_id // "default"' "$_mc" | tr -d '\r')"
     else
-      if [ "$wizard_tool" = "gemini" ]; then wizard_model="$_gdef";
-      elif [ "$wizard_tool" = "claude" ]; then wizard_model="$_cdef";
-      else wizard_model="default"; fi
+      wizard_model="default"
     fi
 
     # ── Fill defaults for phases not explicitly configured ─────────────────
@@ -339,8 +332,6 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
 
     jq -n \
       --argjson ra "$(cat "$FLOWAI_HOME/src/core/defaults/skills-role-assignments.json")" \
-      --arg gdef "$_gdef" \
-      --arg cdef "$_cdef" \
       --arg wbranch "$wizard_branch" \
       --arg wtool "$wizard_tool" \
       --arg wmodel "$wizard_model" \
@@ -349,8 +340,6 @@ if [[ ! -d "$FLOWAI_DIR" ]] || [[ ! -f "$FLOWAI_DIR/config.json" ]] || [[ "$reco
       --argjson roles "$roles_json" \
       '{
         platform: "generic",
-        default_model: $gdef,
-        claude_default_model: $cdef,
         default_branch: $wbranch,
         master: { tool: $wtool, model: $wmodel },
         layout: "dashboard",

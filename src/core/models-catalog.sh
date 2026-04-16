@@ -6,7 +6,15 @@ flowai_models_catalog_path() {
   printf '%s' "${FLOWAI_HOME}/models-catalog.json"
 }
 
-# Echo default model id for tool (claude | gemini), or empty if catalog missing/invalid.
+# Echo the first tool name from the catalog (alphabetical). Used as fallback default.
+flowai_models_catalog_first_tool() {
+  local f
+  f="$(flowai_models_catalog_path)"
+  [[ -f "$f" ]] || return 0
+  jq -r '.tools | keys | first // empty' "$f" 2>/dev/null | tr -d '\r'
+}
+
+# Echo default model id for tool, or empty if catalog missing/invalid.
 flowai_models_catalog_default_for_tool() {
   local tool="$1"
   local f

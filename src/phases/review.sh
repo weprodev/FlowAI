@@ -34,9 +34,15 @@ Your WORKING DIRECTORY is: $PWD
 OUTPUT FILE (mandatory): Write your full QA report to:
   $REVIEW_DOC
 
-Include: summary verdict, checks vs acceptance criteria, test/lint results, risks,
-and concrete recommendations. The human approves using the menu in the terminal but
-opens this file in the editor to read the full write-up (tmux output alone is not enough).
+IMPORTANT: review.md is the ONLY file you create. Do NOT create separate report files
+(e.g. ARCHITECTURE_REVIEW.md, CODE_QUALITY_REVIEW.md, REMEDIATION_PLAN.md).
+Use sections within review.md for different review aspects.
+
+Keep the report clean, short, and human-readable. Use references to code locations
+where needed but avoid excessive detail. Include: summary verdict, checks vs
+acceptance criteria, test/lint results, risks, and concrete recommendations.
+The human approves using the menu in the terminal but opens this file in the
+editor to read the full write-up (tmux output alone is not enough).
 
 CONTEXT — read ALL upstream artifacts to perform a thorough review:
   $FEATURE_DIR/spec.md    (original requirements and acceptance criteria)
